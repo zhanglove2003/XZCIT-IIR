@@ -75,6 +75,10 @@ void Error_Handler(void);
 #define KEY_USER_GPIO_Port GPIOC
 #define ADC_BATT_Pin GPIO_PIN_0
 #define ADC_BATT_GPIO_Port GPIOB
+#define MOTOR_LF_SLP_Pin GPIO_PIN_15
+#define MOTOR_LF_SLP_GPIO_Port GPIOE
+#define MOTOR_RF_SLP_Pin GPIO_PIN_12
+#define MOTOR_RF_SLP_GPIO_Port GPIOB
 #define MOTOR_RF_DIR_Pin GPIO_PIN_13
 #define MOTOR_RF_DIR_GPIO_Port GPIOB
 #define RGB_B_Pin GPIO_PIN_14
@@ -85,6 +89,8 @@ void Error_Handler(void);
 #define MOTOR_RR_DIR_GPIO_Port GPIOD
 #define BUZZER_Pin GPIO_PIN_11
 #define BUZZER_GPIO_Port GPIOD
+#define MOTOR_RR_SLP_Pin GPIO_PIN_12
+#define MOTOR_RR_SLP_GPIO_Port GPIOD
 #define MOTOR_LR_PWM_Pin GPIO_PIN_6
 #define MOTOR_LR_PWM_GPIO_Port GPIOC
 #define MOTOR_RR_PWM_Pin GPIO_PIN_7
@@ -93,6 +99,8 @@ void Error_Handler(void);
 #define MOTOR_LF_PWM_GPIO_Port GPIOC
 #define MOTOR_RF_PWM_Pin GPIO_PIN_9
 #define MOTOR_RF_PWM_GPIO_Port GPIOC
+#define MOTOR_LR_SLP_Pin GPIO_PIN_8
+#define MOTOR_LR_SLP_GPIO_Port GPIOA
 #define USB_DM_Pin GPIO_PIN_11
 #define USB_DM_GPIO_Port GPIOA
 #define USB_DP_Pin GPIO_PIN_12
