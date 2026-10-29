@@ -125,7 +125,17 @@ void Error_Handler(void);
 #define OLED_RES_GPIO_Port GPIOE
 
 /* USER CODE BEGIN Private defines */
-
+/* A轮(右前)驱动 SLP/EN：高 = 使能，低 = 睡眠（板上 10kΩ 下拉，不拉高不转） */
+#define MOTOR_RF_SLP_Pin GPIO_PIN_12
+#define MOTOR_RF_SLP_GPIO_Port GPIOB
+/* 方向电平：装车后若与实际前进方向相反，交换这两个宏即可 */
+#define MOTOR_RF_DIR_FORWARD GPIO_PIN_SET
+#define MOTOR_RF_DIR_REVERSE GPIO_PIN_RESET
+/* 自检参数：TIM8 PSC=9/ARR=16799 → 1kHz，8400 ≈ 50% 占空比 */
+#define SELFCHECK_PWM_PULSE 8400U
+#define SELFCHECK_RUN_MS 3000U
+#define SELFCHECK_PAUSE_MS 3000U
+#define SELFCHECK_CYCLES 2U
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
