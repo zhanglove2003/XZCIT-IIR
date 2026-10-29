@@ -14,9 +14,9 @@
 | 右后 RR (C) | PC7 | CH2 | PD10 | PD12 | CR3 | P1/P2 |
 | 左后 LR (D) | PC6 | CH1 | PC12 | PA8 | CR4 | P1/P2 |
 
-- PWM：PSC 9 / ARR 16799 → **1 kHz**，PWM mode 1，初始占空比 0，自动输出（AOE/MOE）已使能
+- PWM：PSC 9 / ARR 16799 → **1 kHz**，PWM mode 1，初始占空比 0。AOE（自动输出）已在 `MX_TIM8_Init()` 中配置，但 **MOE 默认不置位**——要等 `HAL_TIM_PWM_Start()` 才会置 MOE、使能通道并启动计数器。也就是说初始化完成后定时器是停的，四个 PWM 脚保持低电平
 - DIR：`GPIO_Output`，**High speed**，初始低电平；方向翻转只影响电平，不影响频率
-- SLP：`GPIO_Output`，**Low speed**，初始**低电平** = 驱动睡眠；板上 10 kΩ 下拉，悬空即睡眠
+- SLP：`.ioc` 中定义为 `GPIO_Output` / **Low speed** / 初始**低电平** = 驱动睡眠（板上 10 kΩ 下拉，悬空即睡眠）。⚠️ 这四个脚的初始化代码在 `feat/motor-slp-pins` 分支（PR #2）才加入；只合入本文档所在分支时，基线里还没有它们
 - CS：电流采样输出，当前未接、未配置
 - 编号约定：A/B/C/D 是厂商电机编号，**代码里一律用轮位 RF/LF/RR/LR**，不用字母
 
