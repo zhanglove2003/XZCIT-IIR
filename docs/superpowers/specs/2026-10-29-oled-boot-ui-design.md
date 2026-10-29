@@ -12,7 +12,7 @@
 
 - 无电池。所谓「电池自检」实际检查单片机自身的 3.3 V 供电（VDD），不用 PB0 分压。
 - OLED 为 0.96" SSD1306 128×64，4 线软 SPI，**无 CS 引脚**（模块上 CS 已接地）。
-- 中文仅使用已导出的 18 个 16×16 字形；数字/字母使用 6×12 ASCII 字模。
+- 中文仅使用已导出的 17 个不重复 16×16 字形；数字/字母使用 6×12 ASCII 字模。
 
 ## 2. 硬件接口（引自 knowledge/pinmap.md）
 
@@ -82,12 +82,14 @@ LR  +122 rpm
 
 | 文件 | 职责 |
 |---|---|
-| `Core/Inc/oled.h` / `Core/Src/oled.c` | SSD1306 软 SPI 驱动、1024 B 帧缓冲、初始化序列、清屏/像素/位图/文本绘制、整屏 flush、方向宏 |
-| `Core/Inc/oled_font.h` / `Core/Src/oled_font.c` | 6×12 ASCII 95 字、18 个汉字 16×16（正立存储）、12×12 转圈 8 帧、✓ / ✗ |
-| `Core/Inc/boot_ui.h` / `Core/Src/boot_ui.c` | 状态机、按键去抖、电机时序、VDD 测量、转速采样，入口 `BootUi_Run()` |
-| `Core/Src/freertos.c` | `StartSelfCheckTask` 改为调用 `BootUi_Run()`；任务栈 256×4 → 512×4 |
-| `Makefile` | `C_SOURCES` 加入 oled.c、oled_font.c、boot_ui.c |
+| `Core/Inc/oled.h` / `Core/Src/oled.c` | SSD1306 软 SPI 硬件层：复位、初始化序列、整屏 flush、方向宏 |
+| `Core/Inc/oled_gfx.h` / `Core/Src/oled_gfx.c` | 纯 C 帧缓冲与绘制（不依赖 HAL，可在主机测试）：清屏、像素、位图、6×12/16×16 文本 |
+| `Core/Inc/oled_font.h` / `Core/Src/oled_font.c` | 6×12 ASCII 95 字、17 个汉字 16×16（正立存储）、12×12 转圈 8 帧、✓ / ✗，由工具生成 |
+| `Core/Inc/boot_ui.h` / `Core/Src/boot_ui.c` | 状态机、按键去抖、电机时序、VDD 测量、转速采样，入口 `boot_ui_run()`；头文件含可在主机测试的纯数学内联函数 |
+| `Core/Src/freertos.c` | `StartSelfCheckTask` 改为调用 `boot_ui_run()`；任务栈 256×4 → 512×4 |
+| `Makefile` | `C_SOURCES` 加入 oled.c、oled_gfx.c、oled_font.c、boot_ui.c |
 | `tools/font_convert.py` + `tools/font_src/*.h` | 字模重组工具及原始导出文件，保证字库可重现 |
+| `tools/test_font_convert.py`、`tools/test_oled_gfx.c`、`tools/test_boot_math.c` | 主机侧测试（python3 / gcc），不依赖开发板 |
 
 `main.h`、`gpio.c`、`adc.c`、`tim.c` 不改动。`main.c` 不改动（编码器启动放在 boot_ui 初始化中）。
 
@@ -115,7 +117,7 @@ LR  +122 rpm
 
 用户导出的 4 个 .h 文件为 **列行式且整体旋转 90°**（文件头注释「行列式（横向字节）」与实际不符，以实际解码为准）。`tools/font_convert.py` 读取原件、按页解码后顺时针旋转 90°、按正立 page 格式重新输出为 `oled_font.c`。
 
-18 个字形：等 待 初 始 化 / 正 在 加 载 / 自 检 流 程 开 始 / 电 机 池。导出文件中的「通信自检」不进入固件。
+17 个不重复字形：等 待 初 始 化 / 正 在 加 载 / 自 检 流 程 开 始 / 电 机 池（「始」在「初始」「开始」中各用一次）。导出文件中的「通信自检」不进入固件。
 
 ### 6.3 动画与符号
 
@@ -123,8 +125,8 @@ LR  +122 rpm
 
 ## 7. 电压（VDD）
 
-- ADC1 配置为单次、软件触发、1 转换、480 周期，与现有配置一致；测量前用 `HAL_ADC_ConfigChannel()` 切到 `ADC_CHANNEL_VREFINT`，使能内部参考。
-- 首次测量前执行一次 `HAL_ADCEx_Calibration_Start(&hadc1)`。
+- ADC1 配置为单次、软件触发、1 转换、480 周期，与现有配置一致；测量前用 `HAL_ADC_ConfigChannel()` 切到 `ADC_CHANNEL_VREFINT`（HAL 会自动置 TSVREFE）。
+- 本项目所用 HAL 版本未提供 `HAL_ADCEx_Calibration_Start`（已在 Drivers 中确认），因此不做 ADC 自校准；剩下的偏移误差对本用途（3.1 V 阈值与两位小数显示）可忽略。
 - 连续 8 次单次转换取平均，`VDD_mV = 3300 × Vrefint_CAL / raw`，`Vrefint_CAL` 读自 0x1FFF7A2A。
 - 判定：`VDD_mV ≥ 3100` 为通过。若按字面「>3.3 V」判定，真实 3.3 V 轨（读数约 3.28–3.30 V）会误判失败。
 - `Vrefint_CAL` 为 0 或 0xFFFF（芯片未校准）时按 1490 处理，保证不会出现除零。
@@ -145,15 +147,17 @@ LR  +122 rpm
 新增：
 
 - `Core/Inc/oled.h`、`Core/Src/oled.c`
+- `Core/Inc/oled_gfx.h`、`Core/Src/oled_gfx.c`
 - `Core/Inc/oled_font.h`、`Core/Src/oled_font.c`
 - `Core/Inc/boot_ui.h`、`Core/Src/boot_ui.c`
-- `tools/font_convert.py`、`tools/font_src/`（4 个原始字模文件）
+- `tools/font_convert.py`、`tools/font_src/`（4 个原始字模文件 + 从厂商表提取的 ASCII 字模）
+- `tools/test_font_convert.py`、`tools/test_oled_gfx.c`、`tools/test_boot_math.c`
 - 本文档
 
 修改：
 
-- `Core/Src/freertos.c`：任务入口改为 `BootUi_Run()`，栈 512×4
-- `Makefile`：新增 3 个源文件
+- `Core/Src/freertos.c`：任务入口改为 `boot_ui_run()`，栈 512×4
+- `Makefile`：新增 4 个源文件
 
 ## 10. 验证
 
