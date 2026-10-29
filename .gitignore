@@ -1,0 +1,14 @@
+# build output
+build/
+*.o
+*.d
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.su
+
+# editor / OS
+.vscode/
+.DS_Store
