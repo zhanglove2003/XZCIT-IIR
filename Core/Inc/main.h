@@ -63,6 +63,14 @@ void Error_Handler(void);
 #define RGB_G_GPIO_Port GPIOE
 #define MOTOR_LF_DIR_Pin GPIO_PIN_0
 #define MOTOR_LF_DIR_GPIO_Port GPIOC
+#define ENC_D_A_Pin GPIO_PIN_0
+#define ENC_D_A_GPIO_Port GPIOA
+#define ENC_D_B_Pin GPIO_PIN_1
+#define ENC_D_B_GPIO_Port GPIOA
+#define ENC_B_A_Pin GPIO_PIN_6
+#define ENC_B_A_GPIO_Port GPIOA
+#define ENC_B_B_Pin GPIO_PIN_7
+#define ENC_B_B_GPIO_Port GPIOA
 #define KEY_USER_Pin GPIO_PIN_5
 #define KEY_USER_GPIO_Port GPIOC
 #define ADC_BATT_Pin GPIO_PIN_0
@@ -89,6 +97,8 @@ void Error_Handler(void);
 #define USB_DM_GPIO_Port GPIOA
 #define USB_DP_Pin GPIO_PIN_12
 #define USB_DP_GPIO_Port GPIOA
+#define ENC_A_A_Pin GPIO_PIN_15
+#define ENC_A_A_GPIO_Port GPIOA
 #define BT_TX_Pin GPIO_PIN_10
 #define BT_TX_GPIO_Port GPIOC
 #define BT_RX_Pin GPIO_PIN_11
@@ -99,6 +109,12 @@ void Error_Handler(void);
 #define OLED_SDA_GPIO_Port GPIOD
 #define OLED_SCL_Pin GPIO_PIN_7
 #define OLED_SCL_GPIO_Port GPIOD
+#define ENC_A_B_Pin GPIO_PIN_3
+#define ENC_A_B_GPIO_Port GPIOB
+#define ENC_C_A_Pin GPIO_PIN_6
+#define ENC_C_A_GPIO_Port GPIOB
+#define ENC_C_B_Pin GPIO_PIN_7
+#define ENC_C_B_GPIO_Port GPIOB
 #define I2C1_SCL_Pin GPIO_PIN_8
 #define I2C1_SCL_GPIO_Port GPIOB
 #define I2C1_SDA_Pin GPIO_PIN_9
