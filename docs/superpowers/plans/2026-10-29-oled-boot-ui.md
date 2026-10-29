@@ -497,7 +497,7 @@ Expected: 打印两个 `written:` 路径
 - [ ] **Step 8: 检查生成的汉字数组顺序**
 
 Run: `grep -n "0x.*}, /\*" Core/Src/oled_font.c | head -20`
-Expected: 依次是 等 待 初 始 化 正 在 加 载 自 检 流 程 开 始 电 机 池，共 18 行
+Expected: 依次是 等 待 初 始 化 正 在 加 载 自 检 流 程 开 电 机 池，共 17 行
 
 - [ ] **Step 9: 提交**
 
