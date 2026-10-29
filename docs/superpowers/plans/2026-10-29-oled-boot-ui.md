@@ -1114,8 +1114,6 @@ Create `Core/Src/boot_ui.c`:
 #define UI_TEXT6_WIDTH     6U
 #define UI_TEXT16_STEP    18U
 
-#define VREFINT_CAL_ADDR 0x1FFF7A2AU
-
 typedef struct
 {
   TIM_HandleTypeDef *tim;
@@ -1275,10 +1273,7 @@ static void ui_motor_selfcheck(uint8_t *frame)
     ui_hold(SELFCHECK_RUN_MS, UI_STATE_RUN, frame);
 
     __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_4, 0U);
-    if (cycle < (SELFCHECK_CYCLES - 1U))
-    {
-      ui_hold(SELFCHECK_PAUSE_MS, UI_STATE_RUN, frame);
-    }
+    ui_hold(SELFCHECK_PAUSE_MS, UI_STATE_RUN, frame);
   }
 
   __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_4, 0U);
@@ -1295,7 +1290,7 @@ static uint32_t ui_read_vdd_mv(void)
 
   if (s_cal == 0U)
   {
-    s_cal = *(const volatile uint16_t *)VREFINT_CAL_ADDR;
+    s_cal = *VREFINT_CAL_ADDR;   /* HAL 已定义 ((uint16_t *)0x1FFF7A2A) */
   }
 
   cfg.Channel = ADC_CHANNEL_VREFINT;

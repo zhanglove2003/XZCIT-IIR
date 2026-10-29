@@ -45,6 +45,7 @@ Core/Src/tim.c \
 Core/Src/oled.c \
 Core/Src/oled_gfx.c \
 Core/Src/oled_font.c \
+Core/Src/boot_ui.c \
 Core/Src/usart.c \
 Core/Src/stm32f4xx_it.c \
 Core/Src/stm32f4xx_hal_msp.c \
