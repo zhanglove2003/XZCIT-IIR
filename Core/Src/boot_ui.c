@@ -42,6 +42,29 @@ static const ui_wheel_t s_wheels[4] =
   { &htim5, "LR" },
 };
 
+typedef struct
+{
+  GPIO_TypeDef *slpPort;
+  uint32_t slpPin;
+  GPIO_TypeDef *dirPort;
+  uint32_t dirPin;
+  uint32_t dirFwd;
+  uint32_t dirRev;
+  uint32_t pwmCh;
+} ui_motor_t;
+
+static const ui_motor_t s_motors[4] =
+{
+  { MOTOR_RF_SLP_GPIO_Port, MOTOR_RF_SLP_Pin, MOTOR_RF_DIR_GPIO_Port, MOTOR_RF_DIR_Pin,
+    MOTOR_RF_DIR_FORWARD, MOTOR_RF_DIR_REVERSE, TIM_CHANNEL_4 }, /* A 右前 */
+  { MOTOR_LF_SLP_GPIO_Port, MOTOR_LF_SLP_Pin, MOTOR_LF_DIR_GPIO_Port, MOTOR_LF_DIR_Pin,
+    MOTOR_LF_DIR_FORWARD, MOTOR_LF_DIR_REVERSE, TIM_CHANNEL_3 }, /* B 左前 */
+  { MOTOR_RR_SLP_GPIO_Port, MOTOR_RR_SLP_Pin, MOTOR_RR_DIR_GPIO_Port, MOTOR_RR_DIR_Pin,
+    MOTOR_RR_DIR_FORWARD, MOTOR_RR_DIR_REVERSE, TIM_CHANNEL_2 }, /* C 右后 */
+  { MOTOR_LR_SLP_GPIO_Port, MOTOR_LR_SLP_Pin, MOTOR_LR_DIR_GPIO_Port, MOTOR_LR_DIR_Pin,
+    MOTOR_LR_DIR_FORWARD, MOTOR_LR_DIR_REVERSE, TIM_CHANNEL_1 }, /* D 左后 */
+};
+
 static void ui_text16_center(int16_t y, const char *text);
 static void ui_text6_center(int16_t y, const char *text);
 static void ui_checklist(uint8_t motor_state, uint8_t vdd_state, uint8_t frame);
@@ -166,33 +189,41 @@ static void ui_loading(void)
   osDelay(UI_START_MS);
 }
 
+/* 四轮顺序自检：A→B→C→D，每轮独立跑 正转3s → 停3s → 反转3s → 停3s ×2，50% 上限 */
 static void ui_motor_selfcheck(uint8_t *frame)
 {
   uint8_t cycle;
+  uint8_t w;
 
-  HAL_GPIO_WritePin(MOTOR_RF_SLP_GPIO_Port, MOTOR_RF_SLP_Pin, GPIO_PIN_SET);
-  osDelay(10U);
-
-  for (cycle = 0U; cycle < SELFCHECK_CYCLES; cycle++)
+  for (w = 0U; w < 4U; w++)
   {
-    HAL_GPIO_WritePin(MOTOR_RF_DIR_GPIO_Port, MOTOR_RF_DIR_Pin, MOTOR_RF_DIR_FORWARD);
-    __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_4, SELFCHECK_PWM_PULSE);
-    ui_hold(SELFCHECK_RUN_MS, UI_STATE_RUN, frame);
+    const ui_motor_t *m = &s_motors[w];
 
-    __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_4, 0U);
-    ui_hold(SELFCHECK_PAUSE_MS, UI_STATE_RUN, frame);
+    HAL_GPIO_WritePin(m->slpPort, m->slpPin, GPIO_PIN_SET);
+    osDelay(10U);
 
-    HAL_GPIO_WritePin(MOTOR_RF_DIR_GPIO_Port, MOTOR_RF_DIR_Pin, MOTOR_RF_DIR_REVERSE);
-    __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_4, SELFCHECK_PWM_PULSE);
-    ui_hold(SELFCHECK_RUN_MS, UI_STATE_RUN, frame);
+    for (cycle = 0U; cycle < SELFCHECK_CYCLES; cycle++)
+    {
+      HAL_GPIO_WritePin(m->dirPort, m->dirPin, m->dirFwd);
+      __HAL_TIM_SET_COMPARE(&htim8, m->pwmCh, SELFCHECK_PWM_PULSE);
+      ui_hold(SELFCHECK_RUN_MS, UI_STATE_RUN, frame);
 
-    __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_4, 0U);
-    ui_hold(SELFCHECK_PAUSE_MS, UI_STATE_RUN, frame);
+      __HAL_TIM_SET_COMPARE(&htim8, m->pwmCh, 0U);
+      ui_hold(SELFCHECK_PAUSE_MS, UI_STATE_RUN, frame);
+
+      HAL_GPIO_WritePin(m->dirPort, m->dirPin, m->dirRev);
+      __HAL_TIM_SET_COMPARE(&htim8, m->pwmCh, SELFCHECK_PWM_PULSE);
+      ui_hold(SELFCHECK_RUN_MS, UI_STATE_RUN, frame);
+
+      __HAL_TIM_SET_COMPARE(&htim8, m->pwmCh, 0U);
+      ui_hold(SELFCHECK_PAUSE_MS, UI_STATE_RUN, frame);
+    }
+
+    /* 本轮收尾：清占空比 → 停 PWM（清 MOE）→ 驱动器回睡眠 */
+    __HAL_TIM_SET_COMPARE(&htim8, m->pwmCh, 0U);
+    HAL_TIM_PWM_Stop(&htim8, m->pwmCh);
+    HAL_GPIO_WritePin(m->slpPort, m->slpPin, GPIO_PIN_RESET);
   }
-
-  __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_4, 0U);
-  HAL_TIM_PWM_Stop(&htim8, TIM_CHANNEL_4);
-  HAL_GPIO_WritePin(MOTOR_RF_SLP_GPIO_Port, MOTOR_RF_SLP_Pin, GPIO_PIN_RESET);
 }
 
 static uint32_t ui_read_vdd_mv(void)
@@ -352,23 +383,57 @@ static void ui_main_page(void)
   }
 }
 
+/* 临时：面板点灯探测。阶段 1 = SSD1306 路径，阶段 2 = SH1106 路径，定位后删除 */
+static void ui_panel_probe(void)
+{
+  uint8_t *fb = (uint8_t *)oled_gfx_buffer();
+  uint32_t i;
+
+  for (i = 0U; i < OLED_WIDTH * OLED_HEIGHT / 8U; i++)
+  {
+    fb[i] = 0xFFU;
+  }
+  oled_flush();
+  osDelay(3000U);
+  oled_gfx_clear();
+  oled_flush();
+  osDelay(800U);
+
+  oled_sh1106_enable();
+  for (i = 0U; i < OLED_WIDTH * OLED_HEIGHT / 8U; i++)
+  {
+    fb[i] = 0xFFU;
+  }
+  oled_flush();
+  osDelay(3000U);
+  oled_gfx_clear();
+  oled_flush();
+}
+
 void boot_ui_run(void)
 {
   GPIO_InitTypeDef gpio = {0};
   uint8_t frame = 0U;
   uint32_t vdd_mv = 0U;
+  uint8_t w;
 
-  /* A 轮 SLP/EN (PB12)：.ioc 未配置，手动初始化，低电平 = 驱动睡眠 */
-  HAL_GPIO_WritePin(MOTOR_RF_SLP_GPIO_Port, MOTOR_RF_SLP_Pin, GPIO_PIN_RESET);
-  gpio.Pin = MOTOR_RF_SLP_Pin;
-  gpio.Mode = GPIO_MODE_OUTPUT_PP;
-  gpio.Pull = GPIO_NOPULL;
-  gpio.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(MOTOR_RF_SLP_GPIO_Port, &gpio);
+  /* 四轮 SLP/EN：.ioc 未配置，手动初始化，低电平 = 驱动睡眠 */
+  for (w = 0U; w < 4U; w++)
+  {
+    HAL_GPIO_WritePin(s_motors[w].slpPort, s_motors[w].slpPin, GPIO_PIN_RESET);
+    gpio.Pin = s_motors[w].slpPin;
+    gpio.Mode = GPIO_MODE_OUTPUT_PP;
+    gpio.Pull = GPIO_NOPULL;
+    gpio.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(s_motors[w].slpPort, &gpio);
+  }
 
   /* 上电即置 MOE，但占空比 0，电机不动 */
-  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_4);
-  __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_4, 0U);
+  for (w = 0U; w < 4U; w++)
+  {
+    HAL_TIM_PWM_Start(&htim8, s_motors[w].pwmCh);
+    __HAL_TIM_SET_COMPARE(&htim8, s_motors[w].pwmCh, 0U);
+  }
 
   HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
   HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
@@ -376,6 +441,7 @@ void boot_ui_run(void)
   HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_ALL);
 
   oled_init();
+  ui_panel_probe();
 
   ui_wait_key();
   ui_loading();
