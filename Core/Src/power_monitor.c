@@ -167,6 +167,12 @@ void power_monitor_step(uint32_t now_ms)
     s_snapshot.vdd_valid = 0U;
   }
 
+  /* 运动许可：采样成功还必须够 3100 mV（掉压的轨不得出力/自检）。 */
+  s_snapshot.vdd_ok = (uint8_t)((s_snapshot.vdd_valid != 0U &&
+                                 s_snapshot.vdd_mv >= BOOT_UI_VDD_MIN_MV)
+                                    ? 1U
+                                    : 0U);
+
   configured = power_monitor_battery_configured();
   s_snapshot.battery_configured = configured;
 

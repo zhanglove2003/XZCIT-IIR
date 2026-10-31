@@ -288,9 +288,11 @@ static void wh_on_release(wheel_home_t *s, const wheel_home_input_t *in, uint32_
 }
 
 /* 手动页静止跟踪：必须每轮都喂，不能只在"用户请求记录"那一拍调用。
- * 连续静止是按时间累积出来的状态（WHEEL_HOME_SETTLE_MS），只在请求那一拍
- * 从零开始算，第一次调用必然不满足，用户松手速度稍快就记不上。
- * 返回值：1 = 四轮已连续静止满 SELTTLE 时窗且本帧可用。 */
+ * 连续静止是按时间累积出来的状态（WHEEL_HOME_STILL_MS，spec §10 明文
+ * 300 ms；与归位路径共用同一宏，不占用归位逐轮到位的 SETTLE_MS），
+ * 只在请求那一拍从零开始算，第一次调用必然不满足，用户松手速度稍快
+ * 就记不上。
+ * 返回值：1 = 四轮已连续静止满 300 ms 且本帧可用。 */
 uint8_t wheel_home_track_manual_still(wheel_home_t *s,
                                       const wheel_home_input_t *in,
                                       uint32_t now)
@@ -340,7 +342,7 @@ uint8_t wheel_home_track_manual_still(wheel_home_t *s,
         s->record_still_active[w] = 1U;
         s->record_still_ms[w] = now;
       }
-      if ((uint32_t)(now - s->record_still_ms[w]) < WHEEL_HOME_SETTLE_MS)
+      if ((uint32_t)(now - s->record_still_ms[w]) < WHEEL_HOME_STILL_MS)
       {
         all_still = 0U;
       }

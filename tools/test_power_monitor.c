@@ -146,6 +146,21 @@ int main(void)
   assert(s->battery_mv == 3300U);
   assert(s->undervolt == 0U);
 
+  /* 8. vdd_ok：采样成功还必须 >= 3100 mV 才许运动/自检
+   *    （3300*1490/1639 = 3000 mV 掉压；3300*1490/1585 = 3102 mV 达标） */
+  power_monitor_init();
+  s_test_configured = 0U;
+  s_vref_val = 1639U;
+  power_monitor_step(5000U);
+  s = power_monitor_get();
+  assert(s->vdd_valid == 1U && s->vdd_mv == 3000U);
+  assert(s->vdd_ok == 0U);
+  s_vref_val = 1585U;
+  power_monitor_step(5501U);
+  s = power_monitor_get();
+  assert(s->vdd_mv == 3102U);
+  assert(s->vdd_ok == 1U);
+
   printf("power_monitor host test passed\n");
   return 0;
 }

@@ -28,8 +28,12 @@ void power_monitor_step(uint32_t now_ms) { (void)now_ms; }
 const power_snapshot_t *power_monitor_get(void) { return &s_pm_stub; }
 static void pm_set_vdd_ok(uint8_t ok)
 {
-  s_pm_stub.vdd_valid = ok;
-  s_pm_stub.vdd_mv = (ok != 0U) ? 3300U : 0U;
+  /* ok=1：3.3 V 轨正常（3300 mV，vdd_ok=1）；
+   * ok=0：模拟掉压到 3000 mV——采样仍成功（vdd_valid=1）但低于
+   * BOOT_UI_VDD_MIN_MV，vdd_ok=0（运动/自检许可关闭）。 */
+  s_pm_stub.vdd_valid = 1U;
+  s_pm_stub.vdd_mv = (ok != 0U) ? 3300U : 3000U;
+  s_pm_stub.vdd_ok = ok;
 }
 
 /* 自检 UX 已并入 Ctrl（boot_ui 收敛为渲染层）：不再有 boot_ui_manual_*
@@ -1027,6 +1031,154 @@ static void selfcheck_preamble_step(void)
   }
 }
 
+/* --- VDD 掉压闸门场景 ('p') --------------------------------------------- */
+/* 先真实跑一轮全过自检（vdd_ok=1）→ 驾驶页武装后推满出力 → 运行中把轨
+ * 注入成 3000 mV：出力必须当拍切断（spec §11.4 供电异常最高优先级）；
+ * 再发起自检：vdd_ok=0 时服务请求必须被拒（state 全 0）。 */
+static int power_gate_test;
+static int pstage;
+static uint32_t pmark, pn;
+
+static void power_gate_script(ps2_state_t *p)
+{
+  ui_snapshot_t snap;
+
+  pn++;
+  p->buttons = 0xFFFFU; p->lx = 128U; p->rx = 128U;
+  p->ry = 128U; p->ly = 128U;
+  switch (pstage) {
+  case 0: /* R1 → 主菜单 */
+    p->buttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MENU) { pstage = 1; pmark = tick; }
+    break;
+  case 1:
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 2; pmark = tick; }
+    break;
+  case 2: /* L1（menu_sel==0）→ 驾驶页 */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_DRIVE) { pstage = 3; pmark = tick; }
+    break;
+  case 3:
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 4; pmark = tick; }
+    break;
+  case 4: /* 推满：武装前零输出 */
+    p->ly = 0U;
+    ui_snapshot_get(&snap);
+    if ((uint32_t)(tick - pmark) >= 60U && (uint32_t)(tick - pmark) < 100U) {
+      assert(snap.drive_permitted == 0U);
+      for (int i = 0; i < 4; i++) assert(htim8.compare[i] == 0U);
+    }
+    if ((uint32_t)(tick - pmark) >= 120U) { pstage = 5; pmark = tick; }
+    break;
+  case 5: /* 松杆回中 200 ms：武装 */
+    p->ly = 128U;
+    if ((uint32_t)(tick - pmark) >= 200U) { pstage = 6; pmark = tick; }
+    break;
+  case 6: /* 再推满：vdd_ok=1 + 已过自检 → 出力 8400 */
+    p->ly = 0U;
+    if ((uint32_t)(tick - pmark) >= 60U) {
+      ui_snapshot_get(&snap);
+      assert(snap.drive_permitted == 1U);
+      assert(snap.vdd_ok == 1U);
+      for (int i = 0; i < 4; i++) assert(htim8.compare[i] == 8400U);
+      pm_set_vdd_ok(0U); /* 运行中轨压掉到 3000 mV */
+      pstage = 7; pmark = tick;
+    }
+    break;
+  case 7: /* 供电异常：出力必须当拍切断并睡眠 */
+    p->ly = 0U;
+    ui_snapshot_get(&snap);
+    if ((uint32_t)(tick - pmark) >= 150U) {
+      assert(snap.vdd_ok == 0U);
+      assert(snap.drive_permitted == 0U);
+      for (int i = 0; i < 4; i++) assert(htim8.compare[i] == 0U);
+      assert(!(gpiob.ODR & GPIO_PIN_12)); /* 停止流程关使能 */
+      p->ly = 128U;
+      pstage = 8; pmark = tick;
+    }
+    break;
+  case 8: /* R1 → 主菜单 */
+    p->buttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MENU) { pstage = 9; pmark = tick; }
+    break;
+  case 9:
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 10; pmark = tick; }
+    break;
+  case 10: /* 右移选"检查与标定" */
+    p->lx = 208U;
+    ui_snapshot_get(&snap);
+    if (snap.menu_sel == 1U) { p->lx = 128U; pstage = 11; pmark = tick; }
+    break;
+  case 11:
+    p->lx = 128U;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 12; pmark = tick; }
+    break;
+  case 12: /* L1 → 子菜单 */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_SUBMENU) { pstage = 13; pmark = tick; }
+    break;
+  case 13:
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 14; pmark = tick; }
+    break;
+  case 14: /* 下移到"重新自检" */
+    ui_snapshot_get(&snap);
+    if (snap.sub_sel == 1U) { p->ly = 128U; pstage = 15; pmark = tick; }
+    else { p->ly = 208U; }
+    break;
+  case 15:
+    p->ly = 128U;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 16; pmark = tick; }
+    break;
+  case 16: /* L1 → 确认页 */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_CHECK_CONFIRM) { pstage = 17; pmark = tick; }
+    break;
+  case 17:
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 18; pmark = tick; }
+    break;
+  case 18: /* 焦点移到"开始" */
+    ui_snapshot_get(&snap);
+    if (snap.confirm_focus == 1U) { p->ly = 128U; pstage = 19; pmark = tick; }
+    else { p->ly = 208U; }
+    break;
+  case 19:
+    p->ly = 128U;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 20; pmark = tick; }
+    break;
+  case 20: /* L1：页面进 CHECK_RUN，但 vdd_ok=0 → 服务请求必须被拒 */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_CHECK_RUN) { pstage = 21; pmark = tick; }
+    break;
+  case 21: /* 1.5 s 后：服务从未启动——state 停留在上一轮全过的 2，
+            * 不出现 1（运行）/3（失败），无任何输出 */
+    p->buttons = 0xFFFFU;
+    ui_snapshot_get(&snap);
+    if ((uint32_t)(tick - pmark) >= 1500U) {
+      assert(snap.action_busy == 0U);
+      assert(snap.vdd_ok == 0U);
+      for (int i = 0; i < 4; i++) {
+        assert(snap.selfcheck_state[i] == 2U); /* 前置自检的保留结果 */
+        assert(htim8.compare[i] == 0U);
+      }
+      longjmp(done, 1);
+    }
+    break;
+  default:
+    break;
+  }
+}
+
 uint8_t ps2_poll(ps2_state_t *p){
  /* 需要出力的场景先跑一轮全过的真实自检（'c' 场景本身就在测自检，跳过）。 */
  if(!selfcheck_test && !sc_pre_done){
@@ -1034,6 +1186,7 @@ uint8_t ps2_poll(ps2_state_t *p){
    p->buttons=cbuttons;p->lx=clx;p->ly=cly;p->rx=128U;p->ry=128U;
    tick+=3U;return PS2_FRAME_OK;
  }
+ if(power_gate_test){ power_gate_script(p); tick+=3U; return PS2_FRAME_OK; }
  if(stop_test){
    /* 导航到驾驶页并等回中武装后推满出力，再回中让停止流程关使能。 */
    static uint32_t n;
@@ -1212,6 +1365,12 @@ int main(int argc, char **argv){
    pm_set_vdd_ok(1U);
    if(!setjmp(done))StartCtrlTask(0);
    puts("ctrl menu selfcheck / service-owned output / 5s window OK");return 0;
+ }
+ if(argc>1 && argv[1][0]=='p'){
+   power_gate_test=1;tick=0U;pn=0U;pstage=0;
+   pre_reset();
+   if(!setjmp(done))StartCtrlTask(0);
+   puts("ctrl vdd-undervolt gate / drive cut / selfcheck refused OK");return 0;
  }
  if(argc>1 && argv[1][0]=='x'){
    relatch_test=1;tick=0U;xn=0U;xstage=0;xcrank_on=0U;

@@ -16,8 +16,9 @@
 #define WHEEL_RR_FORWARD_SIGN (-1)
 #define WHEEL_LR_FORWARD_SIGN 1
 
-/* VDD 通过阈值（mV）。3.3 V 轨实测约 3.28–3.30 V，按字面 >3300 会误判 */
-#define BOOT_UI_VDD_MIN_MV 3100U
+/* VDD 运动许可阈值 BOOT_UI_VDD_MIN_MV 已迁至 power_monitor.h（电源域）；
+ * 兼容 include：让旧消费者（test_boot_math 等）继续按原名取到该宏。 */
+#include "power_monitor.h"
 
 /* 转速采样窗：Ctrl 任务每 20 ms 采样、累计 5 次得 100 ms 窗口 */
 #define BOOT_UI_ENC_SAMPLE_MS 20U

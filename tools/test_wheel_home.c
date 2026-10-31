@@ -397,21 +397,23 @@ static void test_manual_record_checks_preconditions(void)
   assert(wheel_home_record_manual_reference(&rig.s, &in, t) == 0U);
   in.frame_valid = 1U;
 
-  /* 车轮还在转 -> 拒绝；连续静止够 200 ms 才接受。 */
+  /* 车轮还在转 -> 拒绝；连续静止满 300 ms（spec §10）才接受。 */
   for (int w = 0; w < 4; w++) { in.delta[w] = (int32_t)(CPR[w] / 100); }
   in.now_ms = t;
   assert(wheel_home_record_manual_reference(&rig.s, &in, t) == 0U);
   for (int w = 0; w < 4; w++) { in.delta[w] = 0; }
   assert(wheel_home_record_manual_reference(&rig.s, &in, t + 100U) == 0U);
-  assert(wheel_home_record_manual_reference(&rig.s, &in,
-                                            t + 100U + WHEEL_HOME_SETTLE_MS) == 1U);
+  /* 反向：静止仅 ~250 ms（< WHEEL_HOME_STILL_MS）同样长按必须拒绝。 */
+  assert(wheel_home_record_manual_reference(&rig.s, &in, t + 350U) == 0U);
+  /* 静止满 300 ms 后同样长按 -> 记录成功。 */
+  assert(wheel_home_record_manual_reference(&rig.s, &in, t + 400U) == 1U);
   assert(rig.s.reference_valid == 1U);
   for (int w = 0; w < 4; w++) { assert(rig.s.origin[w] == 12345); }
 
   /* 不在手动相关状态下拒绝。 */
   rig.s.mode = WHEEL_HOME_RUNNING;
   assert(wheel_home_record_manual_reference(&rig.s, &in,
-                                            t + 500U + WHEEL_HOME_SETTLE_MS) == 0U);
+                                            t + 500U + WHEEL_HOME_STILL_MS) == 0U);
 }
 
 /* Applied nonzero PWM with no improvement for 500 ms stops every wheel. */

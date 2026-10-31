@@ -767,13 +767,14 @@ void StartCtrlTask(void *argument)
           (s_ui_model.page == UI_PAGE_MANUAL_CAL) ? 1U : 0U;
 
       /* --- 请求消费（单发，当拍生效） ------------------------------ */
-      /* 自检前置：帧有效 + 四轴回中 + 电源正常 + 非标定模式，
+      /* 自检前置：帧有效 + 四轴回中 + 电源正常（vdd_ok：采样成功且
+       * >= 3100 mV，掉压的轨不得自检）+ 非标定模式，
        * 且自检/归位都不在运行（服务独占电机，不叠加）。 */
       if (ureq.selfcheck_start != 0U)
       {
         if (in.frame_valid != 0U &&
             ctrl_sticks_centered_raw(in.lx, in.ly, in.rx, in.ry) != 0U &&
-            pw.vdd_valid != 0U && drive_calibration_mode == 0U &&
+            pw.vdd_ok != 0U && drive_calibration_mode == 0U &&
             s_ctrl_check.phase != SELFCHECK_RUNNING &&
             s_ctrl_home_busy == 0U)
         {
@@ -831,11 +832,13 @@ void StartCtrlTask(void *argument)
         }
       }
       /* action_busy 由自检/归位状态回喂；本次上电未通过自检时驾驶页
-       * 零输出并显示"请先自检"（快照 selfcheck_passed=0）。 */
+       * 零输出并显示"请先自检"（快照 selfcheck_passed=0）。
+       * vdd_ok 是供电异常的最高优先级闸（spec §11.4）：3.3 V 轨低于
+       * 3100 mV 时即使其它条件全满足也零输出。 */
       drive_permitted = (uint8_t)(
           (s_ui_model.page == UI_PAGE_DRIVE) && (s_ctrl_check.passed != 0U) &&
           (s_ctrl_fault_mask == 0U) && (ui_action_busy == 0U) &&
-          (s_drive_center_armed != 0U));
+          (pw.vdd_ok != 0U) && (s_drive_center_armed != 0U));
     }
 
     /* 3) 仲裁：状态机只看输入，不写硬件。
@@ -1113,7 +1116,7 @@ void StartCtrlTask(void *argument)
       snap.battery_valid = pw.battery_valid;
       snap.battery_error = pw.battery_error;
       snap.undervolt = pw.undervolt;
-      snap.vdd_ok = pw.vdd_valid;
+      snap.vdd_ok = pw.vdd_ok;
       snap.battery_mv = pw.battery_mv;
 
       if ((uint32_t)(now - s_win_start) >= BOOT_UI_ENC_SAMPLE_MS *

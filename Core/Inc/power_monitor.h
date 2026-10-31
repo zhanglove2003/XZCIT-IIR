@@ -3,6 +3,11 @@
 
 #include <stdint.h>
 
+/* 3.3 V 轨运动许可阈值（mV）。轨压实测 3.28-3.30 V，字面 >3300 会误判。
+ * 原 BOOT_UI_VDD_MIN_MV 自 boot_ui.h 迁入：vdd 门槛属于电源域，
+ * boot_ui.h 保留兼容 include（旧消费者不断链）。 */
+#define BOOT_UI_VDD_MIN_MV 3100U
+
 /* 电池监测配置。现场确认分压/规格/阈值后改 1 并填宏；
  * 未配置（0）时不采 CH8、battery_valid 恒 0、不判欠压。 */
 #define POWER_BATTERY_CONFIGURED 0
@@ -13,6 +18,8 @@
 typedef struct
 {
   uint8_t vdd_valid;           /* 最近一次 VREFINT 采样成功且 vdd_mv>0 */
+  uint8_t vdd_ok;              /* vdd_valid 且 vdd_mv >= BOOT_UI_VDD_MIN_MV：
+                                  唯一允许运动/自检的电源许可位 */
   uint32_t vdd_mv;             /* 3.3 V 轨电压（mV） */
   uint8_t battery_configured;  /* 与 POWER_BATTERY_CONFIGURED 一致 */
   uint8_t battery_valid;       /* 最近一次 CH8 采样成功 */
