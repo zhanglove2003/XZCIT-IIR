@@ -4,7 +4,7 @@
 
 #include <stdint.h>
 
-#define OLED_FONT_CN_COUNT 17
+#define OLED_FONT_CN_COUNT 28
 #define OLED_FONT_TITLE_COUNT 9
 
 /* 6×12 ASCII，page 格式（2 页 × 6 列），bit0 为页内顶行 */

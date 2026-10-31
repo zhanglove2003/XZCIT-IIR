@@ -36,13 +36,26 @@ def test_cn_duplicates():
 
 
 def test_cn_glyphs():
-    assert len(fc.CN_GLYPHS) == 17
+    assert len(fc.CN_GLYPHS) == 28
     for ch, data in fc.CN_GLYPHS.items():
         assert len(data) == 32, ch
     img = fc.cn_bitmap('等')
     assert len(img) == 16 and len(img[0]) == 16
     assert img[0][9] == 1 and img[0][8] == 0
     assert any(any(row) for row in img)
+
+
+def test_cn_extra_glyphs():
+    """Task 9b 视觉打磨增补的 11 个字形：有墨、尺寸正确、来自 extra 源。"""
+    extra = '请先查与标定未配置驾驶'
+    assert len(extra) == 11
+    for ch in extra:
+        assert ch in fc.CN_GLYPHS, ch
+        data = fc.CN_GLYPHS[ch]
+        assert len(data) == 32
+        assert sum(bin(b).count('1') for b in data) > 20, ch
+        img = fc.cn_bitmap(ch)
+        assert any(any(row) for row in img), ch
 
 
 def test_cn_radicals_are_on_the_correct_side():
@@ -72,7 +85,7 @@ def test_title_glyphs():
 
 def test_generate():
     header, source = fc.generate()
-    assert '#define OLED_FONT_CN_COUNT 17' in header
+    assert '#define OLED_FONT_CN_COUNT 28' in header
     assert 'oled_font_cn[OLED_FONT_CN_COUNT][32]' in source
     assert 'oled_font_cn_lookup' in source
     assert source.count('0x') > 1500

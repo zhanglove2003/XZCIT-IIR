@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "oled_font.h"
 #include "oled_gfx.h"
 #include "ui_model.h"
 #include "ui_render.h"
@@ -38,6 +39,27 @@ static void snap_init(ui_snapshot_t *s, ui_page_t page)
   s->page = page;
   s->sel_since_ms = 0U;
   s->frame_valid = 1U;
+}
+
+/* 逐字符核对 UTF-8 中文串全部命中 oled_font_cn_lookup（防渲染时静默跳字） */
+static void assert_cn_lookup(const char *utf8)
+{
+  int i;
+
+  for (i = 0; utf8[i] != '\0'; i += 3)
+  {
+    assert(oled_font_cn_lookup(&utf8[i]) != NULL);
+  }
+}
+
+/* 中文 16px 文本清单（驾驶页提示/结果页/卡片名/子菜单标题） */
+static void test_cn_glyphs_used(void)
+{
+  assert_cn_lookup("请先自检");
+  assert_cn_lookup("电池未配置");
+  assert_cn_lookup("驾驶");
+  assert_cn_lookup("检查标定");
+  assert_cn_lookup("检查与标定");
 }
 
 /* 格式化三函数 */
@@ -199,17 +221,19 @@ static void test_drive(void)
   assert(memcmp(oled_gfx_buffer(), ref_frame, sizeof(ref_frame)) != 0);
   s.frame_valid = 1U;
 
-  /* 未通过自检且未许可：提示限于顶栏中部 x42..83，不越入右栏 */
+  /* 未通过自检且未许可：正文改为居中中文提示"请先自检"（16px，只能放页面主体） */
   s.selfcheck_passed = 0U;
   s.drive_permitted = 0U;
   ui_render_draw(&s, 0U);
-  assert(fb_ink_in(42, 0, 83, 11) > 0);   /* 提示在中部域内 */
-  assert(fb_ink_in(84, 0, 89, 11) == 0);  /* 与右栏之间留隙 */
+  assert(fb_ink_in(42, 0, 83, 11) > 0);   /* 顶栏中部显示行驶状态（6×12） */
   assert(fb_ink_in(90, 0, 125, 11) == 0); /* 无故障/失联时右栏无覆盖 */
-  /* 提示与故障同现：两段文字不重叠（提示 ≤7 字符守域） */
+  assert(fb_ink_in(29, 26, 98, 41) > 0);  /* 中文提示正文内居中（x29..98, y26..41） */
+  assert(fb_ink_in(0, 12, 127, 25) == 0); /* 提示之上无四轮数据 */
+  assert(fb_ink_in(0, 42, 127, 59) == 0); /* 提示之下无四轮数据 */
+  /* 提示与故障同现：右栏显示故障，正文提示不变，两段不重叠 */
   s.fault_mask = 1U;
   ui_render_draw(&s, 0U);
-  assert(fb_ink_in(42, 0, 83, 11) > 0);
+  assert(fb_ink_in(29, 26, 98, 41) > 0);
   assert(fb_ink_in(84, 0, 89, 11) == 0);
   assert(fb_ink_in(90, 0, 125, 11) > 0);
   s.fault_mask = 0U;
@@ -232,7 +256,7 @@ static void test_drive(void)
   }
 }
 
-/* 主菜单：选中卡片边框、未选中卡片对侧露出 */
+/* 主菜单：选中卡片边框、图标位图、中文名、未选中卡片对侧露出 */
 static void test_menu(void)
 {
   ui_snapshot_t s;
@@ -249,9 +273,25 @@ static void test_menu(void)
   /* 未选中卡片（右卡片）在对侧边缘露出 ≥1 列 */
   assert(fb_ink_in(118, 20, 127, 51) > 0);
 
+  /* 图标 12×12 位图：选中卡片内 (23..34, 30..41) 有墨；
+   * 图标不越卡片边框：图标四周与边框之间留白全暗 */
+  assert(fb_ink_in(23, 30, 34, 41) > 0);
+  assert(fb_ink_in(19, 21, 22, 50) == 0);  /* 图标左侧留白 */
+  assert(fb_ink_in(35, 21, 37, 50) == 0);  /* 图标与名称之间留白 */
+  assert(fb_ink_in(19, 42, 34, 50) == 0);  /* 图标下方留白 */
+  assert(fb_ink_in(19, 21, 34, 29) == 0);  /* 图标上方留白 */
+  /* 中文名 16px：x38..107, y28..43 有墨，右端不越右框 x=109 */
+  assert(fb_ink_in(38, 28, 107, 43) > 0);
+  assert(fb_ink_in(108, 21, 108, 50) == 0);
+
+  /* 切到第二卡：扳手图标同样在卡片内、不越框 */
   s.menu_sel = 1U;
   ui_render_draw(&s, 1200U);
   assert(fb_ink_in(18, 20, 109, 51) > 0);
+  assert(fb_ink_in(23, 30, 34, 41) > 0);
+  assert(fb_ink_in(19, 21, 22, 50) == 0);
+  assert(fb_ink_in(35, 21, 37, 50) == 0);
+  assert(fb_ink_in(38, 28, 107, 43) > 0);
   /* 左卡片在对侧（屏幕左缘）露出 ≥1 列 */
   assert(fb_ink_in(0, 20, 9, 51) > 0);
 
@@ -301,11 +341,12 @@ static void test_result(void)
   assert(fb_ink_in(0, 0, 127, 11) > 0);          /* 标题 */
   assert(fb_ink_in(0, 12, 59, 59) > 0);          /* 四轮名与状态 */
 
-  /* 电池屏：未配置 → 提示文本 */
+  /* 电池屏：未配置 → 中文提示"电池未配置"（16px 居中于正文 x20..107, y24..39） */
   s.result_view = 1U;
   s.battery_valid = 0U;
   ui_render_draw(&s, 0U);
   assert(fb_ink_in(0, 12, 127, 63) > 0);
+  assert(fb_ink_in(20, 24, 107, 39) > 0);
   {
     uint8_t not_config[128 * 8];
     memcpy(not_config, oled_gfx_buffer(), sizeof(not_config));
@@ -337,6 +378,7 @@ static void test_other_pages(void)
   s.selfcheck_state[0] = 1U;
   ui_render_draw(&s, 0U);
   assert(fb_ink_in(0, 0, 127, 63) > 0);
+  assert(fb_ink_in(114, 0, 125, 11) > 0); /* 转圈动画帧在右上角 */
 
   snap_init(&s, UI_PAGE_HOME);
   s.reference_valid = 1U;
@@ -362,6 +404,7 @@ int main(void)
 {
   test_format();
   test_anim();
+  test_cn_glyphs_used();
   test_brand();
   test_drive();
   test_menu();

@@ -372,3 +372,25 @@ uint32_t power_monitor_battery_mv_div(uint32_t raw, uint32_t vdd_mv,
 ## 上板验收（不在本计划内，现场另行安排）
 
 按 spec §13 顺序：电机断电只读核对按键/摇轴 → 电池接线与分压核对 → 低速方向确认（保留硬件极性，不猜反转 B）→ 菜单停机/回中恢复/断连停机/自检重跑/标定/归位 → 采样至输出延迟测量。
+
+---
+
+## 构建记录（Task 9 Step 5，2026-10-31 补记）
+
+- 工具链：`arm-none-eabi-gcc (GNU Tools for STM32 14.3.rel1.20251027-0700) 14.3.1 20250623`
+- 构建：`make clean && make -j8 all`，77 个编译步骤全部成功，**0 告警**（含 Drivers/ HAL 源；无需豁免条目）。
+- 固件大小（`arm-none-eabi-size build/hal_f407_mecanum_4motor_src.elf`）：
+
+```text
+   text	   data	    bss	    dec	    hex
+  59256	    128	  54480	 113864	  1bcc8
+```
+
+- 产物校验（sha256sum）：
+
+```text
+461e86ec6ffb92bec72c2e59841c1977c50520bcbe4d1242e21c3fe7427eae3e  build/hal_f407_mecanum_4motor_src.elf
+47c4af0d74276d94e5ab4fe7d84d754d752aaf2a56be6ede868de849f306e10a  build/hal_f407_mecanum_4motor_src.bin（59392 字节）
+```
+
+- 同日回归：`bash tools/test_motion.sh` 全绿（21 项）、`bash tools/test_boot_ctrl_integration.sh` 7 个 scenario 全 PASS、`python3 tools/test_font_convert.py` 全 PASS（28 字形，重生成 oled_font.c/h 与工作区逐字节一致）。

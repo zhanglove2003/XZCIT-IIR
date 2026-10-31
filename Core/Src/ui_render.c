@@ -1,7 +1,7 @@
 /* ui_render：OLED 各页面绘制。只读快照、不碰硬件、不写任何模型状态；
  * clear + 按页绘制到 oled_gfx 帧缓冲，flush 由渲染循环（boot_ui）负责。
  * 排版数值来自 spec §5/§6；卡片跳动/滑动只由 now_ms 与快照锚点计算。
- * 本任务图标一律用 1px 边框占位，位图图标由视觉打磨任务补。 */
+ * 中文字形 16px 高：只能画进页面主体，顶栏一律 6×12（spec §6 顶栏行高 12px）。 */
 #include "ui_render.h"
 
 #include <stdio.h>
@@ -189,6 +189,25 @@ int8_t ui_render_slide_offset(uint32_t now_ms, uint32_t sel_since_ms)
 
 /* ---------------- 绘制辅助 ---------------- */
 
+/* 卡片图标 12×12（page 格式，2 页 × 12 列，bit0 为页内顶行），画进卡片左侧：
+ * 驾驶卡 = 方向盘（外圈 + 横向中条 + 下辐条）；
+ * 检查标定卡 = 开口扳手（顶部开口钳口 + 锥颈 + 直柄）。 */
+static const uint8_t card_icon_drive[24] = {
+    0x00, 0xFC, 0x62, 0x61, 0x61, 0xE1, 0xE1, 0x61, 0x61, 0x62, 0xFC, 0x00,
+    0x00, 0x03, 0x04, 0x0C, 0x08, 0x0B, 0x0B, 0x08, 0x0C, 0x04, 0x03, 0x00,
+};
+static const uint8_t card_icon_wrench[24] = {
+    0x00, 0x00, 0x08, 0x1F, 0xFF, 0xF8, 0xF8, 0xFF, 0x1F, 0x08, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x0F, 0x0F, 0x0F, 0x0F, 0x00, 0x00, 0x00, 0x00,
+};
+
+#define ICON_W 12
+#define ICON_H 12
+#define ICON_X_OFF 5  /* 图标左缘距卡片左框 */
+#define ICON_Y_OFF 10
+#define NAME_X_OFF 20 /* 卡片中文名起点距卡片左框（图标右侧） */
+#define NAME_Y_OFF 8
+
 /* 逐轮状态短文本（自检与归位共用口径：0 等待 1 运行 2 通过 3 失败） */
 static const char *state_text(uint8_t state)
 {
@@ -218,6 +237,12 @@ static const char *drive_status_text(ui_drive_status_t st)
 static void draw_centered_6x12(int16_t y, const char *text)
 {
   oled_gfx_text6x12((int16_t)((OLED_WIDTH - (int16_t)oled_gfx_text6x12_width(text)) / 2), y, text);
+}
+
+/* 16px 中文文本水平居中（只能用于页面主体，不得进顶栏） */
+static void draw_centered_16(int16_t y, const char *utf8)
+{
+  oled_gfx_text16((int16_t)((OLED_WIDTH - (int16_t)oled_gfx_text16_width(utf8)) / 2), y, utf8);
 }
 
 /* 10×16 标题逐字绘制（未收录字形跳过，留空位） */
@@ -280,10 +305,13 @@ static void draw_brand(const ui_snapshot_t *s)
   draw_centered_6x12(52, hint);
 }
 
-/* 主菜单：两张 92×32 卡片，选中卡片居中轻跳，相邻卡片屏幕边缘露出 */
+/* 主菜单：两张 92×32 卡片（图标 + 中文名），选中卡片居中轻跳，相邻卡片屏幕边缘露出 */
 static void draw_menu(const ui_snapshot_t *s, uint32_t now_ms)
 {
-  static const char *const card_names[UI_MENU_COUNT] = {"DRIVE", "SELFCHECK"};
+  static const char *const card_names[UI_MENU_COUNT] = {"驾驶", "检查标定"};
+  static const uint8_t *const card_icons[UI_MENU_COUNT] = {
+    card_icon_drive, card_icon_wrench
+  };
   int8_t hop = ui_render_hop_offset(now_ms, s->sel_since_ms);
   int8_t slide = ui_render_slide_offset(now_ms, s->sel_since_ms);
   int16_t x_sel = (int16_t)(CARD_HOME_X + slide);
@@ -304,13 +332,13 @@ static void draw_menu(const ui_snapshot_t *s, uint32_t now_ms)
   {
     int16_t cx = (i == s->menu_sel) ? x_sel : x_other;
     int16_t cy = (i == s->menu_sel) ? y_sel : CARD_HOME_Y;
-    const char *name = card_names[i];
-    uint16_t name_w = oled_gfx_text6x12_width(name);
 
-    /* 图标占位：1px 边框（Task 9 视觉打磨补位图） */
-    oled_gfx_rect((int16_t)(cx + (CARD_W - 20) / 2), (int16_t)(cy + 3), 20, 12);
-    oled_gfx_text6x12((int16_t)(cx + ((int16_t)CARD_W - (int16_t)name_w) / 2), (int16_t)(cy + 18), name);
-    /* 选中/未选中卡片均为 1px 边框；选中边框随跳动偏移，视觉打磨在 Task 9 */
+    /* 图标：12×12 位图，卡片左侧（越出屏幕的部分由 oled_gfx 裁剪） */
+    oled_gfx_bitmap((int16_t)(cx + ICON_X_OFF), (int16_t)(cy + ICON_Y_OFF),
+                    ICON_W, ICON_H, card_icons[i]);
+    /* 中文名：16px 字形，垂直居中（cy+8..cy+23），最右字尾 cx+20+70=cx+90 < 右框 cx+91 */
+    oled_gfx_text16((int16_t)(cx + NAME_X_OFF), (int16_t)(cy + NAME_Y_OFF), card_names[i]);
+    /* 选中/未选中卡片均为 1px 边框；选中边框随跳动偏移 */
     oled_gfx_rect(cx, cy, CARD_W, CARD_H);
   }
 }
@@ -349,7 +377,9 @@ static void draw_submenu(const ui_snapshot_t *s)
   oled_gfx_fill_rect(126, thumb_y, 1, 14);
 }
 
-/* 驾驶仪表盘：顶栏 + 四轮行（固定数据布局，无动画） */
+/* 驾驶仪表盘：顶栏 + 四轮行（固定数据布局，无动画）。
+ * 未通过自检时正文改为居中中文提示"请先自检"（16px，只能放页面主体，
+ * 不得进顶栏——顶栏行高仅 12px），四轮数据此时未采认，不绘制。 */
 static void draw_drive(const ui_snapshot_t *s)
 {
   static const char wheel_names[4] = {'A', 'B', 'C', 'D'};
@@ -363,20 +393,12 @@ static void draw_drive(const ui_snapshot_t *s)
   ui_render_format_battery(buf, s->battery_valid, s->battery_mv);
   oled_gfx_text6x12(0, 0, buf);
 
-  /* 顶栏中部：未通过自检且未许可时显示提示（英文短句，中文字形 Task 9 补），
-   * 否则显示行驶状态 */
-  if (hint != 0U)
-  {
-    status = "NO CHK"; /* ≤7 字符，守住 x42..83 域，不与右栏重叠 */
-  }
-  else
-  {
-    status = drive_status_text(s->drive_status);
-  }
+  /* 顶栏中部：行驶状态（6×12，x42..83 域内） */
+  status = drive_status_text(s->drive_status);
   oled_gfx_text6x12(42, 0, status);
 
   /* 顶栏右侧优先级（spec §6）：故障 > 失联 > 等待回中 > 无参考 > REF。
-   * 未通过自检的提示占中部时，右侧仅在故障/失联时覆盖显示 */
+   * 未通过自检的提示占正文时，右侧仅在故障/失联时覆盖显示 */
   if (s->fault_mask != 0U)
   {
     right = "FAULT";
@@ -404,6 +426,13 @@ static void draw_drive(const ui_snapshot_t *s)
   if (right != NULL)
   {
     oled_gfx_text6x12(90, 0, right);
+  }
+
+  if (hint != 0U)
+  {
+    /* 中文提示居中于正文（"请先自检" 4 字 = 70px，x=29..98，y=26..41） */
+    draw_centered_16(26, "请先自检");
+    return;
   }
 
   for (i = 0; i < 4U; i++)
@@ -436,8 +465,8 @@ static void draw_check_confirm(const ui_snapshot_t *s)
   }
 }
 
-/* 自检进度：逐轮 等待/运行/通过/失败；动作中右侧画占位标记 */
-static void draw_check_run(const ui_snapshot_t *s)
+/* 自检进度：逐轮 等待/运行/通过/失败；动作中右上角转圈动画（12×12，100 ms/帧） */
+static void draw_check_run(const ui_snapshot_t *s, uint32_t now_ms)
 {
   static const char wheel_names[4] = {'A', 'B', 'C', 'D'};
   uint8_t i;
@@ -450,7 +479,7 @@ static void draw_check_run(const ui_snapshot_t *s)
   }
   if (s->action_busy != 0U)
   {
-    oled_gfx_rect(114, 0, 14, 11); /* 动画占位（Task 9 补转圈位图） */
+    oled_gfx_bitmap(114, 0, 12, 12, oled_font_spinner[(now_ms / 100U) % 8U]);
   }
 }
 
@@ -477,7 +506,7 @@ static void draw_check_result(const ui_snapshot_t *s)
     oled_gfx_text6x12(0, 0, "BATTERY");
     if (s->battery_valid == 0U)
     {
-      draw_centered_6x12(24, "NOT CONFIGURED");
+      draw_centered_16(24, "电池未配置");
     }
     else if (s->battery_error != 0U)
     {
@@ -571,7 +600,7 @@ void ui_render_draw(const ui_snapshot_t *snap, uint32_t now_ms)
       draw_check_confirm(snap);
       break;
     case UI_PAGE_CHECK_RUN:
-      draw_check_run(snap);
+      draw_check_run(snap, now_ms);
       break;
     case UI_PAGE_CHECK_RESULT:
       draw_check_result(snap);

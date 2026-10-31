@@ -17,15 +17,22 @@ CN_SOURCES = {
     'loading': 'CNST16x16.h',
     'start': 'CNZJ16x16.h',
     'items': 'CNZJ16x16_1.h',
+    'extra': 'CNADD16x16.h',
 }
 
-# (汉字, 来源, 序号)；17 个不重复字形（始 只在 wait 中登记，start 里的 始 与它逐字节相同）
+# (汉字, 来源, 序号)；28 个不重复字形
+# - 始 只在 wait 中登记，start 里的 始 与它逐字节相同
+# - extra 为 Task 9b 视觉打磨增补（tools/font_add_glyphs.py 从 Noto Sans CJK SC 渲染）：
+#   请先自检 / 电池未配置 / 卡片名 驾驶·检查标定 / 子菜单标题 检查与标定
 CN_GLYPHS_SPEC = [
     ('等', 'wait', 0), ('待', 'wait', 1), ('初', 'wait', 2), ('始', 'wait', 3), ('化', 'wait', 4),
     ('正', 'loading', 0), ('在', 'loading', 1), ('加', 'loading', 2), ('载', 'loading', 3),
     ('自', 'start', 0), ('检', 'start', 1), ('流', 'start', 2), ('程', 'start', 3),
     ('开', 'start', 4),
     ('电', 'items', 0), ('机', 'items', 1), ('池', 'items', 5),
+    ('请', 'extra', 0), ('先', 'extra', 1), ('查', 'extra', 2), ('与', 'extra', 3),
+    ('标', 'extra', 4), ('定', 'extra', 5), ('未', 'extra', 6), ('配', 'extra', 7),
+    ('置', 'extra', 8), ('驾', 'extra', 9), ('驶', 'extra', 10),
 ]
 
 
@@ -201,7 +208,7 @@ def _header():
 
 #include <stdint.h>
 
-#define OLED_FONT_CN_COUNT 17
+#define OLED_FONT_CN_COUNT %d
 #define OLED_FONT_TITLE_COUNT 9
 
 /* 6×12 ASCII，page 格式（2 页 × 6 列），bit0 为页内顶行 */
@@ -307,7 +314,7 @@ def _source():
 
 
 def generate():
-    return _header(), _source()
+    return _header() % len(CN_GLYPHS_SPEC), _source()
 
 
 if __name__ == '__main__':
