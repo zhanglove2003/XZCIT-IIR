@@ -5,18 +5,33 @@
 #include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "main.h"
 #include "cmsis_os.h"
 #include "tim.h"
 #include "ps2_gamepad.h"
 #include "boot_ui.h"
 #include "drive_ctrl.h"
+#include "power_monitor.h"
 #include "ui_model.h"
 #include "ui_render.h"
 #include "wheel_home.h"
 GPIO_TypeDef gpioa, gpiob, gpioc, gpiod, gpioe;
 TIM_HandleTypeDef htim2, htim3, htim4, htim5, htim8;
 volatile uint8_t boot_ui_ready=1;
+
+/* --- power_monitor 桩 --------------------------------------------------- */
+/* Ctrl 测试不链接 power_monitor.c：用可编程快照驱动 vdd_ok 门控
+ * （菜单自检的前置条件之一），ADC 行为由 tools/test_power_monitor.c 覆盖。 */
+static power_snapshot_t s_pm_stub;
+void power_monitor_init(void) { memset(&s_pm_stub, 0, sizeof s_pm_stub); }
+void power_monitor_step(uint32_t now_ms) { (void)now_ms; }
+const power_snapshot_t *power_monitor_get(void) { return &s_pm_stub; }
+static void pm_set_vdd_ok(uint8_t ok)
+{
+  s_pm_stub.vdd_valid = ok;
+  s_pm_stub.vdd_mv = (ok != 0U) ? 3300U : 0U;
+}
 
 /* 自检 UX 的桩：Ctrl 任务测试只关心电机输出，不关心 OLED 页面。 */
 void boot_ui_manual_begin(void) {}
@@ -65,6 +80,7 @@ static int hcycles;
 static uint32_t hmark;
 static uint16_t hbuttons = 0xFFFFU;
 static uint8_t hly = 128U;
+static uint8_t hlx = 128U;
 
 void StartCtrlTask(void *);
 void boot_ui_run(void) {}
@@ -95,29 +111,79 @@ static void asleep(void){
  for(int i=0;i<4;i++)assert(htim8.compare[i]==0);
 }
 
-/* Homing: long press records the reference, then a quarter turn on the two
- * rear encoders must produce corrective pulses on those two channels only. */
+/* Homing: navigate the menu to the manual-calibration page, long-press to
+ * record the reference (manual_calib_page gated), then request homing from
+ * the submenu with L1 — the same L1 press must not cancel it — and check a
+ * quarter turn on the two rear encoders produces corrective pulses only on
+ * those two channels. */
 static void home_script(void){
   wheel_home_output_t st;
+  ui_snapshot_t snap;
 
   hcycles++;
   switch(hstage){
-  case 0: /* 上一轮标定把状态机留在 WAIT_NEUTRAL，先回到 MANUAL */
-    hbuttons=0xFFFFU; hly=128U;
-    wheel_home_get_status(&st);
-    /* 重连/冷启动后的再武装要求摇杆回中且 SELECT 释放持续 100 ms，
-     * 每次轮询只推进 3 ms tick，因此要等约 34 轮才开始接受按键。 */
-    if(hcycles>=40 && st.mode==WHEEL_HOME_MANUAL){
-      assert(htim8.compare[0]==0U && htim8.compare[1]==0U);
-      assert(htim8.compare[2]==0U && htim8.compare[3]==0U);
-      hstage=1; hmark=tick;
+  case 0: /* 回中武装预热：等链路再武装完成、状态机 MANUAL、页面 BRAND */
+    hbuttons=0xFFFFU; hly=128U; hlx=128U;
+    if(hcycles>=40){
+      ui_snapshot_get(&snap);
+      wheel_home_get_status(&st);
+      if(st.mode==WHEEL_HOME_MANUAL && snap.page==UI_PAGE_BRAND){
+        assert(htim8.compare[0]==0U && htim8.compare[1]==0U);
+        assert(htim8.compare[2]==0U && htim8.compare[3]==0U);
+        hstage=1; hmark=tick;
+      }
     }
     break;
-  case 1: /* 长按 2500 ms */
-    hbuttons=0xFFFEU;
-    if((uint32_t)(tick-hmark)>=2500U){hstage=2;hmark=tick;}
+  case 1: /* R1：品牌页 → 主菜单 */
+    hbuttons=0xF7FFU;
+    ui_snapshot_get(&snap);
+    if(snap.page==UI_PAGE_MENU){ hstage=2; hmark=tick; }
     break;
-  case 2: /* 释放，确认参考已记录 */
+  case 2: /* 释放 R1 ≥3 稳定帧 */
+    hbuttons=0xFFFFU;
+    if((uint32_t)(tick-hmark)>=30U){ hstage=3; }
+    break;
+  case 3: /* 摇杆右移：选中"检查与标定" */
+    hbuttons=0xFFFFU; hlx=208U;
+    ui_snapshot_get(&snap);
+    if(snap.menu_sel==1U){ hstage=4; hmark=tick; }
+    break;
+  case 4: /* 摇杆回中 */
+    hbuttons=0xFFFFU; hlx=128U;
+    if((uint32_t)(tick-hmark)>=30U){ hstage=5; }
+    break;
+  case 5: /* L1：主菜单 → 子菜单 */
+    hbuttons=0xFBFFU;
+    ui_snapshot_get(&snap);
+    if(snap.page==UI_PAGE_SUBMENU){ hstage=6; hmark=tick; }
+    break;
+  case 6: /* 释放 L1 */
+    hbuttons=0xFFFFU;
+    if((uint32_t)(tick-hmark)>=30U){ hstage=7; }
+    break;
+  case 7: /* 摇杆下移到第 4 项（手动标定）：按住等 400/180ms 连移走完 */
+    hbuttons=0xFFFFU; hly=208U;
+    ui_snapshot_get(&snap);
+    if(snap.sub_sel==3U){ hstage=8; hmark=tick; }
+    break;
+  case 8: /* 摇杆回中 */
+    hbuttons=0xFFFFU; hly=128U;
+    if((uint32_t)(tick-hmark)>=30U){ hstage=9; }
+    break;
+  case 9: /* L1：子菜单 → 手动标定页（此后 Ctrl 喂 manual_calib_page=1） */
+    hbuttons=0xFBFFU;
+    ui_snapshot_get(&snap);
+    if(snap.page==UI_PAGE_MANUAL_CAL){ hstage=10; hmark=tick; }
+    break;
+  case 10: /* 释放 L1 */
+    hbuttons=0xFFFFU;
+    if((uint32_t)(tick-hmark)>=30U){ hstage=11; hmark=tick; }
+    break;
+  case 11: /* 长按 SELECT 2 s：手动标定页记录参考 */
+    hbuttons=0xFFFEU;
+    if((uint32_t)(tick-hmark)>=2500U){ hstage=12; hmark=tick; }
+    break;
+  case 12: /* 释放，确认参考已记录（驾驶页长按在此门控下不再写参考） */
     hbuttons=0xFFFFU;
     if((uint32_t)(tick-hmark)>=100U){
       wheel_home_get_status(&st);
@@ -125,49 +191,64 @@ static void home_script(void){
       /* 后轮编码器：C 读 TIM5、D 读 TIM4，各转 1/4 圈。
        * 16 位计数一次跳变必须 < 32768，故分两拍累加。 */
       htim5.counter=20000U; htim4.counter=20000U;
-      hstage=6; hcycles=0;
+      hstage=13; hcycles=0;
     }
     break;
-  case 6: /* 后续几拍补足到 1/4 圈（每拍 < 32768） */
+  case 13: /* 后续几拍补足到 1/4 圈（每拍 < 32768） */
     hbuttons=0xFFFFU;
     if(hcycles==1){htim5.counter=40000U; htim4.counter=40000U;}
     else if(hcycles>=3){
       htim5.counter=(uint32_t)(WHEEL_RR_CPR/4U);
       htim4.counter=(uint32_t)(WHEEL_LR_CPR/4U);
-      hstage=3; hmark=tick; hcycles=0;
+      hstage=14; hmark=tick; hcycles=0;
     }
     break;
-  case 3: /* 等采样看到新位置（MANUAL、四轮零输出）再短按 */
+  case 14: /* 等采样看到新位置（MANUAL、四轮零输出） */
     hbuttons=0xFFFFU;
     if(hcycles>=3){
       wheel_home_get_status(&st);
       assert(st.mode==WHEEL_HOME_MANUAL);
       assert(htim8.compare[0]==0U && htim8.compare[2]==0U);
-      hstage=4; hmark=tick;
+      hstage=15; hmark=tick;
     }
     break;
-  case 4: /* 短按 100 ms */
-    hbuttons=0xFFFEU;
-    if((uint32_t)(tick-hmark)>=100U){hstage=5;hmark=tick;hcycles=0;}
+  case 15: /* R1：手动标定页 → 回子菜单（sub_sel 保留 3） */
+    hbuttons=0xF7FFU;
+    ui_snapshot_get(&snap);
+    if(snap.page==UI_PAGE_SUBMENU){ hstage=16; hmark=tick; }
     break;
-  case 5: /* 释放 → 归位启动 */
+  case 16: /* 释放 R1 */
     hbuttons=0xFFFFU;
-    if(hcycles>=8){
-      puts("homing never started");assert(0);
-    }
+    if((uint32_t)(tick-hmark)>=30U){ hstage=17; }
     break;
-  default:
+  case 17: /* 摇杆上移一格：sub_sel 3 → 2（回到初始位） */
+    hbuttons=0xFFFFU; hly=48U;
+    ui_snapshot_get(&snap);
+    if(snap.sub_sel==2U){ hstage=18; hmark=tick; }
     break;
-  }
-
-  if(hstage>=5){
+  case 18: /* 摇杆回中 */
+    hbuttons=0xFFFFU; hly=128U;
+    if((uint32_t)(tick-hmark)>=30U){ hstage=19; }
+    break;
+  case 19: /* L1：子菜单提交归位（req.home_start），页面进 HOME */
+    hbuttons=0xFBFFU;
+    ui_snapshot_get(&snap);
+    if(snap.page==UI_PAGE_HOME){ hstage=20; hmark=tick; }
+    break;
+  case 20: /* 继续按住 L1：请求已 pending，同一次 L1 不得取消它 */
+    hbuttons=0xFBFFU;
+    if((uint32_t)(tick-hmark)>=60U){ hstage=21; hmark=tick; }
+    break;
+  case 21: /* 释放 L1 → 放行门（全释放 + 回中 100 ms）→ RUNNING */
+    hbuttons=0xFFFFU;
     wheel_home_get_status(&st);
     if(st.mode==WHEEL_HOME_RUNNING){
+      assert(st.result!=WHEEL_HOME_RESULT_CANCELLED);
       /* 误差只出现在 C/D 两轮：证明后轮读 TIM5/TIM4 且符号正确。 */
       assert(st.error[0]==0 && st.error[1]==0);
       assert(st.error[2]==(int64_t)(WHEEL_RR_CPR/4U));
       assert(st.error[3]==-(int64_t)(WHEEL_LR_CPR/4U));
-      /* 只有 C/D 通道出力（CH2/LR 通道 CH1），A/B 保持零。 */
+      /* 只有 C/D 通道出力（CH2/CH1），A/B 保持零。 */
       assert(htim8.compare[1]!=0U && htim8.compare[1]<=WHEEL_HOME_MAX_PULSE); /* CH2 = 右后 C */
       assert(htim8.compare[0]!=0U && htim8.compare[0]<=WHEEL_HOME_MAX_PULSE); /* CH1 = 左后 D */
       assert(htim8.compare[2]==0U);                     /* CH3 = 左前 B */
@@ -178,6 +259,12 @@ static void home_script(void){
        * “停止后关驱动使能”由 fault 场景（锁存）与 stop 场景覆盖。 */
       longjmp(done,1);
     }
+    if((uint32_t)(tick-hmark)>=1000U){
+      puts("homing never started");assert(0);
+    }
+    break;
+  default:
+    break;
   }
 }
 
@@ -325,6 +412,518 @@ static void ui_script(ps2_state_t *p)
   }
 }
 
+/* --- menu selfcheck scenario ('c') -------------------------------------- */
+/* 菜单发起自检：RUNNING 期间服务独占 command（驾驶推杆不出力），
+ * 推满摇杆触发越区取消；重跑全过后 5 s 结果窗口打开并超时回品牌页。 */
+static int selfcheck_test;
+static int cstage;
+static uint32_t cn;       /* 场景内 ps2_poll 帧计数 */
+static uint32_t cmark;    /* 阶段 tick 锚点 */
+static uint32_t crank_t0; /* 受试轮注入时序起点 */
+static uint8_t crank_on;
+static uint16_t cbuttons = 0xFFFFU;
+static uint8_t clx = 128U, cly = 128U;
+
+/* 自检反馈注入：按服务时序给受试轮"前进为正"的编码器增量。
+ * 每轮 500ms 前转(+) / 200ms 停 / 500ms 反转(−) / 200ms 停；
+ * raw 增量按各轮前进符号折算（RF/RR=-1，LF/LR=+1）。 */
+static void selfcheck_inject(uint32_t elapsed)
+{
+  static TIM_HandleTypeDef *const tim[4] = {&htim2, &htim3, &htim5, &htim4};
+  static const int sign[4] = {-1, 1, -1, 1};
+  uint32_t wheel = elapsed / 1400U;
+  uint32_t m = elapsed % 1400U;
+  int32_t fwd;
+
+  if (wheel >= 4U) { return; }
+  if (m < 500U) { fwd = 24; }
+  else if (m >= 700U && m < 1200U) { fwd = -24; }
+  else { fwd = 0; }
+  if (fwd != 0)
+  {
+    tim[wheel]->counter =
+        (uint16_t)(tim[wheel]->counter + (uint32_t)(fwd * sign[wheel]));
+  }
+}
+
+/* 注入中：除受试轮外任何通道都不得有输出（驾驶混合被服务独占挡住）。 */
+static void assert_selfcheck_output_pattern(void)
+{
+  ui_snapshot_t snap;
+  uint32_t wheel;
+  int i;
+
+  ui_snapshot_get(&snap);
+  assert(snap.drive_permitted == 0U);
+  wheel = (uint32_t)(tick - crank_t0) / 1400U;
+  if (wheel >= 4U) { wheel = 3U; }
+  for (i = 0; i < 4; i++)
+  {
+    /* 通道 i ↔ 轮 (3-i)：CH4=A(0)、CH3=B(1)、CH2=C(2)、CH1=D(3)。 */
+    uint32_t wch = 3U - (uint32_t)i;
+    if (wch != wheel)
+    {
+      assert(htim8.compare[i] == 0U);
+    }
+    else
+    {
+      assert(htim8.compare[i] == 0U || htim8.compare[i] == 8400U);
+    }
+  }
+}
+
+/* 导航辅助：品牌页到"重新自检"的确认页（SUBMENU sub_sel==1）。
+ * 每步以快照为转移条件，帧间留足 3 帧去抖。 */
+static void selfcheck_nav(int *stage, uint32_t *mark)
+{
+  ui_snapshot_t snap;
+
+  switch (*stage)
+  {
+  case 0: /* R1 → 主菜单 */
+    cbuttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MENU) { *stage = 1; *mark = tick; }
+    break;
+  case 1: /* 释放 R1 */
+    cbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - *mark) >= 30U) { *stage = 2; *mark = tick; }
+    break;
+  case 2: /* 右移选中"检查与标定" */
+    cbuttons = 0xFFFFU; clx = 208U;
+    ui_snapshot_get(&snap);
+    if (snap.menu_sel == 1U) { *stage = 3; *mark = tick; }
+    break;
+  case 3:
+    cbuttons = 0xFFFFU; clx = 128U;
+    if ((uint32_t)(tick - *mark) >= 30U) { *stage = 4; *mark = tick; }
+    break;
+  case 4: /* L1 → 子菜单 */
+    cbuttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_SUBMENU) { *stage = 5; *mark = tick; }
+    break;
+  case 5:
+    cbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - *mark) >= 30U) { *stage = 6; *mark = tick; }
+    break;
+  case 6: /* 下移到"重新自检"（sub_sel 可能被上一次导航保留为 1：先看快照再推杆，
+           * 避免滞后一帧的快照让已到位的条目又被连移推过一格） */
+    cbuttons = 0xFFFFU;
+    ui_snapshot_get(&snap);
+    if (snap.sub_sel == 1U)
+    {
+      cly = 128U;
+      *stage = 7; *mark = tick;
+    }
+    else
+    {
+      cly = 208U;
+    }
+    break;
+  case 7:
+    cbuttons = 0xFFFFU; cly = 128U;
+    if ((uint32_t)(tick - *mark) >= 30U) { *stage = 8; *mark = tick; }
+    break;
+  case 8: /* L1 → 确认页 */
+    cbuttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_CHECK_CONFIRM) { *stage = 9; *mark = tick; }
+    break;
+  case 9:
+    cbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - *mark) >= 30U) { *stage = 10; *mark = tick; }
+    break;
+  case 10: /* 下移焦点到"开始" */
+    cbuttons = 0xFFFFU; cly = 208U;
+    ui_snapshot_get(&snap);
+    if (snap.confirm_focus == 1U) { *stage = 11; *mark = tick; }
+    break;
+  case 11:
+    cbuttons = 0xFFFFU; cly = 128U;
+    if ((uint32_t)(tick - *mark) >= 30U) { *stage = 12; *mark = tick; }
+    break;
+  default:
+    break;
+  }
+}
+
+static void selfcheck_script(ps2_state_t *p)
+{
+  ui_snapshot_t snap;
+
+  (void)p;
+  cn++;
+  switch (cstage)
+  {
+  case 0: /* 冷启动再武装预热；完成后进入 nav case 0（按住 R1 等进主菜单） */
+    cbuttons = 0xFFFFU; clx = 128U; cly = 128U;
+    if (cn >= 40U)
+    {
+      ui_snapshot_get(&snap);
+      /* nav case 0 按住 R1 期间快照有一帧滞后：BRAND→MENU 的过渡帧
+       * 两个页面都合法，其余页面视为跑飞。 */
+      assert(snap.page == UI_PAGE_BRAND || snap.page == UI_PAGE_MENU);
+      selfcheck_nav(&cstage, &cmark);
+    }
+    break;
+  case 1: case 2: case 3: case 4: case 5: case 6: case 7: case 8:
+  case 9: case 10: case 11:
+    selfcheck_nav(&cstage, &cmark);
+    break;
+  case 12: /* L1：确认页"开始" → 自检启动（RUNNING） */
+    cbuttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_CHECK_RUN)
+    {
+      cstage = 13; cmark = tick;
+      assert(snap.action_busy != 0U || snap.selfcheck_state[0] != 0U);
+    }
+    break;
+  case 13: /* 释放 L1，等服务真跑起来（state[0]==1）后开始注入 */
+    cbuttons = 0xFFFFU;
+    ui_snapshot_get(&snap);
+    if (snap.selfcheck_state[0] == 1U)
+    {
+      crank_on = 1U;
+      crank_t0 = tick;
+      cstage = 14; cmark = tick;
+    }
+    break;
+  case 14: /* RUNNING 前段（回中推杆不出力）+ 后段推满（越区取消） */
+    if ((uint32_t)(tick - cmark) < 300U)
+    {
+      selfcheck_inject((uint32_t)(tick - crank_t0));
+      assert_selfcheck_output_pattern();
+    }
+    else if ((uint32_t)(tick - cmark) < 400U)
+    {
+      /* 推满前进：不得产生任何驾驶出力；页面模型随即取消自检。 */
+      cly = 0U;
+      selfcheck_inject((uint32_t)(tick - crank_t0));
+      assert_selfcheck_output_pattern();
+    }
+    else
+    {
+      ui_snapshot_get(&snap);
+      assert(snap.page == UI_PAGE_CHECK_CONFIRM); /* 越区取消已回退 */
+      for (int i = 0; i < 4; i++)
+      {
+        assert(htim8.compare[i] == 0U);
+        assert(snap.selfcheck_state[i] != 1U); /* 没有轮还在"运行" */
+      }
+      assert(snap.selfcheck_state[0] == 3U);   /* 受试轮定格失败 */
+      cly = 128U;
+      cstage = 20; cmark = tick;
+    }
+    break;
+  case 20: /* 取消后从确认页重跑：等按键滤波/摇杆计时清干净 */
+    cbuttons = 0xFFFFU; clx = 128U; cly = 128U;
+    if ((uint32_t)(tick - cmark) >= 30U) { cstage = 21; }
+    break;
+  case 21: /* 确认页：焦点必须回到"开始"（满推杆可能已把它拨回取消） */
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_CHECK_CONFIRM && snap.confirm_focus == 1U)
+    {
+      cstage = 22; cmark = tick;
+    }
+    else
+    {
+      cly = 208U; /* 下移焦点到"开始" */
+      ui_snapshot_get(&snap);
+      if (snap.confirm_focus == 1U) { cly = 128U; cstage = 22; cmark = tick; }
+    }
+    break;
+  case 22: /* 摇杆回中片刻（自检前置要求四轴回中），L1 重新发起 */
+    cbuttons = 0xFBFFU; cly = 128U;
+    if ((uint32_t)(tick - cmark) >= 30U)
+    {
+      ui_snapshot_get(&snap);
+      if (snap.page == UI_PAGE_CHECK_RUN) { cstage = 23; cmark = tick; }
+    }
+    break;
+  case 23: /* 释放 L1，等服务真跑起来（state[0]==1）后开始注入 */
+    cbuttons = 0xFFFFU;
+    ui_snapshot_get(&snap);
+    if (snap.selfcheck_state[0] == 1U)
+    {
+      crank_on = 1U;
+      crank_t0 = tick;
+      cstage = 24;
+    }
+    break;
+  case 24: /* 全程注入直到四轮全部通过 */
+    if (crank_on != 0U)
+    {
+      selfcheck_inject((uint32_t)(tick - crank_t0));
+    }
+    ui_snapshot_get(&snap);
+    if (snap.selfcheck_state[0] == 2U && snap.selfcheck_state[1] == 2U &&
+        snap.selfcheck_state[2] == 2U && snap.selfcheck_state[3] == 2U)
+    {
+      crank_on = 0U;
+      cmark = tick;
+      cstage = 26; /* 页面转移比服务完成晚一帧：先等 CHECK_RESULT 落地 */
+    }
+    break;
+  case 26: /* 全过当拍窗口已开（Ctrl 同拍置位），页面下一拍自动转结果页 */
+    ui_snapshot_get(&snap);
+    assert(snap.result_window_open == 1U);
+    if (snap.page == UI_PAGE_CHECK_RESULT)
+    {
+      cmark = tick;
+      cstage = 25;
+    }
+    else
+    {
+      assert(snap.page == UI_PAGE_CHECK_RUN); /* 只允许这一帧滞后 */
+      assert((uint32_t)(tick - cmark) < 200U);
+    }
+    break;
+  case 25: /* 窗口内：5 s 后必须关闭并自动回品牌页 */
+    cbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - cmark) < 4800U)
+    {
+      ui_snapshot_get(&snap);
+      assert(snap.result_window_open == 1U);
+    }
+    else if ((uint32_t)(tick - cmark) >= 5400U)
+    {
+      ui_snapshot_get(&snap);
+      assert(snap.result_window_open == 0U);
+      assert(snap.page == UI_PAGE_BRAND);
+      longjmp(done, 1);
+    }
+    break;
+  default:
+    break;
+  }
+}
+
+/* --- failed-recheck latch scenario ('x') -------------------------------- */
+/* 先制造 NO FB 锁存；菜单发起的自检失败（无反馈）不得清锁存、不得出力；
+ * 全过 + 回到驾驶页回中后才恢复输出。 */
+static int relatch_test;
+static int xstage;
+static uint32_t xn;
+static uint32_t xmark;
+static uint32_t xcrank_t0;
+static uint8_t xcrank_on;
+static uint16_t xbuttons = 0xFFFFU;
+static uint8_t xlx = 128U, xly = 128U;
+
+static void relatch_script(ps2_state_t *p)
+{
+  ui_snapshot_t snap;
+
+  (void)p;
+  xn++;
+  switch (xstage)
+  {
+  case 0: /* 冷启动再武装预热 */
+    xbuttons = 0xFFFFU; xlx = 128U; xly = 128U;
+    if (xn >= 40U) { xstage = 1; }
+    break;
+  case 1: /* R1 → 主菜单 */
+    xbuttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MENU) { xstage = 2; xmark = tick; }
+    break;
+  case 2:
+    xbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - xmark) >= 30U) { xstage = 3; }
+    break;
+  case 3: /* L1（menu_sel==0）→ 驾驶页 */
+    xbuttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_DRIVE) { xstage = 4; xmark = tick; }
+    break;
+  case 4:
+    xbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - xmark) >= 30U) { xstage = 5; xmark = tick; }
+    break;
+  case 5: /* 驾驶页回中武装 ≥100 ms 后推满：反馈为零 → NO FB 锁存 */
+    if ((uint32_t)(tick - xmark) < 150U) { /* 武装中 */ }
+    else if ((uint32_t)(tick - xmark) < 300U)
+    {
+      xly = 0U;
+      /* 比较器滞后一帧：满杆推入后的下一拍才检查出力。 */
+      if ((uint32_t)(tick - xmark) >= 156U)
+      {
+        assert(htim8.compare[0] > 0U); /* 先确认真的在出力 */
+      }
+    }
+    else if ((uint32_t)(tick - xmark) < 1200U)
+    {
+      xly = 0U; /* 宽限 300 + 窗口 300 内保持满输出零反馈 */
+    }
+    else
+    {
+      int i;
+      xly = 128U;
+      for (i = 0; i < 4; i++) { assert(htim8.compare[i] == 0U); }
+      assert(!(gpiob.ODR & GPIO_PIN_12)); /* 锁存后停止流程关使能 */
+      ui_snapshot_get(&snap);
+      assert(snap.fault_mask != 0U);
+      xstage = 6; xmark = tick;
+    }
+    break;
+  case 6: /* R1：驾驶页 → 主菜单，然后走自检导航（菜单口径一致） */
+    xbuttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MENU) { xstage = 7; xmark = tick; }
+    break;
+  case 7:
+    xbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - xmark) >= 30U)
+    {
+      /* 复用自检导航：从主菜单起到确认页（stage 2..11）。 */
+      cstage = 2; cmark = tick;
+      cbuttons = 0xFFFFU; clx = 128U; cly = 128U;
+      xstage = 8;
+    }
+    break;
+  case 8: /* 导航推进（借 selfcheck_nav，输出借 c 变量） */
+    selfcheck_nav(&cstage, &cmark);
+    xbuttons = cbuttons; xlx = clx; xly = cly;
+    if (cstage == 12) { xstage = 9; xmark = tick; }
+    break;
+  case 9: /* L1：发起"失败的自检"（不注入反馈） */
+    xbuttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_CHECK_RUN) { xstage = 10; xmark = tick; }
+    break;
+  case 10: /* 等失败自检跑完（约 5.6 s）：锁存必须还在 */
+    xbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - xmark) >= 6300U)
+    {
+      ui_snapshot_get(&snap);
+      for (int i = 0; i < 4; i++)
+      {
+        assert(snap.selfcheck_state[i] == 3U); /* 全轮 NO FB */
+      }
+      assert(snap.fault_mask != 0U);      /* 失败不清已锁存故障 */
+      assert(snap.result_window_open == 1U);
+      xstage = 11; xmark = tick;
+    }
+    break;
+  case 11: /* 结果页 R1 → 品牌页（结果页 back_page 已被自动转移改成 BRAND） */
+    xbuttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_BRAND) { xstage = 12; xmark = tick; }
+    break;
+  case 12:
+    xbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - xmark) >= 30U) { xstage = 13; }
+    break;
+  case 13: /* 品牌页 R1 → 主菜单，再走一遍自检导航（这次注入反馈） */
+    xbuttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MENU) { xstage = 14; xmark = tick; }
+    break;
+  case 14:
+    xbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - xmark) >= 30U)
+    {
+      cstage = 2; cmark = tick;
+      cbuttons = 0xFFFFU; clx = 128U; cly = 128U;
+      xstage = 15;
+    }
+    break;
+  case 15:
+    selfcheck_nav(&cstage, &cmark);
+    xbuttons = cbuttons; xlx = clx; xly = cly;
+    if (cstage == 12) { xstage = 16; xmark = tick; }
+    break;
+  case 16: /* L1：发起"通过的自检" */
+    xbuttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_CHECK_RUN) { xstage = 17; xmark = tick; }
+    break;
+  case 17:
+    xbuttons = 0xFFFFU;
+    ui_snapshot_get(&snap);
+    if (snap.selfcheck_state[0] == 1U)
+    {
+      xcrank_on = 1U;
+      xcrank_t0 = tick;
+      xstage = 18;
+    }
+    break;
+  case 18: /* 全程注入直到四轮全过：此时故障锁存才被清 */
+    if (xcrank_on != 0U)
+    {
+      selfcheck_inject((uint32_t)(tick - xcrank_t0));
+    }
+    ui_snapshot_get(&snap);
+    if (snap.selfcheck_state[0] == 2U && snap.selfcheck_state[1] == 2U &&
+        snap.selfcheck_state[2] == 2U && snap.selfcheck_state[3] == 2U)
+    {
+      xcrank_on = 0U;
+      assert(snap.fault_mask == 0U); /* 全过才清锁存（清障与服务完成同拍） */
+      xstage = 26; /* 结果窗口的 DONE 沿下一拍才被 Ctrl 补记：延迟一拍再断言 */
+    }
+    break;
+  case 26:
+    ui_snapshot_get(&snap);
+    assert(snap.result_window_open == 1U);
+    xstage = 19; xmark = tick;
+    break;
+  case 19: /* 结果页 R1 → 品牌页 → 主菜单 → 驾驶页 */
+    xbuttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_BRAND) { xstage = 20; xmark = tick; }
+    break;
+  case 20:
+    xbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - xmark) >= 30U) { xstage = 21; }
+    break;
+  case 21: /* R1 → 主菜单 */
+    xbuttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MENU) { xstage = 22; xmark = tick; }
+    break;
+  case 22:
+    xbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - xmark) >= 30U) { xstage = 27; }
+    break;
+  case 27: /* 菜单选择被之前的导航留在 1：左移回"驾驶" */
+    xbuttons = 0xFFFFU;
+    ui_snapshot_get(&snap);
+    if (snap.menu_sel == 0U) { xstage = 28; xmark = tick; }
+    else { xlx = 48U; }
+    break;
+  case 28: /* 摇杆回中 */
+    xbuttons = 0xFFFFU; xlx = 128U;
+    if ((uint32_t)(tick - xmark) >= 30U) { xstage = 23; }
+    break;
+  case 23: /* L1（menu_sel==0）→ 驾驶页 */
+    xbuttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_DRIVE) { xstage = 24; xmark = tick; }
+    break;
+  case 24:
+    xbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - xmark) >= 30U) { xstage = 25; xmark = tick; }
+    break;
+  case 25: /* 回中武装 ≥100 ms 后推满：输出必须已恢复 */
+    if ((uint32_t)(tick - xmark) < 150U) { /* 武装中 */ }
+    else
+    {
+      xly = 0U;
+      /* 比较器滞后一帧：满杆推入后的下一拍才检查出力。 */
+      if ((uint32_t)(tick - xmark) >= 156U)
+      {
+        assert(htim8.compare[0] > 0U); /* 全过 + 回中：恢复出力 */
+        longjmp(done, 1);
+      }
+    }
+    break;
+  default:
+    break;
+  }
+}
+
 uint8_t ps2_poll(ps2_state_t *p){
  if(stop_test){
    /* 导航到驾驶页并等回中武装后推满出力，再回中让停止流程关使能。 */
@@ -398,6 +997,16 @@ uint8_t ps2_poll(ps2_state_t *p){
   * 该预滚对所有冷启动场景生效（含 reconnect 的首段），避免推杆本身
   * 打断居中计时导致再武装永远无法完成。 */
  if(ui_test){ ui_script(p); tick+=3U; return PS2_FRAME_OK; }
+ if(selfcheck_test){
+   selfcheck_script(p);
+   p->buttons=cbuttons;p->lx=clx;p->ly=cly;p->rx=128U;p->ry=128U;
+   tick+=3U;return PS2_FRAME_OK;
+ }
+ if(relatch_test){
+   relatch_script(p);
+   p->buttons=xbuttons;p->lx=xlx;p->ly=xly;p->rx=128U;p->ry=128U;
+   tick+=3U;return PS2_FRAME_OK;
+ }
  if(!home_test && !fault_test && !reconnect_seen){
    static uint32_t preroll;
    if(preroll < 40U){
@@ -407,7 +1016,7 @@ uint8_t ps2_poll(ps2_state_t *p){
      return PS2_FRAME_OK;
    }
  }
- if(home_test){home_script();p->buttons=hbuttons;p->lx=128U;p->ly=hly;
+ if(home_test){home_script();p->buttons=hbuttons;p->lx=hlx;p->ly=hly;
    p->rx=128U;p->ry=128U;tick+=3U;return PS2_FRAME_OK;}
  current_phase=phase++;
  if(current_phase==0)first_poll_tick=tick;
@@ -488,6 +1097,18 @@ int main(int argc, char **argv){
    ui_test=1;tick=0U;
    if(!setjmp(done))StartCtrlTask(0);
    puts("ctrl ui snapshot / page-gated drive / dual-axis mix OK");return 0;
+ }
+ if(argc>1 && argv[1][0]=='c'){
+   selfcheck_test=1;tick=0U;cn=0U;cstage=0;crank_on=0U;
+   pm_set_vdd_ok(1U);
+   if(!setjmp(done))StartCtrlTask(0);
+   puts("ctrl menu selfcheck / service-owned output / 5s window OK");return 0;
+ }
+ if(argc>1 && argv[1][0]=='x'){
+   relatch_test=1;tick=0U;xn=0U;xstage=0;xcrank_on=0U;
+   pm_set_vdd_ok(1U);
+   if(!setjmp(done))StartCtrlTask(0);
+   puts("ctrl failed recheck keeps latch / pass+neutral restores OK");return 0;
  }
  if(!setjmp(done))StartCtrlTask(0);
  reconnect_test=1;reconnect_seen=1;phase=0;tick=1000;

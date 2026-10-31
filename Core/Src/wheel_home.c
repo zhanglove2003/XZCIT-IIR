@@ -197,6 +197,14 @@ void wheel_home_request_home(wheel_home_t *s)
     return;
   }
 
+  /* 模式守卫：只有 MANUAL 模式才受理菜单请求。RUNNING 中忽略（不打断
+   * 正在进行的归位、不覆写 result）；WAIT_NEUTRAL/BUTTON_HELD 同样忽略，
+   * 等回到 MANUAL 后由页面重新发起。 */
+  if (s->mode != WHEEL_HOME_MANUAL)
+  {
+    return;
+  }
+
   /* 无参考：请求直接以 NO_REF 落地，不置 pending、不动轮。
    * 有参考：置 pending 并复用 require_release——提交键还按着的时候，
    * 按键事件一律不进状态机，避免菜单那一下按键泄漏成手势。 */

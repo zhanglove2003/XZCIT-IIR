@@ -27,7 +27,9 @@
 /* USER CODE BEGIN Includes */
 #include "boot_ui.h"
 #include "drive_ctrl.h"
+#include "power_monitor.h"
 #include "ps2_gamepad.h"
+#include "selfcheck_service.h"
 #include "tim.h"
 #include "ui_model.h"
 #include "ui_render.h"
@@ -61,6 +63,12 @@ const osThreadAttr_t selfCheckTask_attributes = {
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+osThreadId_t powerTaskHandle;
+const osThreadAttr_t powerTask_attributes = {
+  .name = "powerTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityBelowNormal,
+};
 osThreadId_t ctrlTaskHandle;
 const osThreadAttr_t ctrlTask_attributes = {
   .name = "ctrlTask",
@@ -80,6 +88,7 @@ const osThreadAttr_t defaultTask_attributes = {
 /* USER CODE BEGIN FunctionPrototypes */
 void StartSelfCheckTask(void *argument);
 void StartCtrlTask(void *argument);
+void StartPowerTask(void *argument);
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void *argument);
@@ -123,7 +132,9 @@ void vApplicationMallocFailedHook(void)
   */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
-
+  /* 电源监测状态先归零：powerTask 与 Ctrl/UI 都读这份快照，
+   * 必须在两个任务启动之前初始化完毕。 */
+  power_monitor_init();
   /* USER CODE END Init */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -147,6 +158,7 @@ void MX_FREERTOS_Init(void) {
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
+  powerTaskHandle = osThreadNew(StartPowerTask, NULL, &powerTask_attributes);
   selfCheckTaskHandle = osThreadNew(StartSelfCheckTask, NULL, &selfCheckTask_attributes);
   ctrlTaskHandle = osThreadNew(StartCtrlTask, NULL, &ctrlTask_attributes);
   /* USER CODE END RTOS_THREADS */
@@ -184,6 +196,18 @@ void StartSelfCheckTask(void *argument)
 {
   (void)argument;
   boot_ui_run();
+}
+
+/* 电源监测：ADC 采样收敛在 power_monitor 内部，这里只给 50 ms 节拍。
+ * 低于 Ctrl 的优先级：采样偶尔迟到几拍不影响任何安全判定。 */
+void StartPowerTask(void *argument)
+{
+  (void)argument;
+  for (;;)
+  {
+    power_monitor_step(HAL_GetTick());
+    osDelay(50);
+  }
 }
 
 /* PS2 手柄 + 一键归位 → 四轮驱动。自检结束（boot_ui_ready）前不碰电机；
@@ -274,6 +298,16 @@ static void ctrl_ui_publish(const ui_snapshot_t *snap)
   s_ui_snap_seq = s_ui_snap_seq + 1U; /* 变偶数：稳定 */
 }
 
+/* power_monitor_get() 返回的是 powerTask 正在写的内部指针：
+ * 跨任务读必须用临界区做一次性结构体拷贝防撕裂。快照只有十来个字，
+ * 关调度拷贝的代价远低于引入一套 seq-lock 的复杂度。 */
+static void ctrl_power_read(power_snapshot_t *out)
+{
+  taskENTER_CRITICAL();
+  *out = *power_monitor_get();
+  taskEXIT_CRITICAL();
+}
+
 /* 驾驶许可的回中武装：进入驾驶页重新起算，摇杆出杆就重置计时，
  * 连续回中满 CTRL_REARM_MS 才武装；武装后出杆即驾驶（否则推杆本身
  * 永远打断计时，车没法开），离开驾驶页立即解除。 */
@@ -309,6 +343,17 @@ static int32_t s_ctrl_last_pwm[4];   /* 上一轮施加的 PWM，用于换向判
 static uint32_t s_ctrl_selfcheck_seq; /* 已消费的自检轮次 */
 static uint32_t s_ctrl_handoff_seq;   /* 已消费的电机移交轮次 */
 static uint8_t s_ctrl_tracker_ready;
+
+/* 菜单发起的自检服务：Ctrl 每轮推进，RUNNING 时独占 command。
+ * seq 变化 = 一轮完整跑完（通过与否都算，标定模式不加）；
+ * 每次进入 DONE（含取消）开 5 s 标定入口窗口，用真实毫秒计时。 */
+static selfcheck_service_t s_ctrl_check;
+static uint32_t s_ctrl_check_seq;           /* 已消费的服务轮次 */
+static selfcheck_phase_t s_ctrl_check_prev; /* 上一拍 phase（DONE 沿检测） */
+static uint32_t s_ctrl_check_done_ms;       /* 最近一次进入 DONE 的时刻 */
+static uint8_t s_ctrl_action_busy;          /* 上一拍自检/归位是否在跑 */
+static uint8_t s_ctrl_home_busy;            /* 上一拍归位状态机是否 RUNNING */
+#define SELFCHECK_RESULT_WINDOW_MS 5000U
 
 void wheel_home_get_status(wheel_home_output_t *out)
 {
@@ -609,6 +654,9 @@ void StartCtrlTask(void *argument)
 
   /* 页面模型只被本任务推进：这里初始化一次，之后每轮 ui_model_step。 */
   ui_model_init(&s_ui_model, HAL_GetTick());
+  /* 菜单自检服务同属本任务私有状态：先归零再进循环。 */
+  selfcheck_service_init(&s_ctrl_check);
+  s_ctrl_check_prev = SELFCHECK_IDLE;
 
   for (;;)
   {
@@ -619,9 +667,11 @@ void StartCtrlTask(void *argument)
     uint8_t frame_ok = 0U;
     ps2_state_t pad;
     ui_model_req_t ureq;
+    power_snapshot_t pw;
     uint8_t ui_cancel_motion = 0U;
     uint8_t ui_action_busy = 0U;
     uint8_t drive_permitted = 0U;
+    uint8_t result_window = 0U;
 
     /* 0) 自检后的 USER 窗口/手动对齐页由 UI 任务（boot_ui_run）独占推进：
      *    manual_ref 去抖/长按状态、页面绘制、oled_flush 都只在那一个任务里发生。
@@ -634,6 +684,10 @@ void StartCtrlTask(void *argument)
      * allow_output = 自检是否已通过，未通过时连 PWM 定时器都不启动。 */
     ctrl_link_service(&pad, &linked, &frame_ok, &last_good_tick, &awake,
                       (uint8_t)(boot_ui_motor_owner == BOOT_UI_OWNER_CTRL));
+
+    /* 电源快照：powerTask 并发写 power_monitor 的内部状态，跨任务读
+     * 必须临界区拷贝（见 ctrl_power_read）。本拍供自检前置与 UI 快照用。 */
+    ctrl_power_read(&pw);
 
     /* 1) 采样：所有模式都做（标定期间也要维持位置连续性）。
      *    ready=0 也要做——结果页的 5 秒窗口在 ui_main_page() 之前就开了，
@@ -648,6 +702,7 @@ void StartCtrlTask(void *argument)
     in.frame_valid = 0U;
     in.feedback_valid = 1U;
     in.calibration_mode = drive_calibration_mode;
+    in.manual_calib_page = 0U; /* 栈变量显式清 0，页面判出后下面按真值赋 */
     in.buttons = 0xFFFFU;
     in.lx = CTRL_STICK_CENTER;
     in.ly = CTRL_STICK_CENTER;
@@ -680,10 +735,27 @@ void StartCtrlTask(void *argument)
     }
 
     /* 2b) 页面模型推进：喂原始帧（按键/摇杆无论自检是否通过都要能导航）。
-     *     req 每拍由模型清零（单发语义），必须在本拍立即消费：
-     *     本任务只处理 cancel_motion（清驾驶命令），其余请求 Task 6/7 接。 */
+     *     req 每拍由模型清零（单发语义），必须在本拍立即消费。 */
     {
       ui_model_in_t uin;
+
+      /* 自检 DONE 的 5 s 标定入口窗口：真实毫秒计时。
+       * 进入 DONE 的沿在这里补记（cancel 发生在本块内，step 里的
+       * 完成沿下一拍补记，误差一个控制周期，对 5 s 窗口无影响）。 */
+      if (s_ctrl_check.phase != s_ctrl_check_prev)
+      {
+        if (s_ctrl_check.phase == SELFCHECK_DONE)
+        {
+          s_ctrl_check_done_ms = HAL_GetTick();
+        }
+        s_ctrl_check_prev = s_ctrl_check.phase;
+      }
+      result_window = (uint8_t)(
+          (s_ctrl_check.phase == SELFCHECK_DONE) &&
+          ((uint32_t)(HAL_GetTick() - s_ctrl_check_done_ms) <
+           SELFCHECK_RESULT_WINDOW_MS)
+              ? 1U
+              : 0U);
 
       uin.buttons = in.buttons;
       uin.lx = in.lx;
@@ -695,14 +767,56 @@ void StartCtrlTask(void *argument)
               ? 1U
               : 0U);
       uin.frame_valid = in.frame_valid;
-      /* 自检/归位联动的回喂字段本任务恒为 0：Task 6/7 接管后再喂真值。 */
-      uin.selfcheck_passed = 0U;
-      uin.action_busy = 0U;
-      uin.result_window_open = 0U;
+      /* 回喂：上电自检结果、上一拍自检/归位占用、自检结果窗口。 */
+      uin.selfcheck_passed = boot_ui_selfcheck_passed;
+      uin.action_busy = s_ctrl_action_busy;
+      uin.result_window_open = result_window;
       uin.now_ms = HAL_GetTick();
       ui_model_step(&s_ui_model, &uin, &ureq);
       ui_cancel_motion = ureq.cancel_motion;
-      ui_action_busy = uin.action_busy; /* 本任务恒 0，Task 6/7 接真值 */
+      ui_action_busy = uin.action_busy;
+
+      /* 手动标定页作用域：只有该页长按 SELECT 才允许记录参考。
+       * 必须每轮显式赋值——in 是未清零的栈变量（审查确认项）。 */
+      in.manual_calib_page =
+          (s_ui_model.page == UI_PAGE_MANUAL_CAL) ? 1U : 0U;
+
+      /* --- 请求消费（单发，当拍生效） ------------------------------ */
+      /* 自检前置：帧有效 + 四轴回中 + 电源正常 + 非标定模式，
+       * 且自检/归位都不在运行（服务独占电机，不叠加）。 */
+      if (ureq.selfcheck_start != 0U)
+      {
+        if (in.frame_valid != 0U &&
+            ctrl_sticks_centered_raw(in.lx, in.ly, in.rx, in.ry) != 0U &&
+            pw.vdd_valid != 0U && drive_calibration_mode == 0U &&
+            s_ctrl_check.phase != SELFCHECK_RUNNING &&
+            s_ctrl_home_busy == 0U)
+        {
+          selfcheck_service_request(&s_ctrl_check, HAL_GetTick());
+        }
+      }
+      /* 归位请求：无参考/非 MANUAL 模式由 wheel_home 自己拒绝落地。 */
+      if (ureq.home_start != 0U)
+      {
+        wheel_home_request_home(&s_ctrl_home);
+      }
+      /* 取消时序：服务 cancel 必须先于本拍 step——模块 cancel 不清
+       * 调用方缓冲，先取消后 step，本拍 command 天然归零（审查确认的
+       * 一拍窗口在这里关死）。 */
+      if (ureq.cancel_motion != 0U)
+      {
+        selfcheck_service_cancel(&s_ctrl_check);
+      }
+      /* 手动标定页长按记录参考：帧有效 + 回中由这里核对，
+       * 静止计时已由每轮的 track_manual_still 累积。 */
+      if (ureq.record_ref != 0U)
+      {
+        if (in.frame_valid != 0U && ctrl_sticks_centered(&in) != 0U)
+        {
+          (void)wheel_home_record_manual_reference(&s_ctrl_home, &in,
+                                                   HAL_GetTick());
+        }
+      }
     }
 
     /* 2c) 驾驶许可仲裁：驾驶页 + 自检通过 + 无故障 + 回中武装。
@@ -756,6 +870,24 @@ void StartCtrlTask(void *argument)
       (void)wheel_home_track_manual_still(&s_ctrl_home, &arbitrate,
                                           HAL_GetTick());
     }
+
+    /* 3b) 菜单自检服务：驾驶仲裁之前推进。RUNNING 时 command 由服务独占
+     *     （±SELFCHECK_PWM_PULSE，其余轮 0），第 4 步不得再混合驾驶输出。
+     *     运行中摇杆越出驾驶死区兜底取消（页面模型在动作页已有一路）；
+     *     取消当拍立即清缓冲——cancel 不清调用方的 command。 */
+    if (s_ctrl_check.phase == SELFCHECK_RUNNING &&
+        ctrl_sticks_centered_raw(in.lx, in.ly, in.rx, in.ry) == 0U)
+    {
+      selfcheck_service_cancel(&s_ctrl_check);
+      for (w = 0U; w < 4U; w++)
+      {
+        command[w] = 0;
+      }
+    }
+    else
+    {
+      selfcheck_service_step(&s_ctrl_check, in.delta, HAL_GetTick(), command);
+    }
     /* 快照带上按键与帧有效性：UI 顶栏/手动页只读这里。 */
     out.buttons = in.buttons;
     out.frame_valid = in.frame_valid;
@@ -785,6 +917,11 @@ void StartCtrlTask(void *argument)
       {
         command[w] = 0;
       }
+    }
+    else if (s_ctrl_check.phase == SELFCHECK_RUNNING)
+    {
+      /* 自检独占电机：command 已由 3b 的服务本拍写入，驾驶混合与
+       * 归位脉冲都不插手；取消当拍已由 3b/ui_model 清零。 */
     }
     else if (out.mode == WHEEL_HOME_MANUAL)
     {
@@ -857,6 +994,20 @@ void StartCtrlTask(void *argument)
         s_ctrl_health_ready = 1U;
       }
 
+      /* 菜单自检服务的同一口径：seq 变化 = 完整跑完一轮（跑完即 +1，
+       * 标定模式不加、自然豁免）。全过才清锁存；失败/取消响一声提示。
+       * 已锁存的旧故障不会被一次失败的自检清掉（clear 内部按 passed 把关）。 */
+      if (s_ctrl_check.seq != s_ctrl_check_seq)
+      {
+        s_ctrl_check_seq = s_ctrl_check.seq;
+        motor_health_clear_after_selfcheck(&s_ctrl_health, s_ctrl_check.passed);
+        s_ctrl_health_ready = 1U;
+        if (s_ctrl_check.passed == 0U)
+        {
+          buzzer_alarm();
+        }
+      }
+
 #ifdef FLOG_ENABLE
       /* 记下判定输入与结果，供日志使用（不影响判定本身）。 */
       for (w = 0U; w < 4U; w++)
@@ -911,9 +1062,14 @@ void StartCtrlTask(void *argument)
       snap.result_view = s_ui_model.result_view;
       snap.sel_since_ms = s_ui_model.sel_since_ms;
       snap.drive_permitted = drive_permitted;
-      snap.action_busy = 0U; /* Task 6/7 回喂后接真值 */
+      snap.action_busy = (uint8_t)(
+          (s_ctrl_check.phase == SELFCHECK_RUNNING) ||
+          (out.mode == WHEEL_HOME_RUNNING));
+      s_ctrl_action_busy = snap.action_busy;
+      s_ctrl_home_busy =
+          (uint8_t)((out.mode == WHEEL_HOME_RUNNING) ? 1U : 0U);
       snap.selfcheck_passed = boot_ui_selfcheck_passed;
-      snap.result_window_open = 0U; /* Task 6/7 计时后接真值 */
+      snap.result_window_open = result_window;
       snap.fault_mask = s_ctrl_fault_mask;
       snap.reference_valid = out.reference_valid;
       snap.frame_valid = in.frame_valid;
@@ -921,12 +1077,38 @@ void StartCtrlTask(void *argument)
 
       for (w = 0U; w < 4U; w++)
       {
-        /* 归位/自检状态：本任务先给保守初值，Task 6/7 接真值。 */
-        snap.selfcheck_state[w] = 0U;
-        snap.home_state[w] = (uint8_t)(
-            (out.mode == WHEEL_HOME_RUNNING && out.owns_motors != 0U)
-                ? 1U
-                : ((out.reference_valid != 0U) ? 2U : 0U));
+        /* 自检逐轮状态：服务自己的快照（0 等待 1 运行 2 通过 3 失败）。 */
+        snap.selfcheck_state[w] = s_ctrl_check.state[w];
+
+        /* 归位逐轮状态：RUNNING 中按输出/到位/等待分类，
+         * 结果为失败类时全部报 3，其余报 0 等待。 */
+        if (out.mode == WHEEL_HOME_RUNNING)
+        {
+          if (out.pulse[w] > 0 || out.pulse[w] < 0)
+          {
+            snap.home_state[w] = 1U; /* 运动中 */
+          }
+          else if ((out.settled_mask & (uint8_t)(1U << w)) != 0U)
+          {
+            snap.home_state[w] = 2U; /* 已到位 */
+          }
+          else
+          {
+            snap.home_state[w] = 0U; /* 等待 */
+          }
+        }
+        else if (out.result == WHEEL_HOME_RESULT_CANCELLED ||
+                 out.result == WHEEL_HOME_RESULT_NO_REF ||
+                 out.result == WHEEL_HOME_RESULT_STALL ||
+                 out.result == WHEEL_HOME_RESULT_TIMEOUT ||
+                 out.result == WHEEL_HOME_RESULT_FEEDBACK_ERROR)
+        {
+          snap.home_state[w] = 3U; /* 失败 */
+        }
+        else
+        {
+          snap.home_state[w] = 0U;
+        }
 
         /* 圈数：s_ctrl_fb 的累计计数（含 16 位回绕处理）换算毫圈，
          * 乘前进符号得到"前进为正"；每轮都发，与页面无关，计数连续。 */
@@ -945,17 +1127,17 @@ void StartCtrlTask(void *argument)
         snap.wheel_sample_valid[w] = s_win_valid;
       }
 
-      /* 归位阻塞原因与电池域：本任务先给保守初值，Task 6/7 接真值。 */
+      /* 归位阻塞原因与电池域：电源域来自 power_monitor 的防撕裂快照。 */
       snap.home_block_reason = (uint8_t)((s_ctrl_fault_mask != 0U)
                                              ? 3U
                                              : ((out.reference_valid != 0U)
                                                     ? 0U
                                                     : 1U));
-      snap.battery_valid = 0U;
-      snap.battery_error = 0U;
-      snap.undervolt = 0U;
-      snap.vdd_ok = 0U;
-      snap.battery_mv = 0U;
+      snap.battery_valid = pw.battery_valid;
+      snap.battery_error = pw.battery_error;
+      snap.undervolt = pw.undervolt;
+      snap.vdd_ok = pw.vdd_valid;
+      snap.battery_mv = pw.battery_mv;
 
       if ((uint32_t)(now - s_win_start) >= BOOT_UI_ENC_SAMPLE_MS *
                                               BOOT_UI_ENC_SAMPLES)

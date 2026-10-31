@@ -802,6 +802,48 @@ static void test_menu_homing_stick_cancels(void)
   for (int w = 0; w < 4; w++) { assert(rig.o.pulse[w] == 0); }
 }
 
+/* 模式守卫：非 MANUAL 模式下菜单请求直接忽略——不置 pending、不改 result、
+ * 不打断正在进行的归位。 */
+static void test_request_home_mode_guard(void)
+{
+  rig_reset(CPR);
+  record_reference();
+
+  rig.pos[0] += (int64_t)CPR[0] / 2;
+  short_press(); /* 进 RUNNING */
+  assert(rig.o.mode == WHEEL_HOME_RUNNING);
+  assert(rig.s.request_pending == 0U);
+
+  /* RUNNING 中请求：忽略，归位继续出力。 */
+  wheel_home_request_home(&rig.s);
+  assert(rig.s.request_pending == 0U);
+  assert(rig.s.request_wait_active == 0U);
+  assert(rig.o.mode == WHEEL_HOME_RUNNING);
+  assert(rig.o.result == WHEEL_HOME_RESULT_NONE);
+  pump(10U);
+  assert(rig.o.mode == WHEEL_HOME_RUNNING);
+  assert(rig.o.pulse[0] != 0);
+
+  /* 摇杆取消后处于 WAIT_NEUTRAL：同样忽略。 */
+  rig.ly = (uint8_t)(WHEEL_HOME_STICK_CENTER + 17);
+  step4(10U, 0, 0, 0, 0);
+  assert(rig.o.mode == WHEEL_HOME_WAIT_NEUTRAL);
+  assert(rig.o.result == WHEEL_HOME_RESULT_CANCELLED);
+  wheel_home_request_home(&rig.s);
+  assert(rig.s.request_pending == 0U);
+  assert(rig.o.mode == WHEEL_HOME_WAIT_NEUTRAL);
+
+  /* 回到 MANUAL 后同一请求恢复受理。 */
+  rig.ly = WHEEL_HOME_STICK_CENTER;
+  pump(150U);
+  assert(rig.o.mode == WHEEL_HOME_MANUAL);
+  wheel_home_request_home(&rig.s);
+  assert(rig.s.request_pending == 1U);
+  release_l1();
+  pump(110U);
+  assert(rig.o.mode == WHEEL_HOME_RUNNING);
+}
+
 /* 长按记录参考只属于手动标定页：驾驶页长按不再写参考。 */
 static void test_long_press_record_gated_by_manual_page(void)
 {
@@ -979,6 +1021,7 @@ int main(void)
   test_menu_request_waits_release_neutral();
   test_menu_request_without_reference();
   test_menu_homing_stick_cancels();
+  test_request_home_mode_guard();
   test_long_press_record_gated_by_manual_page();
   test_drive_page_long_press_consumed();
   test_status_text();
