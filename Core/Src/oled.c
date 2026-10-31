@@ -15,6 +15,7 @@
 static void oled_spi_byte(uint8_t value)
 {
   uint8_t i;
+  volatile uint8_t d;
 
   for (i = 0; i < 8U; i++)
   {
@@ -28,7 +29,15 @@ static void oled_spi_byte(uint8_t value)
       OLED_SDA_LOW();
     }
     value = (uint8_t)(value << 1);
+    for (d = 0U; d < 12U; d++)
+    {
+      __NOP();
+    }
     OLED_SCL_HIGH();
+    for (d = 0U; d < 12U; d++)
+    {
+      __NOP();
+    }
   }
 }
 
@@ -57,7 +66,7 @@ static void oled_delay(volatile uint32_t cycles)
 static void oled_hw_reset(void)
 {
   OLED_RES_LOW();
-  oled_delay(40000U);   /* ≈ 1 ms @168 MHz */
+  oled_delay(4000000U);  /* ≈ 100 ms，对齐厂商驱动 */
   OLED_RES_HIGH();
   oled_delay(400000U);  /* ≈ 10 ms，等电荷泵稳定 */
 }
@@ -72,7 +81,7 @@ void oled_init(void)
   oled_write_cmd(0xD3); oled_write_cmd(0x00);
   oled_write_cmd(0x40);        /* 起始行 0 */
   oled_write_cmd(0x8D); oled_write_cmd(0x14);  /* 电荷泵 */
-  oled_write_cmd(0x20); oled_write_cmd(0x00);  /* 水平寻址 */
+  oled_write_cmd(0x20); oled_write_cmd(0x02);  /* SSD1306 页寻址 */
 #if OLED_MIRROR_X
   oled_write_cmd(0xA1);
 #else
@@ -98,7 +107,14 @@ void oled_init(void)
 
 void oled_flush(void)
 {
-  oled_write_cmd(0x21); oled_write_cmd(0x00); oled_write_cmd(0x7F);
-  oled_write_cmd(0x22); oled_write_cmd(0x00); oled_write_cmd(0x07);
-  oled_write_data(oled_gfx_buffer(), (uint16_t)(OLED_WIDTH * OLED_HEIGHT / 8U));
+  const uint8_t *fb = oled_gfx_buffer();
+  uint8_t page;
+
+  for (page = 0U; page < (OLED_HEIGHT / 8U); page++)
+  {
+    oled_write_cmd((uint8_t)(0xB0U + page));
+    oled_write_cmd(0x00);
+    oled_write_cmd(0x10);
+    oled_write_data(&fb[(uint16_t)page * OLED_WIDTH], OLED_WIDTH);
+  }
 }

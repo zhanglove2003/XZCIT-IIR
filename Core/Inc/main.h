@@ -105,7 +105,7 @@ void Error_Handler(void);
 #define BT_RX_GPIO_Port GPIOC
 #define MOTOR_LR_DIR_Pin GPIO_PIN_12
 #define MOTOR_LR_DIR_GPIO_Port GPIOC
-#define OLED_SDA_Pin GPIO_PIN_4
+#define OLED_SDA_Pin GPIO_PIN_6
 #define OLED_SDA_GPIO_Port GPIOD
 #define OLED_SCL_Pin GPIO_PIN_7
 #define OLED_SCL_GPIO_Port GPIOD
@@ -119,10 +119,10 @@ void Error_Handler(void);
 #define I2C1_SCL_GPIO_Port GPIOB
 #define I2C1_SDA_Pin GPIO_PIN_9
 #define I2C1_SDA_GPIO_Port GPIOB
-#define OLED_DC_Pin GPIO_PIN_0
-#define OLED_DC_GPIO_Port GPIOE
-#define OLED_RES_Pin GPIO_PIN_1
-#define OLED_RES_GPIO_Port GPIOE
+#define OLED_DC_Pin GPIO_PIN_4
+#define OLED_DC_GPIO_Port GPIOD
+#define OLED_RES_Pin GPIO_PIN_5
+#define OLED_RES_GPIO_Port GPIOD
 
 /* USER CODE BEGIN Private defines */
 /* 四轮驱动 SLP/EN：高 = 使能，低 = 睡眠（板上 10kΩ 下拉，不拉高不转）
@@ -146,9 +146,9 @@ void Error_Handler(void);
 #define MOTOR_LR_DIR_REVERSE GPIO_PIN_SET
 /* 自检参数：TIM8 PSC=9/ARR=16799 → 1kHz，8400 ≈ 50% 占空比 */
 #define SELFCHECK_PWM_PULSE 8400U
-#define SELFCHECK_RUN_MS 3000U
-#define SELFCHECK_PAUSE_MS 3000U
-#define SELFCHECK_CYCLES 2U
+#define SELFCHECK_RUN_MS 500U
+#define SELFCHECK_PAUSE_MS 200U
+#define SELFCHECK_CYCLES 1U
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

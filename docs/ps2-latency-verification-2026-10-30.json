@@ -1,0 +1,42 @@
+{
+  "start": {
+    "polls": 37,
+    "good": 37,
+    "bad": 0,
+    "configs": 1,
+    "poll_us": 3266,
+    "max_poll_us": 3266,
+    "max_gap_ms": 10,
+    "mode": 115,
+    "marker": 90
+  },
+  "end": {
+    "polls": 546,
+    "good": 546,
+    "bad": 0,
+    "configs": 1,
+    "poll_us": 3266,
+    "max_poll_us": 3266,
+    "max_gap_ms": 10,
+    "mode": 115,
+    "marker": 90
+  },
+  "elapsed_s": 5.098119543021312,
+  "poll_delta": 509,
+  "good_delta": 509,
+  "bad_delta": 0,
+  "config_delta": 0,
+  "mean_period_ms": 10.015951950925956,
+  "pwm": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "mode": "0x20000774: 00 \n",
+  "frame_words": [
+    4284118015,
+    2139127807,
+    128
+  ]
+}

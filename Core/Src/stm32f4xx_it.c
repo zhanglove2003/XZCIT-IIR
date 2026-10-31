@@ -20,6 +20,10 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32f4xx_it.h"
+#include "usart.h"
+#ifdef FLOG_ENABLE
+#include "flog.h"
+#endif
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 /* USER CODE END Includes */
@@ -189,5 +193,37 @@ void OTG_FS_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+
+/* 日志串口的中断向量。
+ *
+ * 为什么必须在这里加：HAL_UART_Transmit_IT 靠发送完成中断逐字节推进，
+ * 没有向量就发完第一个字节后永远停住，日志只会吐一个字符。
+ * usart.c 的 MspInit 也没有开 NVIC，两边都补上才通。
+ *
+ * 两路都只做"取下一个字节/推进状态"这一件事，不打印、不等待。 */
+void USART1_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(&huart1);
+}
+
+void USART3_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(&huart3);
+}
+
+void UART4_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(&huart4);
+}
+
+/* 发送完成回调：交给 flog 推进队列。 */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+#ifdef FLOG_ENABLE
+  flog_tx_done(huart);
+#else
+  (void)huart;
+#endif
+}
 
 /* USER CODE END 1 */

@@ -1,0 +1,98 @@
+{
+  "started_at": "2026-10-30T10:53:11.237138+00:00",
+  "status": "controller_restored_centered_pending_user_movement_check",
+  "RF": {
+    "start": 0,
+    "one_turn_end": -208062,
+    "one_turn_delta": -208062,
+    "one_turn_cpr": 208062,
+    "forward_sign": -1,
+    "two_turn_end": -425346,
+    "second_turn_delta": -217284,
+    "second_turn_cpr": 217284,
+    "two_turn_mean_cpr": 212673,
+    "repeat_spread_percent": 4.336234500853423,
+    "four_turn_end": -852813,
+    "last_two_turn_delta": -427467,
+    "last_two_turn_mean_cpr": 213733.5,
+    "four_turn_mean_cpr": 213203.25,
+    "candidate_cpr": 213203,
+    "first_vs_last_two_percent": 0.498652861435161,
+    "precision_note": "Two-turn averages differ by about 0.50%; manual reference only, not precision angular verification.",
+    "display_check": {
+      "raw_counts": -118453,
+      "milliturns": 555,
+      "user_screen": "0.55R",
+      "user_note": "手转超过半圈",
+      "interpretation": "Count-to-display agreement confirmed; exact 180-degree accuracy not verified."
+    },
+    "full_turn_display_check": {
+      "raw_counts": -215222,
+      "milliturns": 1009,
+      "user_screen": "1R",
+      "ratio": 1.0094698479852535,
+      "relative_error_percent": 0.9469847985253491,
+      "interpretation": "Manual full-turn reference agrees within about 0.95%; exact angular accuracy not established."
+    }
+  },
+  "baseline_all": [
+    -852813,
+    346560,
+    -474138,
+    68701
+  ],
+  "calibration_mode": 1,
+  "pwm": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "latest_counts": [
+    -852813,
+    346560,
+    -474138,
+    497396
+  ],
+  "LF": {
+    "start": -78767,
+    "two_turn_end": 346561,
+    "two_turn_delta": 425328,
+    "two_turn_mean_cpr": 212664.0,
+    "candidate_cpr": 212664,
+    "forward_sign": 1,
+    "precision_note": "Single two-turn manual measurement; repeatability not yet independently checked."
+  },
+  "RR": {
+    "start": -44154,
+    "timer": "TIM5",
+    "two_turn_end": -474139,
+    "two_turn_delta": -429985,
+    "two_turn_mean_cpr": 214992.5,
+    "candidate_cpr": 214993,
+    "forward_sign": -1,
+    "precision_note": "Single two-turn manual measurement; repeatability not yet independently checked."
+  },
+  "LR": {
+    "start": 68701,
+    "timer": "TIM4",
+    "two_turn_end": 497396,
+    "two_turn_delta": 428695,
+    "two_turn_mean_cpr": 214347.5,
+    "candidate_cpr": 214348,
+    "forward_sign": 1,
+    "precision_note": "Single two-turn manual measurement; repeatability not yet independently checked."
+  },
+  "flash_readback_bytes": 44140,
+  "flash_readback_matches": true,
+  "runtime": {
+    "boot_ui_diag": "0x200006b0",
+    "position_counts": "0x200006f0",
+    "milliturns": "0x20000710",
+    "boot_ui_ready": "0x20000730",
+    "ps2_diag": "0x20000734",
+    "drive_calibration_mode": "0x20000774",
+    "wheel_feedback_zero_request": "0x20000775"
+  },
+  "latency_measurement": "docs/ps2-latency-verification-2026-10-30.json"
+}
