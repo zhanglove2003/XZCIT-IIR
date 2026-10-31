@@ -22,6 +22,8 @@ static uint32_t s_cur_ch;
 static uint32_t s_vref_val = 1490U;
 static uint32_t s_ch8_val;
 static int s_cfg_fail, s_poll_fail, s_start_fail;
+static int s_vref_start_fail; /* 仅让 VREFINT 批次失败，CH8 照常成功 */
+static int s_ch8_poll_fail;   /* 仅让 CH8 转换失败，VREFINT 照常成功 */
 static int s_vref_batches; /* ConfigChannel(VREFINT) 次数 = vrefint 采样批数 */
 static int s_ch8_gets;     /* CH8 实际取数次数 */
 
@@ -33,11 +35,19 @@ int HAL_ADC_ConfigChannel(ADC_HandleTypeDef *h, ADC_ChannelConfTypeDef *c)
   if (c->Channel == ADC_CHANNEL_VREFINT) { s_vref_batches++; }
   return 0;
 }
-int HAL_ADC_Start(ADC_HandleTypeDef *h) { (void)h; return s_start_fail ? 1 : 0; }
+int HAL_ADC_Start(ADC_HandleTypeDef *h)
+{
+  (void)h;
+  if (s_start_fail) { return 1; }
+  if (s_vref_start_fail && s_cur_ch == ADC_CHANNEL_VREFINT) { return 1; }
+  return 0;
+}
 int HAL_ADC_PollForConversion(ADC_HandleTypeDef *h, uint32_t timeout_ms)
 {
   (void)h; (void)timeout_ms;
-  return s_poll_fail ? 1 : 0;
+  if (s_poll_fail) { return 1; }
+  if (s_ch8_poll_fail && s_cur_ch != ADC_CHANNEL_VREFINT) { return 1; }
+  return 0;
 }
 uint32_t HAL_ADC_GetValue(ADC_HandleTypeDef *h)
 {
@@ -104,18 +114,37 @@ int main(void)
   assert(s->battery_mv == 3300U);
   assert(s->undervolt == 0U);
 
-  /* 6. 配置后采样失败：battery_error 置位、undervolt 不误报，恢复后清零 */
-  s_poll_fail = 1;
+  /* 6. 配置后 CH8 采样失败：battery_error 置位、undervolt 不误报，恢复后清零 */
+  s_ch8_poll_fail = 1;
   power_monitor_step(3002U);
   s = power_monitor_get();
+  assert(s->vdd_valid == 1U); /* VREFINT 不受影响 */
   assert(s->battery_valid == 0U);
   assert(s->battery_error == 1U);
   assert(s->undervolt == 0U);
-  s_poll_fail = 0;
+  s_ch8_poll_fail = 0;
   power_monitor_step(3503U);
   s = power_monitor_get();
   assert(s->battery_valid == 1U);
   assert(s->battery_error == 0U);
+
+  /* 7. VREFINT 失败 + CH8 成功的组合：跳过电池换算，
+   *    不得出现 battery_valid==1 且 battery_mv==0 的矛盾快照 */
+  s_vref_start_fail = 1;
+  power_monitor_step(4004U);
+  s = power_monitor_get();
+  assert(s->vdd_valid == 0U);
+  assert(s->battery_valid == 0U);
+  assert(s->battery_mv == 0U);
+  assert(s->undervolt == 0U);
+  assert(s->battery_error == 0U); /* CH8 未被采样，不算采样失败 */
+  s_vref_start_fail = 0;
+  power_monitor_step(4505U);
+  s = power_monitor_get();
+  assert(s->vdd_valid == 1U);
+  assert(s->battery_valid == 1U);
+  assert(s->battery_mv == 3300U);
+  assert(s->undervolt == 0U);
 
   printf("power_monitor host test passed\n");
   return 0;

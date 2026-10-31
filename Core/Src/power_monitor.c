@@ -169,7 +169,10 @@ void power_monitor_step(uint32_t now_ms)
 
   configured = power_monitor_battery_configured();
   s_snapshot.battery_configured = configured;
-  if (configured != 0U)
+
+  /* VDD 无效的采样轮跳过电池换算：vdd_mv 失真时换算出的 battery_mv
+   * 不可信，宁可 battery_valid=0 / battery_mv=0，也不给出自相矛盾的快照 */
+  if (configured != 0U && s_snapshot.vdd_valid != 0U)
   {
     uint32_t raw = 0U;
     if (adc_read_ch8(&raw) != 0U)
