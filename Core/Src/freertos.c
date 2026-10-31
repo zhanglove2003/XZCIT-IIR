@@ -210,9 +210,10 @@ void StartPowerTask(void *argument)
   }
 }
 
-/* PS2 手柄 + 一键归位 → 四轮驱动。自检结束（boot_ui_ready）前不碰电机；
- * 与 boot_ui.c 的自检表保持同一轮位/通道/方向极性。
- * 归位状态机（wheel_home）只吃输入、不碰硬件；唯一输出路径是 ctrl_apply()。 */
+/* PS2 手柄 + 分层菜单 → 四轮驱动。电机自始至终归 Ctrl（单归属，spec §11.2）：
+ * boot_ui.c 只是渲染层，首帧起 ctrl_apply 就只有零命令 → 驱动睡眠，
+ * 天然满足"开机不自动转轮"。归位状态机（wheel_home）只吃输入、不碰硬件；
+ * 唯一输出路径是 ctrl_apply()。 */
 typedef struct
 {
   GPIO_TypeDef *slpPort;
@@ -340,8 +341,6 @@ static int32_t s_flog_delta[4];
 #endif
 static motor_health_code_t s_ctrl_health_code[4];
 static int32_t s_ctrl_last_pwm[4];   /* 上一轮施加的 PWM，用于换向判定 */
-static uint32_t s_ctrl_selfcheck_seq; /* 已消费的自检轮次 */
-static uint32_t s_ctrl_handoff_seq;   /* 已消费的电机移交轮次 */
 static uint8_t s_ctrl_tracker_ready;
 
 /* 菜单发起的自检服务：Ctrl 每轮推进，RUNNING 时独占 command。
@@ -552,12 +551,9 @@ static void ctrl_sample_encoders(wheel_home_input_t *in)
  * 失联超过期限就睡觉（零输出 + SLP 低），重连后必须等摇杆回中若干帧
  * 才允许输出，避免"摇杆还偏着就通电"。
  * awake 指针由调用方持有：Ctrl 用它判断驱动是否已经上电。 */
-/* allow_output：电机是否已经归 Ctrl 所有（boot_ui_motor_owner == CTRL）。
- * 不得再用"自检是否通过"代替——通过与否只决定能不能清故障锁存，
- * 而电机权限是另一件事：自检期间 UI 独占，Ctrl 连写零都不许。 */
 static void ctrl_link_service(ps2_state_t *pad, uint8_t *linked,
                               uint8_t *frame_ok, uint32_t *last_good_tick,
-                              uint8_t *awake, uint8_t allow_output)
+                              uint8_t *awake)
 {
   static uint32_t s_rearm_start_ms;
   static uint8_t s_rearm_active;
@@ -576,16 +572,9 @@ static void ctrl_link_service(ps2_state_t *pad, uint8_t *linked,
     ps2_init();
     ps2_config();
 
-    /* 电机不属于自己时一个寄存器都不碰：HAL_TIM_PWM_Start 会让定时器
-     * 开始输出，ctrl_motors_sleep() 再把 SLP 拉低，中间那一瞬驱动芯片是
-     * 使能的。自检期间尤其不能动——Ctrl 每写一次零，就会把 UI 正在做的
-     * 正/反向动作截断成 10 ms。 */
-    if (allow_output != 0U)
-    {
-      /* 只关驱动，不启动通道：启动时机交给 ctrl_apply 的唤醒分支，
-       * 那里才保证"已归属 + 立刻要输出"。 */
-      ctrl_motors_sleep();
-    }
+    /* 冷启动/重连：只关驱动，不启动通道。启动时机交给 ctrl_apply 的
+     * 唤醒分支，那里才保证"立刻要输出"。 */
+    ctrl_motors_sleep();
     *awake = 0U;
     *linked = 1U;
     *last_good_tick = HAL_GetTick();
@@ -623,10 +612,7 @@ static void ctrl_link_service(ps2_state_t *pad, uint8_t *linked,
   }
   else if ((uint32_t)(HAL_GetTick() - *last_good_tick) >= CTRL_LINK_LOSS_MS)
   {
-    if (allow_output != 0U)
-    {
-      ctrl_motors_sleep();
-    }
+    ctrl_motors_sleep();
     *awake = 0U;
     *linked = 0U;
   }
@@ -673,17 +659,14 @@ void StartCtrlTask(void *argument)
     uint8_t drive_permitted = 0U;
     uint8_t result_window = 0U;
 
-    /* 0) 自检后的 USER 窗口/手动对齐页由 UI 任务（boot_ui_run）独占推进：
-     *    manual_ref 去抖/长按状态、页面绘制、oled_flush 都只在那一个任务里发生。
-     *    Ctrl 只通过 boot_ui_manual_active() 读取"是否在页内"用于输出仲裁，
-     *    并通过 take_record_request/ack 交换记录请求，绝不在这里推进状态机
-     *    （否则两个任务同时对同一状态去抖，按键会被计数两次）。 */
+    /* 0) 单归属说明：boot_ui 已收敛为渲染层，不再有"电机归属/移交"概念。
+     *    页面模型、输入事件、编码器累计与全部电机动作（含写零）都只在本任务；
+     *    boot_ui_ready 只表示渲染管线就绪。上电首帧起本任务就用零命令走
+     *    ctrl_apply → 驱动保持睡眠，满足"开机不自动转轮"。 */
 
-    /* 手柄链路与自检并行建立：自检要跑好几秒，不能等它结束才点亮接收器，
-     * 否则窗口一开按键就还没通。自检完成前只采按键，不驱动电机：
-     * allow_output = 自检是否已通过，未通过时连 PWM 定时器都不启动。 */
-    ctrl_link_service(&pad, &linked, &frame_ok, &last_good_tick, &awake,
-                      (uint8_t)(boot_ui_motor_owner == BOOT_UI_OWNER_CTRL));
+    /* 手柄链路立刻建立：菜单/页面导航不依赖任何"自检结束"事件。
+     * 冷启动分支会先把驱动按进睡眠（SLP 低 + CCR 0）。 */
+    ctrl_link_service(&pad, &linked, &frame_ok, &last_good_tick, &awake);
 
     /* 电源快照：powerTask 并发写 power_monitor 的内部状态，跨任务读
      * 必须临界区拷贝（见 ctrl_power_read）。本拍供自检前置与 UI 快照用。 */
@@ -767,8 +750,10 @@ void StartCtrlTask(void *argument)
               ? 1U
               : 0U);
       uin.frame_valid = in.frame_valid;
-      /* 回喂：上电自检结果、上一拍自检/归位占用、自检结果窗口。 */
-      uin.selfcheck_passed = boot_ui_selfcheck_passed;
+      /* 回喂：自检服务结果、上一拍自检/归位占用、自检结果窗口。
+       * selfcheck_passed 来自 Ctrl 自己的菜单自检服务（单归属）：
+       * 只有四轮全过的完整一轮才为 1，重新发起/取消即归 0。 */
+      uin.selfcheck_passed = s_ctrl_check.passed;
       uin.action_busy = s_ctrl_action_busy;
       uin.result_window_open = result_window;
       uin.now_ms = HAL_GetTick();
@@ -845,9 +830,10 @@ void StartCtrlTask(void *argument)
           s_drive_center_start = now; /* 出杆：重新计时，防止带杆进页窜车 */
         }
       }
-      /* action_busy 由 Task 6/7 回喂（本任务恒 0），先纳入仲裁表达式。 */
+      /* action_busy 由自检/归位状态回喂；本次上电未通过自检时驾驶页
+       * 零输出并显示"请先自检"（快照 selfcheck_passed=0）。 */
       drive_permitted = (uint8_t)(
-          (s_ui_model.page == UI_PAGE_DRIVE) && (boot_ui_selfcheck_passed != 0U) &&
+          (s_ui_model.page == UI_PAGE_DRIVE) && (s_ctrl_check.passed != 0U) &&
           (s_ctrl_fault_mask == 0U) && (ui_action_busy == 0U) &&
           (s_drive_center_armed != 0U));
     }
@@ -858,7 +844,7 @@ void StartCtrlTask(void *argument)
     {
       wheel_home_input_t arbitrate = in;
 
-      if (boot_ui_selfcheck_passed == 0U)
+      if (s_ctrl_check.passed == 0U)
       {
         arbitrate.frame_valid = 0U;
         arbitrate.buttons = 0xFFFFU;
@@ -907,11 +893,11 @@ void StartCtrlTask(void *argument)
 
     /* 4) 输出仲裁：归位/等待用状态机结果，只有 MANUAL 且 drive_permitted
      *    才落双轴混合（v=ly 前进，t=rx 转向）。驾驶页仲裁未通过、手动
-     *    对齐页、cancel_motion 请求与"未允许驾驶"阶段一律零输出。
-     *    注意这里只是把命令清零，真正的硬件写不写由第 5 步的电机归属
-     *    决定——零命令同样是一次写电机。 */
-    if (ui_cancel_motion != 0U || boot_ui_manual_active() != 0U ||
-        boot_ui_drive_enabled == 0U)
+     *    标定页、cancel_motion 请求一律零输出（零命令经 ctrl_apply 走
+     *    停止流程关使能）。原 boot_ui_drive_enabled 的"页面级许可"职责
+     *    已由 drive_permitted 一并承担。 */
+    if (ui_cancel_motion != 0U ||
+        s_ui_model.page == UI_PAGE_MANUAL_CAL)
     {
       for (w = 0U; w < 4U; w++)
       {
@@ -974,29 +960,17 @@ void StartCtrlTask(void *argument)
       }
       hin.now_ms = HAL_GetTick();
 
-      /* 睡眠 / 换向 / 手动对齐页 / 手柄失联 / 未移交自检：本轮不监测。 */
+      /* 睡眠 / 换向 / 手动标定页 / 手柄失联 / 渲染层未就绪：本轮不监测。 */
       if (awake == 0U || reversing != 0U ||
-          boot_ui_manual_active() != 0U || in.frame_valid == 0U ||
+          s_ui_model.page == UI_PAGE_MANUAL_CAL || in.frame_valid == 0U ||
           boot_ui_ready == 0U)
       {
         measurable = 0U;
       }
       hin.measurable = measurable;
 
-      /* 故障清除的唯一入口：用户主动重新自检，且这一轮四轮全过。
-       * 不接受长按/记录参考等操作来清故障，避免“黑掉一台车”当成修好。 */
-      if (boot_ui_selfcheck_seq != s_ctrl_selfcheck_seq)
-      {
-        s_ctrl_selfcheck_seq = boot_ui_selfcheck_seq;
-        motor_health_clear_after_selfcheck(&s_ctrl_health,
-                                           boot_ui_selfcheck_passed);
-        /* 清完本轮重新开始计时，避免拿旧的窗口数据立刻又判故障。 */
-        s_ctrl_health_ready = 1U;
-      }
-
-      /* 菜单自检服务的同一口径：seq 变化 = 完整跑完一轮（跑完即 +1，
-       * 标定模式不加、自然豁免）。全过才清锁存；失败/取消响一声提示。
-       * 已锁存的旧故障不会被一次失败的自检清掉（clear 内部按 passed 把关）。 */
+      /* 故障清除的唯一入口：菜单自检服务完整跑完一轮，且这一轮四轮全过。
+       * 不接受长按/记录参考等操作来清故障，避免"黑掉一台车"当成修好。 */
       if (s_ctrl_check.seq != s_ctrl_check_seq)
       {
         s_ctrl_check_seq = s_ctrl_check.seq;
@@ -1031,9 +1005,12 @@ void StartCtrlTask(void *argument)
         buzzer_alarm();
       }
 
-      if (hout.stop_all != 0U)
+      if (hout.stop_all != 0U && s_ctrl_check.phase != SELFCHECK_RUNNING)
       {
-        /* 锁存后的降级：全部清零；上一轮 PWM 也归零，避免“换向”误判。 */
+        /* 锁存后的降级：全部清零；上一轮 PWM 也归零，避免"换向"误判。
+         * 例外：菜单自检运行中服务独占 command（spec §11.4"重新自检只
+         * 放行其自身受限动作"）——若被 stop_all 清零，锁存的故障就永远
+         * 无法通过重新自检清除了。服务结果由 selfcheck_service 自己把关。 */
         for (w = 0U; w < 4U; w++)
         {
           command[w] = 0;
@@ -1068,7 +1045,7 @@ void StartCtrlTask(void *argument)
       s_ctrl_action_busy = snap.action_busy;
       s_ctrl_home_busy =
           (uint8_t)((out.mode == WHEEL_HOME_RUNNING) ? 1U : 0U);
-      snap.selfcheck_passed = boot_ui_selfcheck_passed;
+      snap.selfcheck_passed = s_ctrl_check.passed;
       snap.result_window_open = result_window;
       snap.fault_mask = s_ctrl_fault_mask;
       snap.reference_valid = out.reference_valid;
@@ -1164,32 +1141,10 @@ void StartCtrlTask(void *argument)
       ctrl_ui_publish(&snap);
     }
 
-    /* 5) 电机归属闸门：只有移交完成（owner==CTRL）才允许写硬件。
-     *    自检期间 UI 独占电机，Ctrl 连"写零"都不行——写零同样是写电机，
-     *    会把 UI 正在做的正向/反向 500 ms 动作截断成一次轮询周期。
-     *    自己的输出状态也跟着复位：移交前的 CCR/SLP 是 UI 留下的，
-     *    不能当成"我已经醒着、上一轮 PWM 是 X"继续沿用。 */
-    if (boot_ui_motor_owner == BOOT_UI_OWNER_CTRL)
-    {
-      if (boot_ui_handoff_seq != s_ctrl_handoff_seq)
-      {
-        s_ctrl_handoff_seq = boot_ui_handoff_seq;
-        awake = 0U;
-        s_ctrl_tracker_ready = 0U;
-        for (w = 0U; w < 4U; w++)
-        {
-          s_ctrl_last_pwm[w] = 0;
-        }
-      }
-      /* 命令全零即走停止流程关使能：归位完成、部分故障停止、松杆都归入这里。 */
-      ctrl_apply(command, &awake);
-    }
-    else
-    {
-      /* 无权期间只维护自己的认知：认为驱动是睡眠的，避免移交后
-       * 误以为"已经醒着"而漏掉唤醒延时。 */
-      awake = 0U;
-    }
+    /* 5) 电机输出（唯一归属）：Ctrl 自始至终独占电机（spec §11.2 单归属）。
+     *    命令全零即走停止流程关使能：归位完成、部分故障停止、松杆、
+     *    手动标定页都归入这里。 */
+    ctrl_apply(command, &awake);
 
     /* 日志：状态行（定时）+ 关键事件（变化时）。
      * 放在硬件写完之后：这里打出来的 pwm 才是真正生效的那一份。
@@ -1218,20 +1173,18 @@ void StartCtrlTask(void *argument)
       /* 手柄连上/断开：推杆没反应的第一步就是查这个。 */
       if (awake != s_flog_prev_linked)
       {
-        flog_printf("EVENT pad awake=%u linked=%u frame=%u owner=%u selfchk=%u",
+        flog_printf("EVENT pad awake=%u linked=%u frame=%u sc_pass=%u",
                     (unsigned)awake, (unsigned)linked, (unsigned)frame_ok,
-                    (unsigned)boot_ui_motor_owner,
-                    (unsigned)boot_ui_selfcheck_passed);
+                    (unsigned)s_ctrl_check.passed);
         s_flog_prev_linked = awake;
       }
 
       /* 归位模式变化：进/出 RUNNING 是电机突然开始转动的时刻。 */
       if ((uint8_t)out.mode != s_flog_prev_mode)
       {
-        flog_printf("EVENT home mode=%u own=%u drv_en=%u manual=%u",
-                    (unsigned)out.mode, (unsigned)out.owns_motors,
-                    (unsigned)boot_ui_drive_enabled,
-                    (unsigned)boot_ui_manual_active());
+        flog_printf("EVENT home mode=%u page=%u manual_pg=%u",
+                    (unsigned)out.mode, (unsigned)s_ui_model.page,
+                    (unsigned)(s_ui_model.page == UI_PAGE_MANUAL_CAL));
         s_flog_prev_mode = (uint8_t)out.mode;
       }
 
@@ -1242,11 +1195,11 @@ void StartCtrlTask(void *argument)
         s_flog_next_ms = now + FLOG_STATUS_MS;
         /* lk=链路是否建立（linked），aw=是否唤醒，fv=本帧是否有效。
          * st=摇杆四轴原始值：排查"推杆没反应"先看这里动没动。 */
-        flog_printf("ST t=%lu lk=%u aw=%u fv=%u md=%u own=%u st=%u,%u,%u,%u "
+        flog_printf("ST t=%lu lk=%u aw=%u fv=%u md=%u pg=%u st=%u,%u,%u,%u "
                     "pwm=%ld,%ld,%ld,%ld fb=%ld,%ld,%ld,%ld",
                     (unsigned long)now, (unsigned)linked, (unsigned)awake,
                     (unsigned)frame_ok, (unsigned)out.mode,
-                    (unsigned)boot_ui_motor_owner,
+                    (unsigned)s_ui_model.page,
                     (unsigned)pad.lx, (unsigned)pad.ly,
                     (unsigned)pad.rx, (unsigned)pad.ry,
                     (long)s_flog_pwm[0], (long)s_flog_pwm[1],
@@ -1257,31 +1210,13 @@ void StartCtrlTask(void *argument)
     }
 #endif
 
-    /* 5) 手动页里长按 SELECT：记录参考（手柄有效 + 停稳 + 摇杆回中）。
-     *    只记录，不产生归位动作；失败只回绝不显示 REF SET。 */
-    if (boot_ui_manual_take_record_request() != 0U)
-    {
-      uint8_t ok = 0U;
-
-      /* 页面只负责说“用户要记录”；真正写参考在这里。
-       * 停稳判据由 wheel_home 自己的采样历史判断（MANUAL 模式下
-       * out.settled_mask 恒为 0，不能用它）。 */
-      if (ctrl_sticks_centered(&in) != 0U)
-      {
-        /* 静止计时已经在每轮 wheel_home_step 之前的跟踪里累积好了。 */
-        ok = wheel_home_record_manual_reference(&s_ctrl_home, &in,
-                                                HAL_GetTick());
-      }
-      boot_ui_manual_ack(ok);
-    }
+    /* 手动标定页的记录请求已在 2b 的 record_ref 分支处理（Ctrl 单归属，
+     * 页面模型在 Ctrl 内推进，不再经过 boot_ui_manual_* 接口）。 */
 
     if (drive_calibration_mode != 0U)
     {
-      /* CAL 分支同样服从电机归属：UI 自检期间不许替它关驱动。 */
-      if (boot_ui_motor_owner == BOOT_UI_OWNER_CTRL)
-      {
-        ctrl_motors_sleep();
-      }
+      /* CAL 模式：驱动必须保持睡眠（标定上电不转轮，含重新上电后）。 */
+      ctrl_motors_sleep();
       awake = 0U;
     }
 

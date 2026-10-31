@@ -15,3 +15,5 @@ build/
 
 # python
 __pycache__/
+.superpowers/
+.scratch/

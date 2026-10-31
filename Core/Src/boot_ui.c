@@ -1,465 +1,100 @@
+/* boot_ui：OLED 初始化 + 纯渲染循环（spec §11.2/§12）。
+ *
+ * 单一职责：把 Ctrl 任务每 10 ms 发布的 ui_snapshot 画到屏上并 flush。
+ * 不读手柄、不推进页面状态、不累计编码器、不写任何电机寄存器——
+ * 电机（含写零）的唯一出口是 Ctrl 任务的 ctrl_apply()。
+ *
+ * 上电初始化也收敛在这里，但只建立"安全静止"的硬件起点，不产生运动：
+ *   1. 四路 SLP 拉低（驱动睡眠；.ioc 未配置这些脚，手动初始化）；
+ *   2. TIM8 四通道以占空比 0 启动（上电即有 PWM 外设、零波形）；
+ *   3. 四路编码器定时器启动（16 位计数从此连续，回绕由 wheel_feedback 处理）；
+ *   4. oled_init() 完成后置 boot_ui_ready=1，进入 20 ms 渲染循环。
+ *
+ * 原开机流程（等待按键/加载动画/UI 独立自检/结果停留页/USER 窗口/移交）
+ * 全部移除：自检由 Ctrl 内的 selfcheck_service 推进，页面由 Ctrl 内的
+ * ui_model 推进，本任务从第一帧起就只画快照。 */
 #include "boot_ui.h"
 
-#include "adc.h"
 #include "cmsis_os.h"
 #include "main.h"
 #include "oled.h"
-#include "oled_font.h"
-#include "oled_gfx.h"
 #include "tim.h"
+#include "ui_render.h"
 
-#define UI_BLINK_MS        500U
-#define UI_KEY_POLL_MS      10U
-#define UI_LOADING_MS     1000U
-#define UI_START_MS        800U
-#define UI_SPINNER_MS      125U
-#define UI_VDD_RETRY         3U
-#define UI_VDD_RETRY_MS    500U
-#define UI_MAIN_HOLD_MS    600U
+/* 渲染周期 20 ms（spec §11.8：全屏刷新最多 20 Hz；驾驶数据 10 Hz、
+ * 电压 2 Hz 由 Ctrl/power 任务的发布节拍决定，与本循环无关）。
+ * 若单帧绘制+flush 超过 20 ms，则降速让出一拍，绝不忙等、不阻塞 Ctrl。 */
+#define UI_RENDER_PERIOD_MS 20U
 
-#define UI_ROW_MOTOR_Y      22
-#define UI_ROW_VDD_Y        42
-#define UI_ROW_SYMBOL_X     78
+volatile uint8_t boot_ui_ready = 0U;
 
-#define UI_STATE_RUN   0U
-#define UI_STATE_OK    1U
-#define UI_STATE_FAIL  2U
-
-#define UI_TEXT6_WIDTH     6U
-#define UI_TEXT16_STEP    18U
-
-typedef struct
-{
-  TIM_HandleTypeDef *tim;
-  const char *name;
-} ui_wheel_t;
-
-static const ui_wheel_t s_wheels[4] =
-{
-  { &htim2, "RF" },
-  { &htim3, "LF" },
-  { &htim4, "RR" },
-  { &htim5, "LR" },
+/* 通道顺序与轮位一致：A 右前=CH4、B 左前=CH3、C 右后=CH2、D 左后=CH1。 */
+static const uint32_t s_boot_pwm_ch[4] = {
+  TIM_CHANNEL_4, TIM_CHANNEL_3, TIM_CHANNEL_2, TIM_CHANNEL_1
 };
 
-typedef struct
-{
-  GPIO_TypeDef *slpPort;
-  uint32_t slpPin;
-  GPIO_TypeDef *dirPort;
-  uint32_t dirPin;
-  uint32_t dirFwd;
-  uint32_t dirRev;
-  uint32_t pwmCh;
-} ui_motor_t;
-
-static const ui_motor_t s_motors[4] =
-{
-  { MOTOR_RF_SLP_GPIO_Port, MOTOR_RF_SLP_Pin, MOTOR_RF_DIR_GPIO_Port, MOTOR_RF_DIR_Pin,
-    MOTOR_RF_DIR_FORWARD, MOTOR_RF_DIR_REVERSE, TIM_CHANNEL_4 }, /* A 右前 */
-  { MOTOR_LF_SLP_GPIO_Port, MOTOR_LF_SLP_Pin, MOTOR_LF_DIR_GPIO_Port, MOTOR_LF_DIR_Pin,
-    MOTOR_LF_DIR_FORWARD, MOTOR_LF_DIR_REVERSE, TIM_CHANNEL_3 }, /* B 左前 */
-  { MOTOR_RR_SLP_GPIO_Port, MOTOR_RR_SLP_Pin, MOTOR_RR_DIR_GPIO_Port, MOTOR_RR_DIR_Pin,
-    MOTOR_RR_DIR_FORWARD, MOTOR_RR_DIR_REVERSE, TIM_CHANNEL_2 }, /* C 右后 */
-  { MOTOR_LR_SLP_GPIO_Port, MOTOR_LR_SLP_Pin, MOTOR_LR_DIR_GPIO_Port, MOTOR_LR_DIR_Pin,
-    MOTOR_LR_DIR_FORWARD, MOTOR_LR_DIR_REVERSE, TIM_CHANNEL_1 }, /* D 左后 */
+static GPIO_TypeDef *const s_boot_slp_port[4] = {
+  MOTOR_RF_SLP_GPIO_Port, MOTOR_LF_SLP_GPIO_Port,
+  MOTOR_RR_SLP_GPIO_Port, MOTOR_LR_SLP_GPIO_Port
 };
 
-static void ui_text16_center(int16_t y, const char *text);
-static void ui_text6_center(int16_t y, const char *text);
-static void ui_checklist(uint8_t motor_state, uint8_t vdd_state, uint8_t frame);
-static void ui_hold(uint32_t ms, uint8_t vdd_state, uint8_t *frame);
-static void ui_motor_selfcheck(uint8_t *frame);
-static uint8_t ui_vdd_check(uint32_t *vdd_mv, uint8_t *frame);
-static uint32_t ui_read_vdd_mv(void);
-static void ui_main_page(void);
-static void ui_format_vdd(char *buf, uint32_t mv);
-static void ui_format_rpm(char *buf, const char *name, int32_t rpm);
-
-static void ui_text16_center(int16_t y, const char *text)
-{
-  uint16_t width = oled_gfx_text16_width(text);
-  oled_gfx_text16((int16_t)((OLED_WIDTH - width) / 2U), y, text);
-}
-
-static void ui_text6_center(int16_t y, const char *text)
-{
-  uint16_t width = oled_gfx_text6x12_width(text);
-  oled_gfx_text6x12((int16_t)((OLED_WIDTH - width) / 2U), y, text);
-}
-
-static void ui_row_symbol(int16_t y, uint8_t state, uint8_t frame)
-{
-  if (state == UI_STATE_RUN)
-  {
-    oled_gfx_bitmap(UI_ROW_SYMBOL_X, (int16_t)(y + 2), 12, 12,
-                    oled_font_spinner[frame & 7U]);
-  }
-  else if (state == UI_STATE_OK)
-  {
-    oled_gfx_bitmap(UI_ROW_SYMBOL_X, y, 16, 16, oled_font_check);
-  }
-  else
-  {
-    oled_gfx_bitmap(UI_ROW_SYMBOL_X, y, 16, 16, oled_font_cross);
-  }
-}
-
-static void ui_checklist(uint8_t motor_state, uint8_t vdd_state, uint8_t frame)
-{
-  oled_gfx_clear();
-  ui_text16_center(0, "自检流程开始");
-  oled_gfx_text16(0, UI_ROW_MOTOR_Y, "电机自检");
-  oled_gfx_text16(0, UI_ROW_VDD_Y, "电池自检");
-  ui_row_symbol(UI_ROW_MOTOR_Y, motor_state, frame);
-  ui_row_symbol(UI_ROW_VDD_Y, vdd_state, frame);
-  oled_flush();
-}
-
-static void ui_hold(uint32_t ms, uint8_t vdd_state, uint8_t *frame)
-{
-  while (ms > 0U)
-  {
-    ui_checklist(UI_STATE_RUN, vdd_state, (*frame)++);
-    if (ms > UI_SPINNER_MS)
-    {
-      osDelay(UI_SPINNER_MS);
-      ms -= UI_SPINNER_MS;
-    }
-    else
-    {
-      osDelay(ms);
-      ms = 0U;
-    }
-  }
-}
-
-static void ui_wait_key(void)
-{
-  uint8_t blink = 1U;
-  uint8_t i;
-
-  for (;;)
-  {
-    oled_gfx_clear();
-    ui_text16_center(16, "等待初始化");
-    if (blink != 0U)
-    {
-      ui_text6_center(44, "PRESS KEY");
-    }
-    oled_flush();
-    blink = (uint8_t)!blink;
-
-    for (i = 0; i < (uint8_t)(UI_BLINK_MS / UI_KEY_POLL_MS); i++)
-    {
-      if (HAL_GPIO_ReadPin(KEY_USER_GPIO_Port, KEY_USER_Pin) == GPIO_PIN_RESET)
-      {
-        osDelay(UI_KEY_POLL_MS);
-        if (HAL_GPIO_ReadPin(KEY_USER_GPIO_Port, KEY_USER_Pin) == GPIO_PIN_RESET)
-        {
-          return;
-        }
-      }
-      osDelay(UI_KEY_POLL_MS);
-    }
-  }
-}
-
-static void ui_loading(void)
-{
-  uint8_t frame = 0U;
-  uint32_t elapsed;
-  uint16_t width;
-
-  for (elapsed = 0U; elapsed < UI_LOADING_MS; elapsed += UI_SPINNER_MS)
-  {
-    oled_gfx_clear();
-    ui_text16_center(24, "正在加载");
-    width = oled_gfx_text16_width("正在加载");
-    oled_gfx_bitmap((int16_t)((OLED_WIDTH - width) / 2U + width + 8U), 26,
-                    12, 12, oled_font_spinner[frame & 7U]);
-    oled_flush();
-    frame++;
-    osDelay(UI_SPINNER_MS);
-  }
-
-  oled_gfx_clear();
-  ui_text16_center(24, "自检流程开始");
-  oled_flush();
-  osDelay(UI_START_MS);
-}
-
-/* 四轮顺序自检：A→B→C→D，每轮独立跑 正转3s → 停3s → 反转3s → 停3s ×2，50% 上限 */
-static void ui_motor_selfcheck(uint8_t *frame)
-{
-  uint8_t cycle;
-  uint8_t w;
-
-  for (w = 0U; w < 4U; w++)
-  {
-    const ui_motor_t *m = &s_motors[w];
-
-    HAL_GPIO_WritePin(m->slpPort, m->slpPin, GPIO_PIN_SET);
-    osDelay(10U);
-
-    for (cycle = 0U; cycle < SELFCHECK_CYCLES; cycle++)
-    {
-      HAL_GPIO_WritePin(m->dirPort, m->dirPin, m->dirFwd);
-      __HAL_TIM_SET_COMPARE(&htim8, m->pwmCh, SELFCHECK_PWM_PULSE);
-      ui_hold(SELFCHECK_RUN_MS, UI_STATE_RUN, frame);
-
-      __HAL_TIM_SET_COMPARE(&htim8, m->pwmCh, 0U);
-      ui_hold(SELFCHECK_PAUSE_MS, UI_STATE_RUN, frame);
-
-      HAL_GPIO_WritePin(m->dirPort, m->dirPin, m->dirRev);
-      __HAL_TIM_SET_COMPARE(&htim8, m->pwmCh, SELFCHECK_PWM_PULSE);
-      ui_hold(SELFCHECK_RUN_MS, UI_STATE_RUN, frame);
-
-      __HAL_TIM_SET_COMPARE(&htim8, m->pwmCh, 0U);
-      ui_hold(SELFCHECK_PAUSE_MS, UI_STATE_RUN, frame);
-    }
-
-    /* 本轮收尾：清占空比 → 停 PWM（清 MOE）→ 驱动器回睡眠 */
-    __HAL_TIM_SET_COMPARE(&htim8, m->pwmCh, 0U);
-    HAL_TIM_PWM_Stop(&htim8, m->pwmCh);
-    HAL_GPIO_WritePin(m->slpPort, m->slpPin, GPIO_PIN_RESET);
-  }
-}
-
-static uint32_t ui_read_vdd_mv(void)
-{
-  static uint16_t s_cal = 0U;
-  ADC_ChannelConfTypeDef cfg = {0};
-  uint32_t sum = 0U;
-  uint8_t i;
-
-  if (s_cal == 0U)
-  {
-    s_cal = *VREFINT_CAL_ADDR;
-  }
-
-  cfg.Channel = ADC_CHANNEL_VREFINT;
-  cfg.Rank = 1U;
-  cfg.SamplingTime = ADC_SAMPLETIME_480CYCLES;
-  if (HAL_ADC_ConfigChannel(&hadc1, &cfg) != HAL_OK)
-  {
-    return 0U;
-  }
-
-  for (i = 0U; i < 8U; i++)
-  {
-    if (HAL_ADC_Start(&hadc1) == HAL_OK)
-    {
-      if (HAL_ADC_PollForConversion(&hadc1, 10U) == HAL_OK)
-      {
-        sum += HAL_ADC_GetValue(&hadc1);
-      }
-      HAL_ADC_Stop(&hadc1);
-    }
-  }
-
-  /* 恢复电池分压通道，保持 ADC 状态与初始化后一致 */
-  cfg.Channel = ADC_CHANNEL_8;
-  (void)HAL_ADC_ConfigChannel(&hadc1, &cfg);
-
-  return boot_ui_vdd_mv(sum / 8U, s_cal);
-}
-
-static uint8_t ui_vdd_check(uint32_t *vdd_mv, uint8_t *frame)
-{
-  uint8_t attempt;
-  uint32_t value = 0U;
-
-  for (attempt = 0U; attempt < UI_VDD_RETRY; attempt++)
-  {
-    ui_checklist(UI_STATE_OK, UI_STATE_RUN, (*frame)++);
-    value = ui_read_vdd_mv();
-    if (value >= BOOT_UI_VDD_MIN_MV)
-    {
-      *vdd_mv = value;
-      return 1U;
-    }
-    osDelay(UI_VDD_RETRY_MS);
-  }
-  *vdd_mv = value;
-  return 0U;
-}
-
-static void ui_format_vdd(char *buf, uint32_t mv)
-{
-  uint32_t cv = mv / 10U;
-
-  if (cv > 9999U)
-  {
-    cv = 9999U;
-  }
-  buf[0] = 'V';
-  buf[1] = 'D';
-  buf[2] = 'D';
-  buf[3] = ' ';
-  buf[4] = (char)('0' + (cv / 100U) % 10U);
-  buf[5] = '.';
-  buf[6] = (char)('0' + (cv / 10U) % 10U);
-  buf[7] = (char)('0' + cv % 10U);
-  buf[8] = 'V';
-  buf[9] = '\0';
-}
-
-static void ui_format_rpm(char *buf, const char *name, int32_t rpm)
-{
-  uint32_t mag = (rpm < 0) ? (uint32_t)(-rpm) : (uint32_t)rpm;
-
-  if (mag > 9999U)
-  {
-    mag = 9999U;
-  }
-  buf[0] = name[0];
-  buf[1] = name[1];
-  buf[2] = ' ';
-  buf[3] = (rpm < 0) ? '-' : '+';
-  buf[4] = (char)('0' + (mag / 1000U) % 10U);
-  buf[5] = (char)('0' + (mag / 100U) % 10U);
-  buf[6] = (char)('0' + (mag / 10U) % 10U);
-  buf[7] = (char)('0' + mag % 10U);
-  buf[8] = ' ';
-  buf[9] = 'r';
-  buf[10] = 'p';
-  buf[11] = 'm';
-  buf[12] = '\0';
-}
-
-static void ui_main_page(void)
-{
-  uint16_t prev[4];
-  int32_t sum[4];
-  char line[20];
-  uint32_t vdd_mv = 0U;
-  uint32_t since_vdd = BOOT_UI_VDD_REFRESH_MS;
-  uint8_t w;
-  uint8_t s;
-
-  for (w = 0U; w < 4U; w++)
-  {
-    prev[w] = (uint16_t)__HAL_TIM_GET_COUNTER(s_wheels[w].tim);
-    sum[w] = 0;
-  }
-
-  for (;;)
-  {
-    for (w = 0U; w < 4U; w++)
-    {
-      sum[w] = 0;
-    }
-
-    for (s = 0U; s < BOOT_UI_ENC_SAMPLES; s++)
-    {
-      osDelay(BOOT_UI_ENC_SAMPLE_MS);
-      for (w = 0U; w < 4U; w++)
-      {
-        uint16_t now = (uint16_t)__HAL_TIM_GET_COUNTER(s_wheels[w].tim);
-        sum[w] += (int32_t)(int16_t)(uint16_t)(now - prev[w]);
-        prev[w] = now;
-      }
-    }
-
-    if (since_vdd >= BOOT_UI_VDD_REFRESH_MS)
-    {
-      vdd_mv = ui_read_vdd_mv();
-      since_vdd = 0U;
-    }
-    since_vdd += (uint32_t)(BOOT_UI_ENC_SAMPLE_MS * BOOT_UI_ENC_SAMPLES);
-
-    oled_gfx_clear();
-    ui_format_vdd(line, vdd_mv);
-    oled_gfx_text6x12(0, 0, line);
-
-    for (w = 0U; w < 4U; w++)
-    {
-      ui_format_rpm(line, s_wheels[w].name,
-                    boot_ui_rpm_from_counts(sum[w], WHEEL_CPR));
-      oled_gfx_text6x12(0, (int16_t)(12 * (w + 1U)), line);
-    }
-    oled_flush();
-  }
-}
-
-/* 临时：面板点灯探测。阶段 1 = SSD1306 路径，阶段 2 = SH1106 路径，定位后删除 */
-static void ui_panel_probe(void)
-{
-  uint8_t *fb = (uint8_t *)oled_gfx_buffer();
-  uint32_t i;
-
-  for (i = 0U; i < OLED_WIDTH * OLED_HEIGHT / 8U; i++)
-  {
-    fb[i] = 0xFFU;
-  }
-  oled_flush();
-  osDelay(3000U);
-  oled_gfx_clear();
-  oled_flush();
-  osDelay(800U);
-
-  oled_sh1106_enable();
-  for (i = 0U; i < OLED_WIDTH * OLED_HEIGHT / 8U; i++)
-  {
-    fb[i] = 0xFFU;
-  }
-  oled_flush();
-  osDelay(3000U);
-  oled_gfx_clear();
-  oled_flush();
-}
+static const uint32_t s_boot_slp_pin[4] = {
+  MOTOR_RF_SLP_Pin, MOTOR_LF_SLP_Pin, MOTOR_RR_SLP_Pin, MOTOR_LR_SLP_Pin
+};
 
 void boot_ui_run(void)
 {
   GPIO_InitTypeDef gpio = {0};
-  uint8_t frame = 0U;
-  uint32_t vdd_mv = 0U;
   uint8_t w;
 
-  /* 四轮 SLP/EN：.ioc 未配置，手动初始化，低电平 = 驱动睡眠 */
+  /* 四轮 SLP/EN：低电平 = 驱动睡眠。电机自始至终归 Ctrl——这里只保证
+   * "上电即睡眠"，之后唤醒/写零/写占空比全部由 ctrl_apply 接管。 */
   for (w = 0U; w < 4U; w++)
   {
-    HAL_GPIO_WritePin(s_motors[w].slpPort, s_motors[w].slpPin, GPIO_PIN_RESET);
-    gpio.Pin = s_motors[w].slpPin;
+    HAL_GPIO_WritePin(s_boot_slp_port[w], s_boot_slp_pin[w], GPIO_PIN_RESET);
+    gpio.Pin = s_boot_slp_pin[w];
     gpio.Mode = GPIO_MODE_OUTPUT_PP;
     gpio.Pull = GPIO_NOPULL;
     gpio.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(s_motors[w].slpPort, &gpio);
+    HAL_GPIO_Init(s_boot_slp_port[w], &gpio);
   }
 
-  /* 上电即置 MOE，但占空比 0，电机不动 */
+  /* 上电即置 MOE，但占空比 0：定时器在跑、输出零波形，电机不动。
+   * Ctrl 唤醒路径只需改 CCR，不需要再关心通道是否启动。 */
   for (w = 0U; w < 4U; w++)
   {
-    HAL_TIM_PWM_Start(&htim8, s_motors[w].pwmCh);
-    __HAL_TIM_SET_COMPARE(&htim8, s_motors[w].pwmCh, 0U);
+    (void)HAL_TIM_PWM_Start(&htim8, s_boot_pwm_ch[w]);
+    __HAL_TIM_SET_COMPARE(&htim8, s_boot_pwm_ch[w], 0U);
   }
 
-  HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
-  HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
-  HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
-  HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_ALL);
+  /* 四路编码器：只启动计数，不读数（累计在 Ctrl 的 wheel_feedback 里）。 */
+  (void)HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
+  (void)HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
+  (void)HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
+  (void)HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_ALL);
 
   oled_init();
-  ui_panel_probe();
+  /* 屏幕就绪后才置位：此后渲染循环提供的页面/数据才可信。 */
+  boot_ui_ready = 1U;
 
-  ui_wait_key();
-  ui_loading();
-
-  ui_checklist(UI_STATE_RUN, UI_STATE_RUN, frame++);
-  ui_motor_selfcheck(&frame);
-  ui_checklist(UI_STATE_OK, UI_STATE_RUN, frame++);
-
-  if (ui_vdd_check(&vdd_mv, &frame) == 0U)
+  for (;;)
   {
-    ui_checklist(UI_STATE_OK, UI_STATE_FAIL, frame);
-    for (;;)
-    {
-      osDelay(1000U);
-    }
-  }
+    ui_snapshot_t snap;
+    uint32_t frame_start = HAL_GetTick();
+    uint32_t elapsed;
+    uint32_t rest;
 
-  ui_checklist(UI_STATE_OK, UI_STATE_OK, frame);
-  osDelay(UI_MAIN_HOLD_MS);
-  ui_main_page();
+    /* seq-lock 读快照 → 按页绘制 → 整帧 flush。绘制函数只写
+     * oled_gfx 帧缓冲，flush 是本任务唯一的屏幕输出。 */
+    ui_snapshot_get(&snap);
+    ui_render_draw(&snap, frame_start);
+    oled_flush();
+
+    /* 保持 ~20 ms 节拍：剩余时间睡眠；单帧超期时至少让出一拍
+     * （osDelay 等价于 osDelayUntil 的相对形式，tick=1 ms）。 */
+    elapsed = (uint32_t)(HAL_GetTick() - frame_start);
+    rest = (elapsed < UI_RENDER_PERIOD_MS) ? (UI_RENDER_PERIOD_MS - elapsed)
+                                           : 1U;
+    osDelay(rest);
+  }
 }

@@ -18,7 +18,6 @@
 #include "wheel_home.h"
 GPIO_TypeDef gpioa, gpiob, gpioc, gpiod, gpioe;
 TIM_HandleTypeDef htim2, htim3, htim4, htim5, htim8;
-volatile uint8_t boot_ui_ready=1;
 
 /* --- power_monitor 桩 --------------------------------------------------- */
 /* Ctrl 测试不链接 power_monitor.c：用可编程快照驱动 vdd_ok 门控
@@ -33,19 +32,10 @@ static void pm_set_vdd_ok(uint8_t ok)
   s_pm_stub.vdd_mv = (ok != 0U) ? 3300U : 0U;
 }
 
-/* 自检 UX 的桩：Ctrl 任务测试只关心电机输出，不关心 OLED 页面。 */
-void boot_ui_manual_begin(void) {}
-uint8_t boot_ui_manual_run(void) { return 0U; }
-uint8_t boot_ui_manual_active(void) { return 0U; }
-uint8_t boot_ui_manual_take_record_request(void) { return 0U; }
-void boot_ui_manual_ack(uint8_t success) { (void)success; }
-volatile uint8_t boot_ui_selfcheck_passed=1;
-volatile uint32_t boot_ui_selfcheck_seq=1;
-/* 本测试不链接 boot_ui.c：直接让电机归 Ctrl，覆盖"已移交"之后的驾驶逻辑。
- * 自检独占期的行为由 tools/test_boot_ctrl_integration.c scenario=3 覆盖。 */
-volatile boot_ui_motor_owner_t boot_ui_motor_owner=BOOT_UI_OWNER_CTRL;
-volatile uint8_t boot_ui_drive_enabled=1;
-volatile uint32_t boot_ui_handoff_seq=1;
+/* 自检 UX 已并入 Ctrl（boot_ui 收敛为渲染层）：不再有 boot_ui_manual_*
+ * 接口和自检移交全局。本测试不链接 boot_ui.c，boot_ui_ready 直接以
+ * "渲染层就绪"起步；自检结果由 Ctrl 内 selfcheck_service 的真实状态驱动。 */
+volatile uint8_t boot_ui_ready=1;
 /* --- fault-injection scenario (motor_health) --------------------------- */
 /* W 键让四轮满输出、编码器纹丝不动：宽限 300 ms + 窗口 300 ms 后必须锁存，
  * 输出清零；之后即使反馈恢复正常也不许自动恢复，只有重新自检通过才清。 */
@@ -189,17 +179,21 @@ static void home_script(void){
       wheel_home_get_status(&st);
       assert(st.reference_valid==1U);
       /* 后轮编码器：C 读 TIM5、D 读 TIM4，各转 1/4 圈。
-       * 16 位计数一次跳变必须 < 32768，故分两拍累加。 */
-      htim5.counter=20000U; htim4.counter=20000U;
+       * 16 位计数一次跳变必须 < 32768，故分两拍累加。
+       * 自检前置给计数器留了任意残余：这里按相对增量注入，
+       * 总位移与起点无关。 */
+      htim5.counter=(uint16_t)(htim5.counter+20000U);
+      htim4.counter=(uint16_t)(htim4.counter+20000U);
       hstage=13; hcycles=0;
     }
     break;
   case 13: /* 后续几拍补足到 1/4 圈（每拍 < 32768） */
     hbuttons=0xFFFFU;
-    if(hcycles==1){htim5.counter=40000U; htim4.counter=40000U;}
+    if(hcycles==1){htim5.counter=(uint16_t)(htim5.counter+20000U);
+                   htim4.counter=(uint16_t)(htim4.counter+20000U);}
     else if(hcycles>=3){
-      htim5.counter=(uint32_t)(WHEEL_RR_CPR/4U);
-      htim4.counter=(uint32_t)(WHEEL_LR_CPR/4U);
+      htim5.counter=(uint16_t)(htim5.counter+(uint32_t)(WHEEL_RR_CPR/4U-40000U));
+      htim4.counter=(uint16_t)(htim4.counter+(uint32_t)(WHEEL_LR_CPR/4U-40000U));
       hstage=14; hmark=tick; hcycles=0;
     }
     break;
@@ -924,7 +918,122 @@ static void relatch_script(ps2_state_t *p)
   }
 }
 
+/* --- 公共自检前置（真实菜单 + 真实 selfcheck_service）------------------- */
+/* 新语义下驾驶出力要求"本次上电自检已通过"（Ctrl 内服务状态）。
+ * 需要出力的场景先用真实菜单跑一轮全过的自检：品牌页 R1 → 菜单 →
+ * 右移选"检查与标定" → L1 → 子菜单 → 下移"重新自检" → L1 → 确认页 →
+ * 焦点"开始" → L1 → RUNNING 注入反馈 → 四轮全过 → 结果页 R1 回品牌页。
+ * 复用 selfcheck_nav（cstage 0..11）与 selfcheck_inject；cn 作帧计数。 */
+static int sc_pre_done;
+static uint8_t sc_pre_crank;
+static uint32_t sc_pre_crank_t0;
+
+static void pre_reset(void)
+{
+  sc_pre_done = 0; sc_pre_crank = 0;
+  cstage = 100; cmark = tick; cn = 0U; crank_on = 0U;
+}
+
+static void selfcheck_preamble_step(void)
+{
+  ui_snapshot_t snap;
+
+  cn++;
+  if (cstage <= 11) { selfcheck_nav(&cstage, &cmark); return; }
+  switch (cstage)
+  {
+  case 100: /* 冷启动回中性预热：链路建立 + 再武装 100 ms */
+    cbuttons = 0xFFFFU; clx = 128U; cly = 128U;
+    if (cn >= 40U) { cstage = 0; cmark = tick; }
+    break;
+  case 12: /* L1：确认页"开始" → 自检启动 */
+    cbuttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_CHECK_RUN) { cstage = 13; cmark = tick; }
+    break;
+  case 13: /* 释放 L1，等服务真跑起来（state[0]==1）后开始注入 */
+    cbuttons = 0xFFFFU;
+    ui_snapshot_get(&snap);
+    if (snap.selfcheck_state[0] == 1U)
+    {
+      sc_pre_crank = 1U;
+      sc_pre_crank_t0 = tick;
+      cstage = 14;
+    }
+    break;
+  case 14: /* 全程注入直到四轮全过 */
+    if (sc_pre_crank != 0U)
+    {
+      selfcheck_inject((uint32_t)(tick - sc_pre_crank_t0));
+    }
+    ui_snapshot_get(&snap);
+    if (snap.selfcheck_state[0] == 2U && snap.selfcheck_state[1] == 2U &&
+        snap.selfcheck_state[2] == 2U && snap.selfcheck_state[3] == 2U)
+    {
+      sc_pre_crank = 0U;
+      assert(snap.selfcheck_passed == 1U);
+      cstage = 15;
+    }
+    break;
+  case 15: /* 等页面落到结果页（晚服务完成一拍，只允许这一帧滞后） */
+    cbuttons = 0xFFFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_CHECK_RESULT) { cstage = 16; cmark = tick; }
+    else
+    {
+      assert(snap.page == UI_PAGE_CHECK_RUN);
+      assert((uint32_t)(tick - cmark) < 200U);
+    }
+    break;
+  case 16: /* 结果页 R1 → 品牌页 */
+    cbuttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_BRAND) { cstage = 17; cmark = tick; }
+    break;
+  case 17: /* 释放 R1 ≥3 稳定帧 */
+    cbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - cmark) >= 30U) { cstage = 18; cmark = tick; }
+    break;
+  case 18: /* 品牌页 R1 → 主菜单：把导航遗留的 menu_sel 复位到"驾驶" */
+    cbuttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MENU) { cstage = 19; cmark = tick; }
+    break;
+  case 19:
+    cbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - cmark) >= 30U) { cstage = 20; cmark = tick; }
+    break;
+  case 20: /* 左移到"驾驶"（menu_sel 0） */
+    cbuttons = 0xFFFFU;
+    ui_snapshot_get(&snap);
+    if (snap.menu_sel == 0U) { clx = 128U; cstage = 21; cmark = tick; }
+    else { clx = 48U; }
+    break;
+  case 21: /* 摇杆回中 */
+    cbuttons = 0xFFFFU; clx = 128U;
+    if ((uint32_t)(tick - cmark) >= 30U) { cstage = 22; cmark = tick; }
+    break;
+  case 22: /* 菜单页 R1 → 品牌页（后续场景都从品牌页起导航） */
+    cbuttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_BRAND) { cstage = 23; cmark = tick; }
+    break;
+  case 23:
+    cbuttons = 0xFFFFU;
+    if ((uint32_t)(tick - cmark) >= 30U) { sc_pre_done = 1; }
+    break;
+  default:
+    break;
+  }
+}
+
 uint8_t ps2_poll(ps2_state_t *p){
+ /* 需要出力的场景先跑一轮全过的真实自检（'c' 场景本身就在测自检，跳过）。 */
+ if(!selfcheck_test && !sc_pre_done){
+   selfcheck_preamble_step();
+   p->buttons=cbuttons;p->lx=clx;p->ly=cly;p->rx=128U;p->ry=128U;
+   tick+=3U;return PS2_FRAME_OK;
+ }
  if(stop_test){
    /* 导航到驾驶页并等回中武装后推满出力，再回中让停止流程关使能。 */
    static uint32_t n;
@@ -975,21 +1084,18 @@ uint8_t ps2_poll(ps2_state_t *p){
      /* 停止流程：锁存后驱动使能必须同时关闭，而不是只写零 PWM。 */
      assert(!(gpiob.ODR&GPIO_PIN_12));assert(!(gpiob.ODR&GPIO_PIN_14));
      fault_cleared=1;
-     /* 模拟“用户重新自检且四轮全过” */
-     boot_ui_selfcheck_seq++;
-     boot_ui_selfcheck_passed=1U;
+     /* “重新自检通过才清锁存”走的是真实的 selfcheck_service 路径，
+      * 由本测试的 'x' 场景（relatch）覆盖；本场景到此确认锁存即可。 */
      tick+=3U;
      return PS2_FRAME_OK;
    }
-   /* 清故障后必须恢复出力（锁存已解除）。清零那一刻驱动是睡眠的，
-    * 恢复先要唤醒并等 10 ms；且驾驶命令受页面仲裁（用上一拍的
-    * fault_mask），所以清完给几帧余量再断言。 */
+   /* 锁存后保持静止若干帧，确认不会自行恢复出力。 */
    {
      static uint32_t rec;
      rec++;
-     if(rec<3U){ tick+=3U; return PS2_FRAME_OK; }
+     if(rec<10U){ tick+=3U; return PS2_FRAME_OK; }
    }
-   for(int i=0;i<4;i++)assert(htim8.compare[i]!=0U);
+   for(int i=0;i<4;i++)assert(htim8.compare[i]==0U);
    longjmp(done,1);
  }
  /* 冷启动再武装：摇杆回中且 SELECT 释放必须持续 100 ms（tick 每轮 +3 ms），
@@ -1066,35 +1172,38 @@ void osDelay(uint32_t ms){
  if(reconnect_test && current_phase==2)tick+=200U;
 }
 int main(int argc, char **argv){
- if(argc>1 && argv[1][0]=='b'){ verbose_test=(argc>2); if(!setjmp(done))StartCtrlTask(0); puts("basic ok"); return 0; }
- if(argc>1 && argv[1][0]=='v'){ verbose_test=1; if(!setjmp(done))StartCtrlTask(0); puts("end"); return 0; }
+ /* 自检前置（pw.vdd_valid）对所有需要出力的场景生效。 */
+ pm_set_vdd_ok(1U);
+ if(argc>1 && argv[1][0]=='b'){ verbose_test=(argc>2); pre_reset(); if(!setjmp(done))StartCtrlTask(0); puts("basic ok"); return 0; }
+ if(argc>1 && argv[1][0]=='v'){ verbose_test=1; pre_reset(); if(!setjmp(done))StartCtrlTask(0); puts("end"); return 0; }
  /* 归位场景单独一个进程：状态机是全静态的，与上面几个场景共享会
   * 带入 50 ms 采样新鲜度时间戳，混淆被测行为。 */
  if(argc>1 && argv[1][0]=='f'){
    fault_test=1;tick=0U;fault_t0=0U;fault_frames=0U;
    fault_t0=tick;
+   pre_reset();
    if(!setjmp(done))StartCtrlTask(0);
-   puts("ctrl motor health latch / zero output / selfcheck clear OK");return 0;
+   puts("ctrl motor health latch / zero output / stays latched OK");return 0;
  }
  if(argc>1 && argv[1][0]=='s'){
    stop_test=1;tick=0U;
+   pre_reset();
    if(!setjmp(done))StartCtrlTask(0);
    puts("ctrl stop closes drive enable");return 0;
  }
  if(argc>1 && argv[1][0]=='h'){
    home_test=1;tick=0U;phase=0;
-   /* 复现上板现场：UI 自检收尾时 HAL_TIM_PWM_Stop 关掉四路通道，然后
-    * 才移交 owner=CTRL。这里直接以"已移交"起始（owner 保持 CTRL），
-    * 但 pwm_ccer 清零，保证 ctrl_link_service 的冷启动分支没机会抢先
-    * 启动通道——这样才能测出"移交后需要有人启动通道"。
-    * 若从 owner=UI 起步，Ctrl 会一直走无权跳过分支，归位相序根本推不动。 */
-   boot_ui_drive_enabled=1U;
+   /* boot_ui 不再参与电机归属：从上电起 Ctrl 就独占电机（首帧零命令 →
+    * 睡眠）。pwm_ccer 清零，保证 ctrl_apply 的唤醒分支必须真的启动
+    * 通道——否则归位相序推不动（回归上板"只写 CCR 不启动通道"问题）。 */
    pwm_ccer=0U;
+   pre_reset();
    if(!setjmp(done))StartCtrlTask(0);
    puts("ctrl homing arbitration / rear encoders OK");return 0;
  }
  if(argc>1 && argv[1][0]=='u'){
    ui_test=1;tick=0U;
+   pre_reset();
    if(!setjmp(done))StartCtrlTask(0);
    puts("ctrl ui snapshot / page-gated drive / dual-axis mix OK");return 0;
  }
@@ -1110,12 +1219,16 @@ int main(int argc, char **argv){
    if(!setjmp(done))StartCtrlTask(0);
    puts("ctrl failed recheck keeps latch / pass+neutral restores OK");return 0;
  }
+ pre_reset();
  if(!setjmp(done))StartCtrlTask(0);
  reconnect_test=1;reconnect_seen=1;phase=0;tick=1000;
+ pre_reset();
  if(!setjmp(done))StartCtrlTask(0);
  phase=0;tick=UINT32_MAX-100U;
+ pre_reset();
  if(!setjmp(done))StartCtrlTask(0);
  phase=0;drive_calibration_mode=1;
+ pre_reset();
  if(!setjmp(done))StartCtrlTask(0);
  drive_calibration_mode=0;
 

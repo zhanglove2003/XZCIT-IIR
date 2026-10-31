@@ -46,6 +46,19 @@ Core/Src/oled.c \
 Core/Src/oled_gfx.c \
 Core/Src/oled_font.c \
 Core/Src/boot_ui.c \
+Core/Src/ps2_gamepad.c \
+Core/Src/drive_ctrl.c \
+Core/Src/wheel_feedback.c \
+Core/Src/wheel_home.c \
+Core/Src/manual_ref.c \
+Core/Src/buzzer.c \
+Core/Src/flog.c \
+Core/Src/motor_health.c \
+Core/Src/motor_test.c \
+Core/Src/ui_model.c \
+Core/Src/ui_render.c \
+Core/Src/selfcheck_service.c \
+Core/Src/power_monitor.c \
 Core/Src/usart.c \
 Core/Src/stm32f4xx_it.c \
 Core/Src/stm32f4xx_hal_msp.c \
@@ -145,9 +158,12 @@ MCU = $(CPU) -mthumb $(FPU) $(FLOAT-ABI)
 AS_DEFS = 
 
 # C defines
+# FLOG_ENABLE：打开串口日志（USART3 115200 + UART4 9600 双路输出）。
+# 调试期打开；量产可注释掉这一行，sprintf/串口发送代码全部不参与编译。
 C_DEFS =  \
 -DUSE_HAL_DRIVER \
--DSTM32F407xx
+-DSTM32F407xx \
+-DFLOG_ENABLE
 
 
 # AS includes
