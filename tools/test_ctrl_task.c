@@ -253,12 +253,38 @@ static void home_script(void){
       assert(htim8.compare[3]==0U);                     /* CH4 = 右前 A */
       assert(gpiod.ODR&GPIO_PIN_10);                    /* C 前进 = SET */
       assert(gpioc.ODR&GPIO_PIN_12);                    /* D 后退 = SET */
-      /* 归位已启动、C/D 都在出力：场景到此为止。
-       * “停止后关驱动使能”由 fault 场景（锁存）与 stop 场景覆盖。 */
-      longjmp(done,1);
+      hstage=22; hmark=tick;
     }
     if((uint32_t)(tick-hmark)>=1000U){
       puts("homing never started");assert(0);
+    }
+    break;
+  case 22: /* RUNNING 中按 R1：离开 HOME 页必须取消归位（spec §7/§10） */
+    hbuttons=0xF7FFU;
+    ui_snapshot_get(&snap);
+    if(snap.page!=UI_PAGE_HOME){
+      int i;
+      /* 页面已离开：当拍取消落地，四轮 compare 全 0。 */
+      for(i=0;i<4;i++) assert(htim8.compare[i]==0U);
+      wheel_home_get_status(&st);
+      assert(st.mode==WHEEL_HOME_WAIT_NEUTRAL ||
+             st.mode==WHEEL_HOME_MANUAL);
+      assert(st.result==WHEEL_HOME_RESULT_CANCELLED);
+      hstage=23; hmark=tick;
+    }
+    if((uint32_t)(tick-hmark)>=1000U){
+      puts("homing not cancelled by R1");assert(0);
+    }
+    break;
+  case 23: /* 取消后保持停止：不允许任何归位脉冲复活 */
+    hbuttons=0xFFFFU;
+    if((uint32_t)(tick-hmark)>=150U){
+      int i;
+      wheel_home_get_status(&st);
+      assert(st.mode!=WHEEL_HOME_RUNNING);
+      assert(st.result==WHEEL_HOME_RESULT_CANCELLED);
+      for(i=0;i<4;i++) assert(htim8.compare[i]==0U);
+      longjmp(done,1);
     }
     break;
   default:
@@ -690,6 +716,73 @@ static void selfcheck_script(ps2_state_t *p)
       ui_snapshot_get(&snap);
       assert(snap.result_window_open == 0U);
       assert(snap.page == UI_PAGE_BRAND);
+      longjmp(done, 1);
+    }
+    break;
+  default:
+    break;
+  }
+}
+
+/* --- selfcheck frame-loss scenario ('k') -------------------------------- */
+/* spec §11.9：自检 RUNNING 中出现无效手柄帧（坏帧/失联）即停止并取消。
+ * 断言：下一控制周期四轮 compare 全 0、受试轮定格失败（3）、服务退出
+ * RUNNING（action_busy=0）、passed=0；重连不自动续跑。 */
+static int scframe_test;
+static int kstage;
+static uint32_t kn, kmark, kbad;
+
+static void selfcheck_frame_loss_script(ps2_state_t *p)
+{
+  ui_snapshot_t snap;
+
+  kn++;
+  switch (kstage)
+  {
+  case 0: /* 冷启动预热（preamble 已跑过一轮全过自检、页面回品牌页） */
+    p->buttons = 0xFFFFU; p->lx = 128U; p->ly = 128U;
+    if (kn >= 10U) { cstage = 0; cmark = tick; kstage = 1; }
+    break;
+  case 1: /* 复用自检导航：品牌页 → 确认页 */
+    selfcheck_nav(&cstage, &cmark);
+    p->buttons = cbuttons; p->lx = clx; p->ly = cly;
+    if (cstage == 12) { kstage = 2; }
+    break;
+  case 2: /* L1：确认页"开始" → 自检启动 */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_CHECK_RUN) { kstage = 3; kmark = tick; }
+    break;
+  case 3: /* 释放 L1，等服务真跑起来（state[0]==1）后开始注入 */
+    p->buttons = 0xFFFFU;
+    ui_snapshot_get(&snap);
+    if (snap.selfcheck_state[0] == 1U)
+    {
+      crank_on = 1U;
+      crank_t0 = tick;
+      kstage = 4; kmark = tick;
+    }
+    break;
+  case 4: /* RUNNING 注入反馈约 200 ms，确认服务独占输出 */
+    selfcheck_inject((uint32_t)(tick - crank_t0));
+    assert_selfcheck_output_pattern();
+    if ((uint32_t)(tick - kmark) >= 200U)
+    {
+      crank_on = 0U;
+      kstage = 5;
+      kbad = 0U;
+    }
+    break;
+  case 5: /* 帧无效（ps2_poll 改回 BAD）：两拍内必须已取消并清零输出 */
+    kbad++;
+    ui_snapshot_get(&snap);
+    if (kbad >= 2U)
+    {
+      int i;
+      for (i = 0; i < 4; i++) { assert(htim8.compare[i] == 0U); }
+      assert(snap.selfcheck_state[0] == 3U); /* 受试轮定格失败 */
+      assert(snap.action_busy == 0U);        /* 服务已退出 RUNNING */
+      assert(snap.selfcheck_passed == 0U);   /* 取消不通过 */
       longjmp(done, 1);
     }
     break;
@@ -1161,13 +1254,34 @@ static void power_gate_script(ps2_state_t *p)
     p->ly = 128U;
     if ((uint32_t)(tick - pmark) >= 200U) { pstage = 22; pmark = tick; }
     break;
-  case 22: /* 再推满：vdd_ok=1 + 已过自检 → 出力 8400，随即注入掉压 */
+  case 22: /* 再推满：vdd_ok=1 + 已过自检 → 出力 8400，随即注入电池欠压 */
     p->ly = 0U;
     if ((uint32_t)(tick - pmark) >= 60U) {
       ui_snapshot_get(&snap);
       assert(snap.drive_permitted == 1U);
       assert(snap.vdd_ok == 1U);
       for (int i = 0; i < 4; i++) assert(htim8.compare[i] == 8400U);
+      /* 电池域欠压注入（vdd 轨仍正常）：spec §9.2 配置有效后的欠压
+       * 必须进入供电故障停机——与 vdd_ok 无关地切断出力。 */
+      s_pm_stub.battery_configured = 1U;
+      s_pm_stub.battery_valid = 1U;
+      s_pm_stub.battery_mv = 3000U;
+      s_pm_stub.undervolt = 1U;
+      pstage = 60; pmark = tick;
+    }
+    break;
+  case 60: /* 欠压（vdd_ok 仍为 1）：驾驶输出当拍切断 */
+    p->ly = 0U;
+    ui_snapshot_get(&snap);
+    if ((uint32_t)(tick - pmark) >= 30U) {
+      assert(snap.undervolt == 1U);
+      assert(snap.drive_permitted == 0U);
+      for (int i = 0; i < 4; i++) assert(htim8.compare[i] == 0U);
+      /* 还原电池域，继续原有 vdd_ok 掉压链路 */
+      s_pm_stub.battery_configured = 0U;
+      s_pm_stub.battery_valid = 0U;
+      s_pm_stub.battery_mv = 0U;
+      s_pm_stub.undervolt = 0U;
       pm_set_vdd_ok(0U); /* 运行中轨压掉到 3000 mV */
       pstage = 23; pmark = tick;
     }
@@ -1371,6 +1485,12 @@ uint8_t ps2_poll(ps2_state_t *p){
    tick+=3U;return PS2_FRAME_OK;
  }
  if(power_gate_test){ power_gate_script(p); tick+=3U; return PS2_FRAME_OK; }
+ if(scframe_test){
+   selfcheck_frame_loss_script(p);
+   tick+=3U;
+   /* kstage>=5：模拟坏帧/失联——本帧无效。 */
+   return (kstage >= 5) ? PS2_FRAME_BAD : PS2_FRAME_OK;
+ }
  if(stop_test){
    /* 导航到驾驶页并等回中武装后推满出力，再回中让停止流程关使能。 */
    static uint32_t n;
@@ -1555,6 +1675,13 @@ int main(int argc, char **argv){
    pre_reset();
    if(!setjmp(done))StartCtrlTask(0);
    puts("ctrl vdd-undervolt gate / drive cut / selfcheck refused OK");return 0;
+ }
+ if(argc>1 && argv[1][0]=='k'){
+   scframe_test=1;tick=0U;kn=0U;kstage=0;kbad=0U;crank_on=0U;
+   pm_set_vdd_ok(1U);
+   pre_reset();
+   if(!setjmp(done))StartCtrlTask(0);
+   puts("ctrl selfcheck frame-loss cancels service / no resume OK");return 0;
  }
  if(argc>1 && argv[1][0]=='x'){
    relatch_test=1;tick=0U;xn=0U;xstage=0;xcrank_on=0U;

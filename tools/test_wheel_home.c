@@ -891,6 +891,46 @@ static void test_drive_page_long_press_consumed(void)
   for (int w = 0; w < 4; w++) { assert(rig.o.pulse[w] == 0); }
 }
 
+/* 公开取消入口（spec §7/§10）：任何页面离开/取消请求都要能停掉归位。
+ * RUNNING 中取消：下一拍收敛到 WAIT_NEUTRAL/CANCELLED、四轮零脉冲、
+ * 手势清零且要求先看到释放；pending 的菜单请求一并丢弃。 */
+static void test_public_cancel(void)
+{
+  rig_reset(CPR);
+  record_reference();
+
+  rig.pos[0] += (int64_t)CPR[0] / 2;
+  short_press();
+  assert(rig.o.pulse[0] < 0);
+  assert(rig.o.mode == WHEEL_HOME_RUNNING);
+
+  wheel_home_cancel(&rig.s);
+  step4(10U, 0, 0, 0, 0);
+  assert(rig.o.mode == WHEEL_HOME_WAIT_NEUTRAL);
+  assert(rig.o.result == WHEEL_HOME_RESULT_CANCELLED);
+  assert(rig.s.require_release == 1U);
+  for (int w = 0; w < 4; w++) { assert(rig.o.pulse[w] == 0); }
+
+  /* 取消后不得有任何脉冲复活；释放且回中后才回到手动。 */
+  pump(50U);
+  assert(rig.o.mode == WHEEL_HOME_WAIT_NEUTRAL);
+  for (int w = 0; w < 4; w++) { assert(rig.o.pulse[w] == 0); }
+  pump(100U);
+  assert(rig.o.mode == WHEEL_HOME_MANUAL);
+
+  /* pending 的菜单请求同样被丢弃：回到 MANUAL 后不会自己起转。 */
+  hold_l1();
+  wheel_home_request_home(&rig.s);
+  assert(rig.s.request_pending == 1U);
+  wheel_home_cancel(&rig.s);
+  assert(rig.s.request_pending == 0U);
+  assert(rig.s.request_wait_active == 0U);
+  release_l1();
+  pump(300U);
+  assert(rig.o.mode == WHEEL_HOME_MANUAL);
+  for (int w = 0; w < 4; w++) { assert(rig.o.pulse[w] == 0); }
+}
+
 /* 顶栏状态文本：每种状态/结果都有确定文本，且绝不越过缓冲区。 */
 static void test_status_text(void)
 {
@@ -1024,6 +1064,7 @@ int main(void)
   test_menu_request_without_reference();
   test_menu_homing_stick_cancels();
   test_request_home_mode_guard();
+  test_public_cancel();
   test_long_press_record_gated_by_manual_page();
   test_drive_page_long_press_consumed();
   test_status_text();

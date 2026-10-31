@@ -116,6 +116,9 @@ typedef struct
    * 提交键（L1）的释放不产生任何事件，进 RUNNING 只由放行门触发。 */
   uint8_t request_pending, request_wait_active;
   uint32_t request_wait_ms;
+  /* 公开取消入口的落地请求：wheel_home_cancel 在 RUNNING 中置位，
+   * 由下一拍 wheel_home_step 用状态机自己的时钟收敛（本模块不持时钟）。 */
+  uint8_t cancel_pending;
   uint32_t last_position_ms;
   /* 手动对齐页记录的停稳跟踪：与 RUNNING 的 still_* 分开，
    * 因为手册页里状态机处于 BUTTON_HELD，共用会互相打断。 */
@@ -140,6 +143,13 @@ void wheel_home_step(wheel_home_t *s, const wheel_home_input_t *in,
  * 无参考时请求直接以 WHEEL_HOME_RESULT_NO_REF 落地，不动任何轮子。
  * SELECT 短按快捷入口不受影响。 */
 void wheel_home_request_home(wheel_home_t *s);
+
+/* 公开取消入口（spec §7/§10：R1/新按键/页面离开/取消请求都必须能停掉
+ * 归位）：立即丢弃 pending 的菜单请求；RUNNING 中置 cancel_pending，
+ * 由下一拍 wheel_home_step 落地为 WAIT_NEUTRAL/CANCELLED——当拍四轮
+ * 零脉冲、摇杆/按键手势清零、恢复后要求先看到释放。非运行且无
+ * pending 时幂等无操作，允许每拍调用。 */
+void wheel_home_cancel(wheel_home_t *s);
 
 /* Ctrl 任务发布的最新仲裁快照（临界区保护），供 UI 状态栏读取。 */
 /* 手动对齐页：长按 SELECT 记录参考。

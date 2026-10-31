@@ -794,6 +794,21 @@ void StartCtrlTask(void *argument)
       {
         selfcheck_service_cancel(&s_ctrl_check);
       }
+      /* 归位只在 HOME 页存活（spec §7/§10）：页面模型发起的归位——菜单
+       * L1 或驾驶页 SELECT 快捷——都会转到 HOME 页；R1/新按键/摇杆越区
+       * 离开页面时模型给出 cancel_motion。这里补两条取消路径：
+       *   a) cancel_motion（含动作页摇杆越区、R1 取消）；
+       *   b) pending/RUNNING 却不在 HOME 页（例如等待阶段 R1 退出、
+       *      页面兜底转移）——请求一并丢弃，绝不从其它页面起转。
+       * cancel 幂等；RUNNING 的停止在本拍稍后的 wheel_home_step 落地
+       * （CANCELLED、四轮零脉冲、恢复要求先看到释放）。 */
+      if (ureq.cancel_motion != 0U ||
+          ((s_ctrl_home.mode == WHEEL_HOME_RUNNING ||
+            s_ctrl_home.request_pending != 0U) &&
+           s_ui_model.page != UI_PAGE_HOME))
+      {
+        wheel_home_cancel(&s_ctrl_home);
+      }
       /* 手动标定页长按记录参考：帧有效 + 回中由这里核对，
        * 静止计时已由每轮的 track_manual_still 累积。 */
       if (ureq.record_ref != 0U)
@@ -838,11 +853,14 @@ void StartCtrlTask(void *argument)
       /* action_busy 由自检/归位状态回喂；本次上电未通过自检时驾驶页
        * 零输出并显示"请先自检"（快照 selfcheck_passed=0）。
        * vdd_ok 是供电异常的最高优先级闸（spec §11.4）：3.3 V 轨低于
-       * 3100 mV 时即使其它条件全满足也零输出。 */
+       * 3100 mV 时即使其它条件全满足也零输出。电池域欠压/采样错误
+       * （POWER_BATTERY_CONFIGURED=1 时才可能置位）同属供电故障停机
+       * （spec §9.2）：与 vdd_ok 无关地关闭驾驶许可。 */
       drive_permitted = (uint8_t)(
           (s_ui_model.page == UI_PAGE_DRIVE) && (s_ctrl_check.passed != 0U) &&
           (s_ctrl_fault_mask == 0U) && (ui_action_busy == 0U) &&
-          (pw.vdd_ok != 0U) && (s_drive_center_armed != 0U));
+          (pw.vdd_ok != 0U) && (pw.undervolt == 0U) &&
+          (pw.battery_error == 0U) && (s_drive_center_armed != 0U));
     }
 
     /* 3) 仲裁：状态机只看输入，不写硬件。
@@ -871,9 +889,13 @@ void StartCtrlTask(void *argument)
     /* 3b) 菜单自检服务：驾驶仲裁之前推进。RUNNING 时 command 由服务独占
      *     （±SELFCHECK_PWM_PULSE，其余轮 0），第 4 步不得再混合驾驶输出。
      *     运行中摇杆越出驾驶死区兜底取消（页面模型在动作页已有一路）；
-     *     取消当拍立即清缓冲——cancel 不清调用方的 command。 */
+     *     出现无效手柄帧（坏帧/失联）同样立即取消——spec §11.9"归位或
+     *     自检出现无效手柄帧即停止并取消；重连不自动续跑"（服务落 DONE，
+     *     重连后只能重新从菜单发起）。取消当拍立即清缓冲——cancel 不清
+     *     调用方的 command。 */
     if (s_ctrl_check.phase == SELFCHECK_RUNNING &&
-        ctrl_sticks_centered_raw(in.lx, in.ly, in.rx, in.ry) == 0U)
+        (frame_ok == 0U ||
+         ctrl_sticks_centered_raw(in.lx, in.ly, in.rx, in.ry) == 0U))
     {
       selfcheck_service_cancel(&s_ctrl_check);
       for (w = 0U; w < 4U; w++)
@@ -907,11 +929,12 @@ void StartCtrlTask(void *argument)
      *    标定页、cancel_motion 请求一律零输出（零命令经 ctrl_apply 走
      *    停止流程关使能）。原 boot_ui_drive_enabled 的"页面级许可"职责
      *    已由 drive_permitted 一并承担。 */
-    if (ui_cancel_motion != 0U ||
-        s_ui_model.page == UI_PAGE_MANUAL_CAL || pw.vdd_ok == 0U)
+    if (ui_cancel_motion != 0U || s_ui_model.page == UI_PAGE_MANUAL_CAL ||
+        pw.vdd_ok == 0U || pw.undervolt != 0U || pw.battery_error != 0U)
     {
-      /* 掉压当拍先清命令（归位脉冲也不例外）；wheel_home 状态机随后经
-       * 上面的无效帧路径落成 CANCELLED。 */
+      /* 掉压/欠压/采样错误当拍先清命令（归位脉冲也不例外）；wheel_home
+       * 状态机随后经上面的无效帧路径落成 CANCELLED（spec §9.2 供电故障
+       * 停机：POWER_BATTERY_CONFIGURED=0 时二者恒 0，接线到位待启用）。 */
       for (w = 0U; w < 4U; w++)
       {
         command[w] = 0;
@@ -921,6 +944,16 @@ void StartCtrlTask(void *argument)
     {
       /* 自检独占电机：command 已由 3b 的服务本拍写入，驾驶混合与
        * 归位脉冲都不插手；取消当拍已由 3b/ui_model 清零。 */
+    }
+    else if (out.mode == WHEEL_HOME_RUNNING && s_ui_model.page != UI_PAGE_HOME)
+    {
+      /* 兜底：归位脉冲只允许出现在 HOME 页（spec §7"运动动作中先取消
+       * 并停止，再返回"）。任何其它页面一律清零，绝不让 out.pulse 继续
+       * 驱动电机到 8 s 超时。 */
+      for (w = 0U; w < 4U; w++)
+      {
+        command[w] = 0;
+      }
     }
     else if (out.mode == WHEEL_HOME_MANUAL)
     {

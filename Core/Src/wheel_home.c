@@ -115,6 +115,7 @@ void wheel_home_init(wheel_home_t *s, const uint32_t cpr[4])
   s->request_pending = 0U;
   s->request_wait_active = 0U;
   s->request_wait_ms = 0U;
+  s->cancel_pending = 0U;
   s->mode = WHEEL_HOME_MANUAL;
   s->result = WHEEL_HOME_RESULT_NONE;
 }
@@ -225,6 +226,23 @@ static void wh_abort(wheel_home_t *s, wheel_home_result_t result, uint32_t now)
   s->neutral_active = 1U;
   s->neutral_ms = now;
   wh_release_motion(s);
+}
+
+/* 公开取消入口：本模块不持时钟，RUNNING 的 abrupt 收敛（wh_abort 需要
+ * 真实毫秒）延到下一拍 wheel_home_step 用 in->now_ms 落地；pending 的
+ * 请求与状态机无关，这里同步丢弃。 */
+void wheel_home_cancel(wheel_home_t *s)
+{
+  if (s == 0)
+  {
+    return;
+  }
+  s->request_pending = 0U;
+  s->request_wait_active = 0U;
+  if (s->mode == WHEEL_HOME_RUNNING)
+  {
+    s->cancel_pending = 1U;
+  }
 }
 
 static void wh_on_press(wheel_home_t *s, uint32_t now)
@@ -631,6 +649,23 @@ void wheel_home_step(wheel_home_t *s, const wheel_home_input_t *in,
       out->result = s->result;
       out->reference_valid = 0U;
       return;
+    }
+  }
+
+  /* 公开取消入口的落地拍：显式取消优先于本拍其它事件。abrupt 收敛到
+   * WAIT_NEUTRAL/CANCELLED；手势清零并要求先看到释放（与帧失联取消
+   * 同一口径）。非 RUNNING 时 cancel_pending 只是幂等清除。 */
+  if (s->cancel_pending != 0U)
+  {
+    s->cancel_pending = 0U;
+    if (s->mode == WHEEL_HOME_RUNNING)
+    {
+      wh_abort(s, WHEEL_HOME_RESULT_CANCELLED, now);
+      s->press_active = 0U;
+      s->long_consumed = 1U;
+      s->filter_active = 0U;
+      s->stable_frames = 0U;
+      s->require_release = 1U;
     }
   }
 
