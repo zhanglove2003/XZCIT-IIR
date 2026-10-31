@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """把导出字模重组为正立 page 格式，生成 Core/Src/oled_font.c 与 Core/Inc/oled_font.h。
 
-原始汉字字模是「列行式 + 整体旋转 90°」，文件头注释的「行列式（横向字节）」
-与实际不符；这里按实际解码（page 格式解码 → 顺时针旋转 90°）还原正立字形。
+原始汉字字模按 page 格式解码后需要转置才能还原正立字形。
+仅顺时针旋转 90° 会把每个汉字左右镜像，造成偏旁位置颠倒。
 """
 import os
 import re
@@ -101,12 +101,33 @@ def ascii_to_page(raw):
 def cn_bitmap(ch):
     for name, key, idx in CN_GLYPHS_SPEC:
         if name == ch:
-            return rot90cw(decode_page(CN_RAW[key][idx]))
+            img = decode_page(CN_RAW[key][idx])
+            return [[img[col][row] for col in range(16)] for row in range(16)]
     raise KeyError(ch)
 
 
 CN_INDEX = {ch: (key, idx) for ch, key, idx in CN_GLYPHS_SPEC}
 CN_GLYPHS = {ch: page_encode(cn_bitmap(ch)) for ch, _key, _idx in CN_GLYPHS_SPEC}
+
+# 10×16 标题字模字符集（OLED 品牌页标题用）；由 6×12 最近邻放大生成
+TITLE_CHARS = 'XZCIT-MFS'
+
+
+def title_bitmap(raw):
+    """6×12 原始位图最近邻放大到 10×16 → page 格式 20 字节"""
+    img = [[0] * 6 for _ in range(12)]
+    for col in range(6):
+        value = (raw[2 * col] << 8) | raw[2 * col + 1]
+        for row in range(12):
+            img[row][col] = (value >> (15 - row)) & 1
+    big = [[0] * 10 for _ in range(16)]
+    for row in range(16):
+        for col in range(10):
+            big[row][col] = img[row * 12 // 16][col * 6 // 10]
+    return page_encode(big)
+
+
+TITLE_GLYPHS = [title_bitmap(ascii_raw(ch)) for ch in TITLE_CHARS]
 
 SPINNER_POS = [(10, 6), (9, 9), (6, 10), (3, 9), (2, 6), (3, 3), (6, 2), (9, 3)]
 
@@ -181,9 +202,13 @@ def _header():
 #include <stdint.h>
 
 #define OLED_FONT_CN_COUNT 17
+#define OLED_FONT_TITLE_COUNT 9
 
 /* 6×12 ASCII，page 格式（2 页 × 6 列），bit0 为页内顶行 */
 extern const uint8_t oled_font_ascii[95][12];
+
+/* 10×16 标题 ASCII，page 格式（2 页 × 10 列），由 6×12 最近邻放大 */
+extern const uint8_t oled_font_title[OLED_FONT_TITLE_COUNT][20];
 
 /* 16×16 汉字，page 格式（2 页 × 16 列），已旋转为正立 */
 extern const uint8_t oled_font_cn[OLED_FONT_CN_COUNT][32];
@@ -195,6 +220,7 @@ extern const uint8_t oled_font_check[32];
 extern const uint8_t oled_font_cross[32];
 
 const uint8_t *oled_font_cn_lookup(const char *utf8);
+const uint8_t *oled_font_title_lookup(char c);
 
 #endif
 '''
@@ -207,6 +233,11 @@ def _source():
              'const uint8_t oled_font_ascii[95][12] = {']
     for i, raw in enumerate(ASCII_RAW):
         lines.append('    {' + ', '.join('0x%02X' % v for v in ascii_to_page(raw)) + '}, /* %d */' % (32 + i))
+    lines.append('};')
+    lines.append('')
+    lines.append('const uint8_t oled_font_title[OLED_FONT_TITLE_COUNT][20] = {')
+    for ch, data in zip(TITLE_CHARS, TITLE_GLYPHS):
+        lines.append('    {' + ', '.join('0x%02X' % v for v in data) + '}, /* %c */' % ch)
     lines.append('};')
     lines.append('')
     lines.append('const uint8_t oled_font_cn[OLED_FONT_CN_COUNT][32] = {')
@@ -250,6 +281,23 @@ def _source():
     lines.append('        s_cn_map[i].utf8[2] == (uint8_t)utf8[2])')
     lines.append('    {')
     lines.append('      return oled_font_cn[i];')
+    lines.append('    }')
+    lines.append('  }')
+    lines.append('  return 0;')
+    lines.append('}')
+    lines.append('')
+    lines.append('static const char s_title_chars[OLED_FONT_TITLE_COUNT] = {')
+    lines.append('    ' + ', '.join("'%c'" % ch for ch in TITLE_CHARS))
+    lines.append('};')
+    lines.append('')
+    lines.append('const uint8_t *oled_font_title_lookup(char c)')
+    lines.append('{')
+    lines.append('  uint8_t i;')
+    lines.append('  for (i = 0; i < OLED_FONT_TITLE_COUNT; i++)')
+    lines.append('  {')
+    lines.append('    if (s_title_chars[i] == c)')
+    lines.append('    {')
+    lines.append('      return oled_font_title[i];')
     lines.append('    }')
     lines.append('  }')
     lines.append('  return 0;')

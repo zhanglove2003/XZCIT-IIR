@@ -35,6 +35,44 @@ int main(void)
     assert(oled_gfx_buffer()[OLED_WIDTH] == 0x0F);
   }
 
+  /* 实心矩形 4×4 贴左上角 */
+  oled_gfx_clear();
+  oled_gfx_fill_rect(0, 0, 4, 4);
+  assert(oled_gfx_buffer()[0] == 0x0F);
+  assert(oled_gfx_buffer()[4] == 0x00);
+  assert(fb_bit(3, 3) == 1);
+  assert(fb_bit(4, 0) == 0);
+
+  /* 空心矩形 6×6：只有边框 */
+  oled_gfx_clear();
+  oled_gfx_rect(10, 4, 6, 6);
+  assert(fb_bit(10, 4) == 1);
+  assert(fb_bit(15, 4) == 1);
+  assert(fb_bit(10, 9) == 1);
+  assert(fb_bit(15, 9) == 1);
+  assert(fb_bit(15, 6) == 1);
+  assert(fb_bit(12, 4) == 1);
+  assert(fb_bit(12, 5) == 0);
+  assert(fb_bit(12, 6) == 0);
+
+  /* 负坐标与越界按像素裁剪，退化尺寸不落笔 */
+  oled_gfx_clear();
+  oled_gfx_fill_rect(-2, -2, 4, 4);
+  assert(fb_bit(0, 0) == 1);
+  assert(fb_bit(1, 1) == 1);
+  assert(fb_bit(2, 2) == 0);
+  oled_gfx_rect(126, 62, 10, 10);
+  assert(fb_bit(126, 62) == 1);
+  assert(fb_bit(127, 62) == 1);
+  assert(fb_bit(126, 63) == 1);
+  assert(fb_bit(127, 63) == 0);
+  oled_gfx_clear();
+  oled_gfx_fill_rect(0, 0, 0, 4);
+  oled_gfx_rect(0, 0, 0, 4);
+  oled_gfx_rect(0, 0, 1, 1);
+  assert(fb_bit(0, 0) == 1);
+  assert(fb_bit(1, 0) == 0);
+
   /* ASCII '0'：与生成器验证过的 page 字节一致 */
   oled_gfx_clear();
   oled_gfx_text6x12(0, 0, "0");
@@ -67,6 +105,56 @@ int main(void)
   assert(oled_gfx_text16_width("X") == 6);
   oled_gfx_clear();
   oled_gfx_text16(0, 0, "X");
+
+  /* 10×16 标题字模：可查得、20 字节内有墨迹、未收录返回 NULL */
+  {
+    static const char title_chars[] = "XZCIT-MFSC";
+    const uint8_t *glyph = oled_font_title_lookup('X');
+    int bits = 0;
+
+    assert(glyph != NULL);
+    for (i = 0; i < 20; i++)
+    {
+      bits += __builtin_popcount(glyph[i]);
+    }
+    assert(bits > 0);
+    assert(oled_font_title_lookup('Q') == NULL);
+    for (i = 0; title_chars[i] != '\0'; i++)
+    {
+      assert(oled_font_title_lookup(title_chars[i]) != NULL);
+    }
+  }
+
+  /* 反白 6×12：底为亮、笔画为暗，与普通绘制逐位互补 */
+  oled_gfx_clear();
+  oled_gfx_text6x12_inv(0, 0, "AB");
+  assert(fb_bit(0, 0) == 1);
+  {
+    uint8_t inv[24];
+    int c;
+    int ones = 0;
+
+    for (c = 0; c < 12; c++)
+    {
+      inv[c] = oled_gfx_buffer()[c];
+      inv[12 + c] = oled_gfx_buffer()[OLED_WIDTH + c];
+    }
+    for (c = 0; c < 24; c++)
+    {
+      ones += __builtin_popcount(inv[c]);
+    }
+    assert(ones < 12 * 12); /* 笔画处为暗，不是整块全亮 */
+
+    oled_gfx_clear();
+    oled_gfx_text6x12(0, 0, "AB");
+    for (c = 0; c < 12; c++)
+    {
+      /* 页 0：12 行区域的前 8 行，整字节互补 */
+      assert((uint8_t)(inv[c] ^ oled_gfx_buffer()[c]) == 0xFF);
+      /* 页 1：仅低 4 位属于 12 行区域 */
+      assert((uint8_t)((inv[12 + c] ^ oled_gfx_buffer()[OLED_WIDTH + c]) & 0x0F) == 0x0F);
+    }
+  }
 
   puts("oled_gfx OK");
   return 0;

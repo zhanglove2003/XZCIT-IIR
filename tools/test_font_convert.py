@@ -41,8 +41,17 @@ def test_cn_glyphs():
         assert len(data) == 32, ch
     img = fc.cn_bitmap('等')
     assert len(img) == 16 and len(img[0]) == 16
-    assert img[0][6] == 1 and img[0][7] == 0
+    assert img[0][9] == 1 and img[0][8] == 0
     assert any(any(row) for row in img)
+
+
+def test_cn_radicals_are_on_the_correct_side():
+    # 手工核对：初的“刀”右侧竖笔在 x=13，不能镜像到 x=2。
+    # 待的“彳”在左边，不能出现在右边。
+    chu = fc.cn_bitmap('初')
+    dai = fc.cn_bitmap('待')
+    assert chu[4][13] == 1 and chu[4][2] == 0
+    assert dai[4][1] == 1 and dai[4][14] == 0
 
 
 def test_assets():
@@ -51,6 +60,14 @@ def test_assets():
         assert sum(bin(b).count('1') for b in frame) == 12
     assert sum(bin(b).count('1') for b in fc.CHECK_16) > 20
     assert sum(bin(b).count('1') for b in fc.CROSS_16) > 20
+
+
+def test_title_glyphs():
+    assert fc.TITLE_CHARS == 'XZCIT-MFS'
+    assert len(fc.TITLE_GLYPHS) == 9
+    for data in fc.TITLE_GLYPHS:
+        assert len(data) == 20
+        assert sum(bin(b).count('1') for b in data) > 0
 
 
 def test_generate():

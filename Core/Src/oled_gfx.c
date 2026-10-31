@@ -29,7 +29,7 @@ void oled_gfx_pixel(int16_t x, int16_t y, uint8_t on)
   }
 }
 
-void oled_gfx_bitmap(int16_t x, int16_t y, uint8_t w, uint8_t h, const uint8_t *data)
+static void bitmap_draw(int16_t x, int16_t y, uint8_t w, uint8_t h, const uint8_t *data, uint8_t on)
 {
   uint8_t pages = (uint8_t)((h + 7U) / 8U);
   uint8_t page;
@@ -46,9 +46,49 @@ void oled_gfx_bitmap(int16_t x, int16_t y, uint8_t w, uint8_t h, const uint8_t *
         uint8_t row = (uint8_t)(page * 8U + bit);
         if (row < h && (bits & (1U << bit)))
         {
-          oled_gfx_pixel((int16_t)(x + col), (int16_t)(y + row), 1);
+          oled_gfx_pixel((int16_t)(x + col), (int16_t)(y + row), on);
         }
       }
+    }
+  }
+}
+
+void oled_gfx_bitmap(int16_t x, int16_t y, uint8_t w, uint8_t h, const uint8_t *data)
+{
+  bitmap_draw(x, y, w, h, data, 1U);
+}
+
+void oled_gfx_rect(int16_t x, int16_t y, int16_t w, int16_t h)
+{
+  int16_t col;
+  int16_t row;
+
+  if (w <= 0 || h <= 0)
+  {
+    return;
+  }
+  for (col = 0; col < w; col++)
+  {
+    oled_gfx_pixel((int16_t)(x + col), y, 1);
+    oled_gfx_pixel((int16_t)(x + col), (int16_t)(y + h - 1), 1);
+  }
+  for (row = 1; row < (int16_t)(h - 1); row++)
+  {
+    oled_gfx_pixel(x, (int16_t)(y + row), 1);
+    oled_gfx_pixel((int16_t)(x + w - 1), (int16_t)(y + row), 1);
+  }
+}
+
+void oled_gfx_fill_rect(int16_t x, int16_t y, int16_t w, int16_t h)
+{
+  int16_t col;
+  int16_t row;
+
+  for (row = 0; row < h; row++)
+  {
+    for (col = 0; col < w; col++)
+    {
+      oled_gfx_pixel((int16_t)(x + col), (int16_t)(y + row), 1);
     }
   }
 }
@@ -72,6 +112,24 @@ void oled_gfx_text6x12(int16_t x, int16_t y, const char *ascii)
 uint16_t oled_gfx_text6x12_width(const char *ascii)
 {
   return (uint16_t)(strlen(ascii) * 6U);
+}
+
+void oled_gfx_text6x12_inv(int16_t x, int16_t y, const char *ascii)
+{
+  int16_t cx = x;
+  char c;
+
+  oled_gfx_fill_rect(x, y, (int16_t)oled_gfx_text6x12_width(ascii), 12);
+  while (*ascii != '\0')
+  {
+    c = *ascii++;
+    if (c < ' ' || c > '~')
+    {
+      c = ' ';
+    }
+    bitmap_draw(cx, y, 6, 12, oled_font_ascii[(uint8_t)c - 32U], 0U);
+    cx = (int16_t)(cx + 6);
+  }
 }
 
 void oled_gfx_text16(int16_t x, int16_t y, const char *utf8)
