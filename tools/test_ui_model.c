@@ -665,6 +665,51 @@ int main(void)
     r_step(&r);
   }
 
+  /* 16. R1 按住期间新出现的 L1/USER 边沿被抑制；R1 释放后重新按下恢复正常。
+   *     （审查修复：R1+L1 同按只受理返回/取消，含"R1 先按住再来的确认边沿"）。 */
+  {
+    rig_t r;
+    rig_init(&r, 1000U);
+    r_hold(&r, L1B, 3); /* BRAND → CHECK_CONFIRM，焦点默认取消 */
+    r_free(&r, L1B, 3);
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    r.in.ly = 200U;
+    r_step(&r);
+    r.in.ly = 128U;
+    r_step(&r);
+    assert(r.m.confirm_focus == 1U);
+    r_hold(&r, R1B, 3); /* R1 边沿：返回 BRAND，并保持按住 */
+    assert(r.m.page == UI_PAGE_BRAND);
+    r_hold(&r, L1B, 3); /* R1 按住中 L1 稳定：不得产生确认副作用 */
+    assert(r.m.page == UI_PAGE_BRAND);
+    assert(r.req.selfcheck_start == 0U);
+    assert(r.req.home_start == 0U);
+    assert(r.req.record_ref == 0U);
+    r_free(&r, R1B, 3);
+    r_free(&r, L1B, 3);
+    r_hold(&r, L1B, 3); /* R1 已释放，L1 重新按下：确认正常 */
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    r_free(&r, L1B, 3);
+    /* USER 同规则 */
+    r_hold(&r, R1B, 3); /* CHECK_CONFIRM R1 → BRAND，保持按住 */
+    assert(r.m.page == UI_PAGE_BRAND);
+    r.in.user_pressed = 1U;
+    r_step(&r);
+    r_step(&r);
+    r_step(&r); /* R1 按住中 USER 稳定：不进确认页 */
+    assert(r.m.page == UI_PAGE_BRAND);
+    r.in.user_pressed = 0U;
+    r_free(&r, R1B, 3);
+    r_step(&r);
+    r.in.user_pressed = 1U;
+    r_step(&r);
+    r_step(&r);
+    r_step(&r); /* R1 释放后 USER 重新按下：正常进确认页 */
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    r.in.user_pressed = 0U;
+    r_step(&r);
+  }
+
   puts("ui_model pages / debounce / nav / window / classify OK");
   return 0;
 }

@@ -160,7 +160,7 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
   uint32_t now = in->now_ms;
   uint8_t press[UI_BTN_COUNT];
   uint8_t r1_edge, l1_edge, user_edge, sel_edge;
-  uint8_t sel_held, l1_held, user_held;
+  uint8_t sel_held, l1_held, user_held, r1_held;
   int32_t offx, offy;
   int8_t evx, evy;
   uint8_t i;
@@ -198,6 +198,7 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
   sel_held = m->btn_filtered[UI_BTNIDX_SEL];
   l1_held = m->btn_filtered[UI_BTNIDX_L1];
   user_held = m->btn_filtered[UI_BTNIDX_USER];
+  r1_held = m->btn_filtered[UI_BTNIDX_R1];
 
   offx = (int32_t)in->lx - UI_STICK_CENTER;
   offy = (int32_t)in->ly - UI_STICK_CENTER;
@@ -305,8 +306,9 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
     return;
   }
 
-  /* L1 确认；SELECT 按住期间不受理（互斥，spec §7）。 */
-  if (l1_edge != 0U && sel_held == 0U)
+  /* L1 确认；R1 按住期间不受理（R1+L1 同按只受理返回/取消）；
+   * SELECT 按住期间不受理（互斥，spec §7）。 */
+  if (l1_edge != 0U && sel_held == 0U && r1_held == 0U)
   {
     switch (m->page)
     {
@@ -387,8 +389,9 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
     return;
   }
 
-  /* USER：品牌页进自检确认；结果页窗口内进标定；手动标定页备用退出。 */
-  if (user_edge != 0U && sel_held == 0U)
+  /* USER：品牌页进自检确认；结果页窗口内进标定；手动标定页备用退出。
+   * R1 按住期间不受理（同 L1 的优先级规则）。 */
+  if (user_edge != 0U && sel_held == 0U && r1_held == 0U)
   {
     switch (m->page)
     {
