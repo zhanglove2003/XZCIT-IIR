@@ -30,4 +30,22 @@ typedef struct {
 
 void ui_snapshot_get(ui_snapshot_t *out);   /* seq-lock 读，实现在 freertos.c */
 
+/* ---- Task 5：页面绘制层（只读快照；clear + 按页绘制，不 flush、不碰硬件） ---- */
+
+void ui_render_draw(const ui_snapshot_t *snap, uint32_t now_ms);
+
+/* 格式化函数（可在主机测试；out 均以 '\0' 结尾，不超出给定容量）：
+ * battery: "B24.0V" / 无效 "B--.-V" / 超出 B99.9V 表示范围 "B OVF"
+ * rpm:     "A+120rpm"（≤8 字符）/ 无效 "A  --" / 越界 "A OVF"
+ * turns:   "+001.50R" / "-002.75R" / 越界 "OVF" / 无效 "--"          */
+void ui_render_format_battery(char out[7], uint8_t valid, uint32_t mv);
+void ui_render_format_rpm(char out[9], char wheel, int32_t rpm, uint8_t valid);
+void ui_render_format_turns(char out[11], int64_t milliturns, uint8_t valid);
+
+/* 卡片动画采样点（只由 now_ms 与快照锚点计算，回绕安全）：
+ * hop:   {0,-1,-2,-1,0} 查表，周期 600 ms（每档 120 ms）
+ * slide: 120 ms 线性滑动，刚切换时位移最大（-64 px），到 120 ms 归 0 */
+int8_t ui_render_hop_offset(uint32_t now_ms, uint32_t sel_since_ms);
+int8_t ui_render_slide_offset(uint32_t now_ms, uint32_t sel_since_ms);
+
 #endif
