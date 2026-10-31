@@ -13,10 +13,9 @@
 #define DRIVE_CTRL_TURN_MAX_PULSE 4200
 
 /* 通用摇杆轴映射（0=推杆向上/负方向端点，128=中位，255=向下/正方向端点）：
- * 死区内为 0，死区外按 |偏差|-16 档线性铺满到 ±limit（112 档），
- * raw < 128（前进/左转方向）为正，端点饱和于 ±limit。
- * 注：uint8 端点不对称，raw=255 时最大偏差 127 → over=111，满杆输出
- * -111*limit/112 而非 -limit（与 drive_ctrl_map(255)==-8325 一致）。 */
+ * 死区内为 0，死区外按 |偏差|-16 格线性铺满到 ±limit。
+ * spec §8：正负两侧分别按各自有效行程归一化（上行 112 格、下行 111 格），
+ * 两端对称到达 ±limit；raw < 128（前进/左转方向）为正，端点饱和于 ±limit。 */
 int32_t drive_ctrl_map_axis(uint8_t raw, int32_t limit);
 
 /* 双轴混合：v = map_axis(ly, DRIVE_CTRL_MAX_PULSE)（前进 + / 后退 -），

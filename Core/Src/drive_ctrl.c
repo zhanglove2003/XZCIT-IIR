@@ -1,6 +1,10 @@
 #include "drive_ctrl.h"
 
 #define DRIVE_CTRL_CENTER 128
+/* spec §8：正负两侧分别按有效行程归一化，两端对称到达 ±limit。
+ * 上行（raw<128）有效行程 128-16=112 格；下行（raw>128）为 255-128-16=111 格。 */
+#define DRIVE_CTRL_AXIS_SPAN_UP 112
+#define DRIVE_CTRL_AXIS_SPAN_DOWN 111
 
 volatile uint8_t drive_calibration_mode = 0U;
 
@@ -22,8 +26,9 @@ int32_t drive_ctrl_map_axis(uint8_t raw, int32_t limit)
 
   over = delta - DRIVE_CTRL_DEADZONE;
 
-  /* (128-16)=112 档线性铺满到 limit：112*8400=940800 无 int32 溢出 */
-  pulse = over * limit / (DRIVE_CTRL_CENTER - DRIVE_CTRL_DEADZONE);
+  /* 两侧各自线性铺满到 limit：over≤span 时 112*8400=940800 无 int32 溢出 */
+  pulse = over * limit / ((raw < DRIVE_CTRL_CENTER) ? DRIVE_CTRL_AXIS_SPAN_UP
+                                                    : DRIVE_CTRL_AXIS_SPAN_DOWN);
 
   if (pulse > limit)
   {
