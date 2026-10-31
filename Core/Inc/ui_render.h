@@ -36,7 +36,7 @@ void ui_render_draw(const ui_snapshot_t *snap, uint32_t now_ms);
 
 /* 格式化函数（可在主机测试；out 均以 '\0' 结尾，不超出给定容量）：
  * battery: "B24.0V" / 无效 "B--.-V" / 超出 B99.9V 表示范围 "B OVF"
- * rpm:     "A+120rpm"（≤8 字符）/ 无效 "A  --" / 越界 "A OVF"
+ * rpm:     "A+120rpm"（≤8 字符，|rpm|>999 显示 OVF）/ 无效 "A  --" / 越界 "A OVF"
  * turns:   "+001.50R" / "-002.75R" / 越界 "OVF" / 无效 "--"          */
 void ui_render_format_battery(char out[7], uint8_t valid, uint32_t mv);
 void ui_render_format_rpm(char out[9], char wheel, int32_t rpm, uint8_t valid);

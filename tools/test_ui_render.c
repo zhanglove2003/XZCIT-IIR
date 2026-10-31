@@ -64,6 +64,19 @@ static void test_format(void)
   assert(strcmp(out, "D  --") == 0);
   ui_render_format_rpm(out, 'A', 100000, 1U);
   assert(strcmp(out, "A OVF") == 0);
+  /* 8 字符域边界：|rpm|<=999 全量显示，>=1000 必须 OVF（且不越界写，ASan 兜底） */
+  ui_render_format_rpm(out, 'A', 999, 1U);
+  assert(strcmp(out, "A+999rpm") == 0);
+  ui_render_format_rpm(out, 'B', -999, 1U);
+  assert(strcmp(out, "B-999rpm") == 0);
+  ui_render_format_rpm(out, 'C', 1000, 1U);
+  assert(strcmp(out, "C OVF") == 0);
+  ui_render_format_rpm(out, 'D', -1000, 1U);
+  assert(strcmp(out, "D OVF") == 0);
+  ui_render_format_rpm(out, 'A', 9999, 1U);
+  assert(strcmp(out, "A OVF") == 0);
+  ui_render_format_rpm(out, 'B', -9999, 1U);
+  assert(strcmp(out, "B OVF") == 0);
 
   ui_render_format_turns(out, 1500, 1U);
   assert(strcmp(out, "+001.50R") == 0);
@@ -186,11 +199,20 @@ static void test_drive(void)
   assert(memcmp(oled_gfx_buffer(), ref_frame, sizeof(ref_frame)) != 0);
   s.frame_valid = 1U;
 
-  /* 未通过自检且未许可：显示 SELF CHECK 提示（顶栏中部） */
+  /* 未通过自检且未许可：提示限于顶栏中部 x42..83，不越入右栏 */
   s.selfcheck_passed = 0U;
   s.drive_permitted = 0U;
   ui_render_draw(&s, 0U);
-  assert(fb_ink_in(42, 0, 125, 11) > 0);
+  assert(fb_ink_in(42, 0, 83, 11) > 0);   /* 提示在中部域内 */
+  assert(fb_ink_in(84, 0, 89, 11) == 0);  /* 与右栏之间留隙 */
+  assert(fb_ink_in(90, 0, 125, 11) == 0); /* 无故障/失联时右栏无覆盖 */
+  /* 提示与故障同现：两段文字不重叠（提示 ≤7 字符守域） */
+  s.fault_mask = 1U;
+  ui_render_draw(&s, 0U);
+  assert(fb_ink_in(42, 0, 83, 11) > 0);
+  assert(fb_ink_in(84, 0, 89, 11) == 0);
+  assert(fb_ink_in(90, 0, 125, 11) > 0);
+  s.fault_mask = 0U;
   s.selfcheck_passed = 1U;
   s.drive_permitted = 1U;
 

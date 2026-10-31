@@ -89,7 +89,8 @@ void ui_render_format_rpm(char out[9], char wheel, int32_t rpm, uint8_t valid)
     out[5] = '\0';
     return;
   }
-  if ((rpm < -9999) || (rpm > 9999))
+  /* 8 字符域 "A+999rpm" 封顶：|rpm|>999 一律 OVF，不挤入列间隙 */
+  if ((rpm < -999) || (rpm > 999))
   {
     out[0] = wheel;
     out[1] = ' ';
@@ -366,7 +367,7 @@ static void draw_drive(const ui_snapshot_t *s)
    * 否则显示行驶状态 */
   if (hint != 0U)
   {
-    status = "NO SELFCHECK";
+    status = "NO CHK"; /* ≤7 字符，守住 x42..83 域，不与右栏重叠 */
   }
   else
   {
