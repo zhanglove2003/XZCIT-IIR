@@ -795,16 +795,15 @@ void wheel_home_step(wheel_home_t *s, const wheel_home_input_t *in,
     }
   }
 
-  /* 长按 2 s：只记录一次；不满足停稳条件也不退化成短按。
-   * 记录参考只属于手动标定页：驾驶页长按 SELECT 不再写参考，
-   * 短按归位快捷入口保持不变。 */
-  if (in->manual_calib_page != 0U &&
-      s->mode == WHEEL_HOME_BUTTON_HELD && s->press_active != 0U &&
+  /* 长按 2 s：任何页面都统一消费手势，防止长按的释放沿退化成短按归位。
+   * 只有"记录参考"这个动作受手动标定页门控；
+   * 不满足停稳条件也不退化成短按。 */
+  if (s->mode == WHEEL_HOME_BUTTON_HELD && s->press_active != 0U &&
       s->long_consumed == 0U &&
       (uint32_t)(now - s->press_ms) >= WHEEL_HOME_LONG_PRESS_MS)
   {
     s->long_consumed = 1U;
-    if (wh_still_ready(s, in, now) != 0U)
+    if (in->manual_calib_page != 0U && wh_still_ready(s, in, now) != 0U)
     {
       for (w = 0U; w < 4U; w++)
       {

@@ -570,6 +570,9 @@ static void test_short_press_without_reference(void)
 static void test_record_requires_still(void)
 {
   rig_reset(CPR);
+  /* 记录属于手动标定页：必须置位才能走到 step 路径的长按记录分支，
+   * 否则"移动中不记录"的断言只是被页面门控平凡满足。 */
+  rig.manual_calib_page = 1U;
   press_select();
   pump(1900U);
   step4(10U, 5000, 5000, 5000, 5000);
@@ -824,6 +827,26 @@ static void test_long_press_record_gated_by_manual_page(void)
   pump(60U);
 }
 
+/* 驾驶页长按 2 s 只消费手势：不记录参考，释放沿也不退化成短按归位，无输出。 */
+static void test_drive_page_long_press_consumed(void)
+{
+  rig_reset(CPR);
+  record_reference();
+
+  rig.manual_calib_page = 0U;
+  press_select();
+  pump(2050U);
+  assert(rig.o.reference_valid == 1U);   /* 长按没有改写参考 */
+  for (int w = 0; w < 4; w++) { assert(rig.s.origin[w] == rig.pos[w]); }
+
+  release_select();
+  pump(60U);
+  assert(rig.o.mode == WHEEL_HOME_MANUAL);  /* 释放沿没有启动归位 */
+  assert(rig.o.owns_motors == 0U);
+  assert(rig.o.result != WHEEL_HOME_RESULT_DONE);
+  for (int w = 0; w < 4; w++) { assert(rig.o.pulse[w] == 0); }
+}
+
 /* 顶栏状态文本：每种状态/结果都有确定文本，且绝不越过缓冲区。 */
 static void test_status_text(void)
 {
@@ -957,6 +980,7 @@ int main(void)
   test_menu_request_without_reference();
   test_menu_homing_stick_cancels();
   test_long_press_record_gated_by_manual_page();
+  test_drive_page_long_press_consumed();
   test_status_text();
   puts("wheel home gesture / arbitration / shortest path / proportional / settle / reverse / stall / timeout OK");
   return 0;
