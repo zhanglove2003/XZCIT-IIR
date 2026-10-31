@@ -1032,9 +1032,12 @@ static void selfcheck_preamble_step(void)
 }
 
 /* --- VDD 掉压闸门场景 ('p') --------------------------------------------- */
-/* 先真实跑一轮全过自检（vdd_ok=1）→ 驾驶页武装后推满出力 → 运行中把轨
- * 注入成 3000 mV：出力必须当拍切断（spec §11.4 供电异常最高优先级）；
- * 再发起自检：vdd_ok=0 时服务请求必须被拒（state 全 0）。 */
+/* 前置（vdd_ok=1）：真实跑一轮全过自检 + 手动标定页记录参考。
+ * 1) 驾驶页武装后推满出力 → 运行中注入 3000 mV：出力当拍切断并睡眠；
+ * 2) 掉压下发起归位：请求不受理，放行门后也不进 RUNNING（不出力）；
+ * 3) 轨恢复后归位进 RUNNING（C/D 出力）→ RUNNING 中再掉压：命令当拍清零，
+ *    wheel_home 走既有 200 ms 帧失联取消路径落成 CANCELLED（立即停）；
+ * 4) 掉压下发起自检：服务请求被拒（state 停留上一轮的 2，无 1/3）。 */
 static int power_gate_test;
 static int pstage;
 static uint32_t pmark, pn;
@@ -1042,11 +1045,13 @@ static uint32_t pmark, pn;
 static void power_gate_script(ps2_state_t *p)
 {
   ui_snapshot_t snap;
+  wheel_home_output_t hs;
 
   pn++;
   p->buttons = 0xFFFFU; p->lx = 128U; p->rx = 128U;
   p->ry = 128U; p->ly = 128U;
   switch (pstage) {
+  /* ---- 前置：手动标定页记录参考（vdd 正常） ---- */
   case 0: /* R1 → 主菜单 */
     p->buttons = 0xF7FFU;
     ui_snapshot_get(&snap);
@@ -1056,29 +1061,107 @@ static void power_gate_script(ps2_state_t *p)
     p->buttons = 0xFFFFU;
     if ((uint32_t)(tick - pmark) >= 30U) { pstage = 2; pmark = tick; }
     break;
-  case 2: /* L1（menu_sel==0）→ 驾驶页 */
-    p->buttons = 0xFBFFU;
+  case 2: /* 右移选"检查与标定" */
+    p->lx = 208U;
     ui_snapshot_get(&snap);
-    if (snap.page == UI_PAGE_DRIVE) { pstage = 3; pmark = tick; }
+    if (snap.menu_sel == 1U) { p->lx = 128U; pstage = 3; pmark = tick; }
     break;
   case 3:
-    p->buttons = 0xFFFFU;
+    p->lx = 128U;
     if ((uint32_t)(tick - pmark) >= 30U) { pstage = 4; pmark = tick; }
     break;
-  case 4: /* 推满：武装前零输出 */
+  case 4: /* L1 → 子菜单 */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_SUBMENU) { pstage = 5; pmark = tick; }
+    break;
+  case 5:
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 6; pmark = tick; }
+    break;
+  case 6: /* 下移到"手动标定" */
+    ui_snapshot_get(&snap);
+    if (snap.sub_sel == 3U) { p->ly = 128U; pstage = 7; pmark = tick; }
+    else { p->ly = 208U; }
+    break;
+  case 7:
+    p->ly = 128U;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 8; pmark = tick; }
+    break;
+  case 8: /* L1 → 手动标定页 */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MANUAL_CAL) { pstage = 9; pmark = tick; }
+    break;
+  case 9: /* 进页先见 SELECT 释放 */
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 60U) { pstage = 10; pmark = tick; }
+    break;
+  case 10: /* 静止 ≥300 ms 后新长按 2 s：记录参考 */
+    p->buttons = 0xFFFEU;
+    if ((uint32_t)(tick - pmark) >= 2500U) {
+      p->buttons = 0xFFFFU;
+      pstage = 11; pmark = tick;
+    }
+    break;
+  case 11:
+    if ((uint32_t)(tick - pmark) >= 100U) {
+      wheel_home_get_status(&hs);
+      assert(hs.reference_valid == 1U);
+      pstage = 12; pmark = tick;
+    }
+    break;
+  /* ---- 驾驶页出力 → 运行中掉压：当拍切断 ---- */
+  case 12: /* R1 → 子菜单（手动标定页返回第一跳） */
+    p->buttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_SUBMENU) { pstage = 13; pmark = tick; }
+    break;
+  case 13:
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 14; pmark = tick; }
+    break;
+  case 14: /* R1 → 菜单 */
+    p->buttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MENU) { pstage = 15; pmark = tick; }
+    break;
+  case 15:
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 16; pmark = tick; }
+    break;
+  case 16: /* 左移回"驾驶" */
+    ui_snapshot_get(&snap);
+    if (snap.menu_sel == 0U) { p->lx = 128U; pstage = 17; pmark = tick; }
+    else { p->lx = 48U; }
+    break;
+  case 17:
+    p->lx = 128U;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 18; pmark = tick; }
+    break;
+  case 18: /* L1 → 驾驶页 */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_DRIVE) { pstage = 19; pmark = tick; }
+    break;
+  case 19:
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 20; pmark = tick; }
+    break;
+  case 20: /* 推满：武装前零输出 */
     p->ly = 0U;
     ui_snapshot_get(&snap);
     if ((uint32_t)(tick - pmark) >= 60U && (uint32_t)(tick - pmark) < 100U) {
       assert(snap.drive_permitted == 0U);
       for (int i = 0; i < 4; i++) assert(htim8.compare[i] == 0U);
     }
-    if ((uint32_t)(tick - pmark) >= 120U) { pstage = 5; pmark = tick; }
+    if ((uint32_t)(tick - pmark) >= 120U) { pstage = 21; pmark = tick; }
     break;
-  case 5: /* 松杆回中 200 ms：武装 */
+  case 21: /* 松杆回中 200 ms：武装 */
     p->ly = 128U;
-    if ((uint32_t)(tick - pmark) >= 200U) { pstage = 6; pmark = tick; }
+    if ((uint32_t)(tick - pmark) >= 200U) { pstage = 22; pmark = tick; }
     break;
-  case 6: /* 再推满：vdd_ok=1 + 已过自检 → 出力 8400 */
+  case 22: /* 再推满：vdd_ok=1 + 已过自检 → 出力 8400，随即注入掉压 */
     p->ly = 0U;
     if ((uint32_t)(tick - pmark) >= 60U) {
       ui_snapshot_get(&snap);
@@ -1086,10 +1169,10 @@ static void power_gate_script(ps2_state_t *p)
       assert(snap.vdd_ok == 1U);
       for (int i = 0; i < 4; i++) assert(htim8.compare[i] == 8400U);
       pm_set_vdd_ok(0U); /* 运行中轨压掉到 3000 mV */
-      pstage = 7; pmark = tick;
+      pstage = 23; pmark = tick;
     }
     break;
-  case 7: /* 供电异常：出力必须当拍切断并睡眠 */
+  case 23: /* 供电异常：出力当拍切断并睡眠 */
     p->ly = 0U;
     ui_snapshot_get(&snap);
     if ((uint32_t)(tick - pmark) >= 150U) {
@@ -1098,69 +1181,170 @@ static void power_gate_script(ps2_state_t *p)
       for (int i = 0; i < 4; i++) assert(htim8.compare[i] == 0U);
       assert(!(gpiob.ODR & GPIO_PIN_12)); /* 停止流程关使能 */
       p->ly = 128U;
-      pstage = 8; pmark = tick;
+      pstage = 24; pmark = tick;
     }
     break;
-  case 8: /* R1 → 主菜单 */
+  /* ---- 掉压下发起归位：请求不受理，放行门后也不进 RUNNING ---- */
+  case 24: /* R1 → 主菜单 */
     p->buttons = 0xF7FFU;
     ui_snapshot_get(&snap);
-    if (snap.page == UI_PAGE_MENU) { pstage = 9; pmark = tick; }
+    if (snap.page == UI_PAGE_MENU) { pstage = 25; pmark = tick; }
     break;
-  case 9:
+  case 25:
     p->buttons = 0xFFFFU;
-    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 10; pmark = tick; }
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 26; pmark = tick; }
     break;
-  case 10: /* 右移选"检查与标定" */
+  case 26: /* 右移选"检查与标定" */
     p->lx = 208U;
     ui_snapshot_get(&snap);
-    if (snap.menu_sel == 1U) { p->lx = 128U; pstage = 11; pmark = tick; }
+    if (snap.menu_sel == 1U) { p->lx = 128U; pstage = 27; pmark = tick; }
     break;
-  case 11:
+  case 27:
     p->lx = 128U;
-    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 12; pmark = tick; }
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 28; pmark = tick; }
     break;
-  case 12: /* L1 → 子菜单 */
+  case 28: /* L1 → 子菜单 */
     p->buttons = 0xFBFFU;
     ui_snapshot_get(&snap);
-    if (snap.page == UI_PAGE_SUBMENU) { pstage = 13; pmark = tick; }
+    if (snap.page == UI_PAGE_SUBMENU) { pstage = 29; pmark = tick; }
     break;
-  case 13:
+  case 29:
     p->buttons = 0xFFFFU;
-    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 14; pmark = tick; }
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 30; pmark = tick; }
     break;
-  case 14: /* 下移到"重新自检" */
+  case 30: /* 从"手动标定"(3) 上移一格到"回到初始位"(2) */
     ui_snapshot_get(&snap);
-    if (snap.sub_sel == 1U) { p->ly = 128U; pstage = 15; pmark = tick; }
+    if (snap.sub_sel == 2U) { p->ly = 128U; pstage = 31; pmark = tick; }
+    else { p->ly = 48U; }
+    break;
+  case 31:
+    p->ly = 128U;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 32; pmark = tick; }
+    break;
+  case 32: /* L1 → HOME 页（掉压：请求必须被拒） */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_HOME) { pstage = 33; pmark = tick; }
+    break;
+  case 33: /* 同次 L1 按住 60 ms 后释放 */
+    p->buttons = 0xFBFFU;
+    if ((uint32_t)(tick - pmark) >= 60U) { pstage = 34; pmark = tick; }
+    break;
+  case 34: /* 释放 500 ms：请求被拒 → 永远不进 RUNNING、不出力；
+            * （若请求被受理，参考有效 + 放行门 100 ms 后必然 RUNNING） */
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 500U) {
+      wheel_home_get_status(&hs);
+      assert(hs.reference_valid == 1U); /* 掉压前记录的参考不受影响 */
+      assert(hs.mode != WHEEL_HOME_RUNNING);
+      for (int i = 0; i < 4; i++) assert(htim8.compare[i] == 0U);
+      pstage = 35; pmark = tick;
+    }
+    break;
+  /* ---- 轨恢复 → 归位 RUNNING（C/D 出力）→ RUNNING 中掉压：立即停 ---- */
+  case 35: /* 轨恢复；给 C/D 各注入 1/8 圈（分拍 < 32768，相对增量） */
+    pm_set_vdd_ok(1U);
+    {
+      static int inj;
+      if ((pn % 2U) == 0U && inj < 4) {
+        htim5.counter = (uint16_t)(htim5.counter - 13437U); /* C 前向为负 raw */
+        htim4.counter = (uint16_t)(htim4.counter + 13397U); /* D 前向为正 raw */
+        inj++;
+      }
+      if (inj >= 4) { pstage = 36; pmark = tick; }
+    }
+    break;
+  case 36: /* R1 → 子菜单 */
+    p->buttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_SUBMENU) { pstage = 37; pmark = tick; }
+    break;
+  case 37:
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 38; pmark = tick; }
+    break;
+  case 38: /* L1（sub_sel==2）→ HOME 页 + pending */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_HOME) { pstage = 39; pmark = tick; }
+    break;
+  case 39: /* 同次 L1 按住 60 ms（不得取消 pending） */
+    p->buttons = 0xFBFFU;
+    if ((uint32_t)(tick - pmark) >= 60U) { pstage = 40; pmark = tick; }
+    break;
+  case 40: /* 释放 → 放行门 100 ms → RUNNING（C/D 出力） */
+    p->buttons = 0xFFFFU;
+    wheel_home_get_status(&hs);
+    if (hs.mode == WHEEL_HOME_RUNNING) {
+      int moved = 0;
+      for (int i = 0; i < 4; i++) {
+        assert(htim8.compare[i] <= WHEEL_HOME_MAX_PULSE);
+        if (htim8.compare[i] != 0U) { moved = 1; }
+      }
+      if (moved) { pstage = 41; pmark = tick; }
+    } else if ((uint32_t)(tick - pmark) >= 2000U) {
+      assert(0); /* 归位从未启动 */
+    }
+    break;
+  case 41: /* RUNNING 中掉压：命令当拍清零，状态机随后落成 CANCELLED */
+    pm_set_vdd_ok(0U);
+    pstage = 42; pmark = tick;
+    break;
+  case 42:
+    p->buttons = 0xFFFFU;
+    wheel_home_get_status(&hs);
+    if ((uint32_t)(tick - pmark) >= 120U) {
+      for (int i = 0; i < 4; i++) assert(htim8.compare[i] == 0U); /* 立即停 */
+    }
+    if ((uint32_t)(tick - pmark) >= 500U) {
+      assert(hs.mode != WHEEL_HOME_RUNNING);
+      assert(hs.result == WHEEL_HOME_RESULT_CANCELLED);
+      pstage = 43; pmark = tick;
+    }
+    break;
+  /* ---- 掉压下发起自检：服务请求被拒 ---- */
+  case 43: /* R1 → 子菜单 */
+    p->buttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_SUBMENU) { pstage = 44; pmark = tick; }
+    break;
+  case 44:
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 45; pmark = tick; }
+    break;
+  case 45: /* 上移到"重新自检" */
+    ui_snapshot_get(&snap);
+    if (snap.sub_sel == 1U) { p->ly = 128U; pstage = 46; pmark = tick; }
+    else { p->ly = 48U; }
+    break;
+  case 46:
+    p->ly = 128U;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 47; pmark = tick; }
+    break;
+  case 47: /* L1 → 确认页 */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_CHECK_CONFIRM) { pstage = 48; pmark = tick; }
+    break;
+  case 48:
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 49; pmark = tick; }
+    break;
+  case 49: /* 焦点移到"开始" */
+    ui_snapshot_get(&snap);
+    if (snap.confirm_focus == 1U) { p->ly = 128U; pstage = 50; pmark = tick; }
     else { p->ly = 208U; }
     break;
-  case 15:
+  case 50:
     p->ly = 128U;
-    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 16; pmark = tick; }
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 51; pmark = tick; }
     break;
-  case 16: /* L1 → 确认页 */
+  case 51: /* L1：页面进 CHECK_RUN，但 vdd_ok=0 → 服务请求必须被拒 */
     p->buttons = 0xFBFFU;
     ui_snapshot_get(&snap);
-    if (snap.page == UI_PAGE_CHECK_CONFIRM) { pstage = 17; pmark = tick; }
+    if (snap.page == UI_PAGE_CHECK_RUN) { pstage = 52; pmark = tick; }
     break;
-  case 17:
-    p->buttons = 0xFFFFU;
-    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 18; pmark = tick; }
-    break;
-  case 18: /* 焦点移到"开始" */
-    ui_snapshot_get(&snap);
-    if (snap.confirm_focus == 1U) { p->ly = 128U; pstage = 19; pmark = tick; }
-    else { p->ly = 208U; }
-    break;
-  case 19:
-    p->ly = 128U;
-    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 20; pmark = tick; }
-    break;
-  case 20: /* L1：页面进 CHECK_RUN，但 vdd_ok=0 → 服务请求必须被拒 */
-    p->buttons = 0xFBFFU;
-    ui_snapshot_get(&snap);
-    if (snap.page == UI_PAGE_CHECK_RUN) { pstage = 21; pmark = tick; }
-    break;
-  case 21: /* 1.5 s 后：服务从未启动——state 停留在上一轮全过的 2，
+  case 52: /* 1.5 s 后：服务从未启动——state 停留在上一轮全过的 2，
             * 不出现 1（运行）/3（失败），无任何输出 */
     p->buttons = 0xFFFFU;
     ui_snapshot_get(&snap);

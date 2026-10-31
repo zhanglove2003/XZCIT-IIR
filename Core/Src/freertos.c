@@ -781,8 +781,9 @@ void StartCtrlTask(void *argument)
           selfcheck_service_request(&s_ctrl_check, HAL_GetTick());
         }
       }
-      /* 归位请求：无参考/非 MANUAL 模式由 wheel_home 自己拒绝落地。 */
-      if (ureq.home_start != 0U)
+      /* 归位请求：无参考/非 MANUAL 模式由 wheel_home 自己拒绝落地；
+       * vdd_ok=0（掉压）时同样不受理——spec §9.2 低压禁止一切运动。 */
+      if (ureq.home_start != 0U && pw.vdd_ok != 0U)
       {
         wheel_home_request_home(&s_ctrl_home);
       }
@@ -797,7 +798,10 @@ void StartCtrlTask(void *argument)
        * 静止计时已由每轮的 track_manual_still 累积。 */
       if (ureq.record_ref != 0U)
       {
-        if (in.frame_valid != 0U && ctrl_sticks_centered(&in) != 0U)
+        /* 掉压时同样拒绝记录参考（写参考不改输出，但写进去的参考会在
+         * 电源恢复后被用来驱动归位——低压下采的位置不可信）。 */
+        if (in.frame_valid != 0U && pw.vdd_ok != 0U &&
+            ctrl_sticks_centered(&in) != 0U)
         {
           (void)wheel_home_record_manual_reference(&s_ctrl_home, &in,
                                                    HAL_GetTick());
@@ -847,8 +851,12 @@ void StartCtrlTask(void *argument)
     {
       wheel_home_input_t arbitrate = in;
 
-      if (s_ctrl_check.passed == 0U)
+      if (s_ctrl_check.passed == 0U || pw.vdd_ok == 0U)
       {
+        /* 自检未通过或掉压：喂"无效帧"（按键/摇杆仍可被 UI 读走）。
+         * 掉压时归位 RUNNING 借 wheel_home 既有的 200 ms 帧失联取消路径
+         * 落地（wh_abort → CANCELLED、零脉冲、恢复后要求重新释放）——
+         * 与坏帧/失联取消同一机制，不另开取消入口。 */
         arbitrate.frame_valid = 0U;
         arbitrate.buttons = 0xFFFFU;
       }
@@ -900,8 +908,10 @@ void StartCtrlTask(void *argument)
      *    停止流程关使能）。原 boot_ui_drive_enabled 的"页面级许可"职责
      *    已由 drive_permitted 一并承担。 */
     if (ui_cancel_motion != 0U ||
-        s_ui_model.page == UI_PAGE_MANUAL_CAL)
+        s_ui_model.page == UI_PAGE_MANUAL_CAL || pw.vdd_ok == 0U)
     {
+      /* 掉压当拍先清命令（归位脉冲也不例外）；wheel_home 状态机随后经
+       * 上面的无效帧路径落成 CANCELLED。 */
       for (w = 0U; w < 4U; w++)
       {
         command[w] = 0;
