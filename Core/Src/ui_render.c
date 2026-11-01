@@ -613,10 +613,17 @@ static void draw_check_result(const ui_snapshot_t *s)
   static const char wheel_names[4] = {'A', 'B', 'C', 'D'};
   char line[16];
   const char *verdict;
+  uint8_t power_ok;
   uint8_t i;
 
   draw_mixed16(0, 0, (s->result_view == 0U) ? "电机" : "电池");
-  verdict = (s->selfcheck_passed != 0U) ? "全部通过" : "未通过";
+  /* 总体结论（审查项 #7，spec §9.2）：电机结论（四轮全过）与电源结论
+   * （电池有效、无采样错误、无欠压）相与才是"全部通过"——电池未配置
+   * （valid=0）或任一电源异常都不得显示"全部通过"。 */
+  power_ok = (uint8_t)((s->battery_valid != 0U) && (s->battery_error == 0U) &&
+                       (s->undervolt == 0U));
+  verdict = ((s->selfcheck_passed != 0U) && (power_ok != 0U)) ? "全部通过"
+                                                              : "未通过";
   draw_mixed16((int16_t)((int16_t)OLED_WIDTH - (int16_t)mixed16_width(verdict)), 0, verdict);
 
   if (s->result_view == 0U)
@@ -630,13 +637,15 @@ static void draw_check_result(const ui_snapshot_t *s)
   }
   else
   {
-    if (s->battery_valid == 0U)
-    {
-      draw_centered_mixed16(28, "未配置");
-    }
-    else if (s->battery_error != 0U)
+    /* 判定顺序（审查项 #7）：error → valid → 未配置——电池采样错误
+     * 必须显示"采样错误"，不得被 valid==0 分支挡成"未配置"。 */
+    if (s->battery_error != 0U)
     {
       draw_centered_mixed16(28, "采样错误");
+    }
+    else if (s->battery_valid == 0U)
+    {
+      draw_centered_mixed16(28, "未配置");
     }
     else if (s->undervolt != 0U)
     {

@@ -412,11 +412,43 @@ static void test_result(void)
   assert(fb_ink_in(34, 0, 57, 15) == 0);         /* 标题与结论之间留空 */
   assert(fb_ink_in(0, 16, 59, 59) > 0);          /* 四轮名与状态（6×12 行） */
 
-  /* 全部通过：总体结论切换 */
+  /* 全部通过：总体结论 = 电机结论（四轮全过）与电源结论相与
+   * （审查项 #7：电池未配置/采样错误/欠压任一不满足都不得显示"全部通过"） */
   s.selfcheck_passed = 1U;
+  s.battery_valid = 1U;
+  s.battery_error = 0U;
+  s.undervolt = 0U;
   ui_render_draw(&s, 0U);
   assert(fb_ink_in(34, 0, 127, 15) > 0);
+  {
+    uint8_t pass_frame[128 * 8];
+
+    memcpy(pass_frame, oled_gfx_buffer(), sizeof(pass_frame));
+
+    /* 电池未配置（valid=0）：整体不得显示"全部通过"（spec §9.2） */
+    s.battery_valid = 0U;
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), pass_frame, sizeof(pass_frame)) != 0);
+
+    /* 电池采样错误：同样不得显示"全部通过" */
+    s.battery_valid = 1U;
+    s.battery_error = 1U;
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), pass_frame, sizeof(pass_frame)) != 0);
+
+    /* 电池欠压：同样不得显示"全部通过" */
+    s.battery_error = 0U;
+    s.undervolt = 1U;
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), pass_frame, sizeof(pass_frame)) != 0);
+
+    /* 电源域恢复：回到"全部通过"原帧 */
+    s.undervolt = 0U;
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), pass_frame, sizeof(pass_frame)) == 0);
+  }
   s.selfcheck_passed = 0U;
+  s.battery_valid = 0U;
 
   /* 电池屏：未配置 → 16px 提示"未配置"居中于正文（34px 宽，x47..80, y28..43） */
   s.result_view = 1U;
@@ -427,6 +459,13 @@ static void test_result(void)
   {
     uint8_t not_config[128 * 8];
     memcpy(not_config, oled_gfx_buffer(), sizeof(not_config));
+
+    /* 采样错误优先于"未配置"（审查项 #7）：valid=0 且 error=1 时必须
+     * 显示采样错误，而不是被 valid==0 分支挡成"未配置" */
+    s.battery_error = 1U;
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), not_config, sizeof(not_config)) != 0);
+    s.battery_error = 0U;
 
     /* 采样错误 / 欠压 → 各自中文提示 */
     s.battery_valid = 1U;
