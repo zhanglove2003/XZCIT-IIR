@@ -144,30 +144,6 @@ static void wh_release_motion(wheel_home_t *s)
   }
 }
 
-/* 摇杆居中且四轮连续 300 ms 静止，才允许记录参考。 */
-static uint8_t wh_still_ready(const wheel_home_t *s, const wheel_home_input_t *in,
-                              uint32_t now)
-{
-  uint8_t w;
-
-  if (wh_sticks_centered(in) == 0U)
-  {
-    return 0U;
-  }
-  for (w = 0U; w < 4U; w++)
-  {
-    if (s->still_active[w] == 0U)
-    {
-      return 0U;
-    }
-    if ((uint32_t)(now - s->still_ms[w]) < WHEEL_HOME_STILL_MS)
-    {
-      return 0U;
-    }
-  }
-  return 1U;
-}
-
 static void wh_start_homing(wheel_home_t *s, const wheel_home_input_t *in, uint32_t now)
 {
   uint8_t w;
@@ -841,22 +817,15 @@ void wheel_home_step(wheel_home_t *s, const wheel_home_input_t *in,
   }
 
   /* 长按 2 s：任何页面都统一消费手势，防止长按的释放沿退化成短按归位。
-   * 只有"记录参考"这个动作受手动标定页门控；
-   * 不满足停稳条件也不退化成短按。 */
+   * 记录参考只走 wheel_home_record_manual_reference()（UI 的 record_ref
+   * 请求路径，审查项 #4：统一记录入口）——step 内不再直接写参考，避免
+   * 绕过 UI 的长按重计时（坏帧/漂移重锚）与"已记录"应答显示；不满足
+   * 停稳条件也不退化成短按。 */
   if (s->mode == WHEEL_HOME_BUTTON_HELD && s->press_active != 0U &&
       s->long_consumed == 0U &&
       (uint32_t)(now - s->press_ms) >= WHEEL_HOME_LONG_PRESS_MS)
   {
     s->long_consumed = 1U;
-    if (in->manual_calib_page != 0U && wh_still_ready(s, in, now) != 0U)
-    {
-      for (w = 0U; w < 4U; w++)
-      {
-        s->origin[w] = in->position[w];
-      }
-      s->reference_valid = 1U;
-      s->result = WHEEL_HOME_RESULT_RECORDED;
-    }
   }
 
   /* 菜单请求的归位：只在 MANUAL 模式推进放行门。

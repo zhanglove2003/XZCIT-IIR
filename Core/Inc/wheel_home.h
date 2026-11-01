@@ -67,7 +67,8 @@ typedef struct
   int64_t position[4]; /* Forward-positive counts from Ctrl-owned trackers. */
   int32_t delta[4];    /* Forward-positive increments for this sample. */
   uint8_t frame_valid, feedback_valid, calibration_mode;
-  uint8_t manual_calib_page; /* 1 = UI 在手动标定页：长按 SELECT 才允许记录参考 */
+  uint8_t manual_calib_page; /* 1 = UI 在手动标定页（记录经显式 API，页面
+                              * 门控由调用方把关；step 不再直接写参考） */
   uint16_t buttons;   /* Raw PS2, active low. */
   uint8_t lx, ly, rx, ry;
 } wheel_home_input_t;

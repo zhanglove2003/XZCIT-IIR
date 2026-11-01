@@ -33,6 +33,25 @@ static void rig_reset(const uint32_t cpr[4])
   rig.feedback_valid = 1U;
 }
 
+/* 用 rig 当前状态构造一帧输入（step 与显式 API 共用）。 */
+static void fill_in(wheel_home_input_t *in)
+{
+  int w;
+
+  memset(in, 0, sizeof *in);
+  in->now_ms = rig.now;
+  for (w = 0; w < 4; w++) { in->position[w] = rig.pos[w]; }
+  in->frame_valid = rig.frame_valid;
+  in->feedback_valid = rig.feedback_valid;
+  in->calibration_mode = rig.calibration_mode;
+  in->manual_calib_page = rig.manual_calib_page;
+  in->buttons = rig.buttons;
+  in->lx = rig.lx;
+  in->ly = rig.ly;
+  in->rx = rig.rx;
+  in->ry = rig.ry;
+}
+
 static void step4(uint32_t dt, int32_t d0, int32_t d1, int32_t d2, int32_t d3)
 {
   const int32_t d[4] = {d0, d1, d2, d3};
@@ -41,20 +60,12 @@ static void step4(uint32_t dt, int32_t d0, int32_t d1, int32_t d2, int32_t d3)
 
   rig.now += dt;
   for (w = 0; w < 4; w++) { rig.pos[w] += d[w]; }
-
-  memset(&in, 0, sizeof in);
-  in.now_ms = rig.now;
+  fill_in(&in);
   for (w = 0; w < 4; w++) { in.position[w] = rig.pos[w]; in.delta[w] = d[w]; }
-  in.frame_valid = rig.frame_valid;
-  in.feedback_valid = rig.feedback_valid;
-  in.calibration_mode = rig.calibration_mode;
-  in.manual_calib_page = rig.manual_calib_page;
-  in.buttons = rig.buttons;
-  in.lx = rig.lx;
-  in.ly = rig.ly;
-  in.rx = rig.rx;
-  in.ry = rig.ry;
   wheel_home_step(&rig.s, &in, &rig.o);
+  /* 固件（Ctrl 任务）每轮采样都喂一次手动页静止跟踪，保证"页面显示
+   * 可以记录"与"真的写进去"用同一累计量；rig 同口径。 */
+  (void)wheel_home_track_manual_still(&rig.s, &in, rig.now);
 }
 
 static void pump(uint32_t total_ms)
@@ -69,14 +80,21 @@ static void hold_l1(void) { rig.buttons = (uint16_t)(rig.buttons & ~(1U << WHEEL
 static void release_l1(void) { rig.buttons = (uint16_t)(rig.buttons | (1U << WHEEL_HOME_L1_BIT)); }
 
 /* Long press on still wheels records the four origins.
- * 长按记录只属于手动标定页：辅助函数在页面作用域内完成记录。 */
+ * 记录入口统一（审查项 #4）：长按手势由 step 消费成 BUTTON_HELD，参考
+ * 只经显式 API（UI record_ref 请求路径）写入，step 内不再直接记录。 */
 static void record_reference(void)
 {
+  wheel_home_input_t in;
+
   rig.manual_calib_page = 1U;
   press_select();
-  pump(2050U);
-  assert(rig.o.result == WHEEL_HOME_RESULT_RECORDED);
-  assert(rig.o.reference_valid == 1U);
+  pump(2100U);
+  assert(rig.s.mode == WHEEL_HOME_BUTTON_HELD);
+  assert(rig.o.result != WHEEL_HOME_RESULT_RECORDED);
+  assert(rig.s.reference_valid == 0U);
+  fill_in(&in);
+  assert(wheel_home_record_manual_reference(&rig.s, &in, rig.now) == 1U);
+  assert(rig.s.reference_valid == 1U);
   release_select();
   pump(100U);
   rig.manual_calib_page = 0U;
@@ -475,7 +493,12 @@ static void test_tick_wrap(void)
   rig.manual_calib_page = 1U;
   press_select();
   pump(2050U);
-  assert(rig.o.result == WHEEL_HOME_RESULT_RECORDED);
+  {
+    wheel_home_input_t in;
+
+    fill_in(&in);
+    assert(wheel_home_record_manual_reference(&rig.s, &in, rig.now) == 1U);
+  }
   release_select();
   pump(100U);
   rig.manual_calib_page = 0U;
@@ -511,7 +534,7 @@ static void test_press_debounce(void)
   pump(60U);
 
   assert(rig.o.mode == WHEEL_HOME_MANUAL);
-  assert(rig.o.result == WHEEL_HOME_RESULT_RECORDED);
+  assert(rig.s.reference_valid == 1U); /* 之前的参考不受去抖影响 */
   assert(rig.o.owns_motors == 0U);
   for (int w = 0; w < 4; w++) { assert(rig.o.pulse[w] == 0); }
 }
@@ -534,19 +557,29 @@ static void test_short_press_once(void)
   assert(rig.o.mode == WHEEL_HOME_RUNNING);
 }
 
-/* 长按只记录一次，释放不归位，也不清零 UI 累计净圈数。 */
+/* 长按手势只消费一次：参考经显式 API 写入，之后没有路径再改写；
+ * 释放不归位，也不清零 UI 累计净圈数。 */
 static void test_long_press_records_once(void)
 {
+  wheel_home_input_t in;
+  int64_t origin0;
+
   rig_reset(CPR);
   rig.manual_calib_page = 1U;
   press_select();
   pump(2050U);
 
-  assert(rig.o.result == WHEEL_HOME_RESULT_RECORDED);
-  assert(rig.o.reference_valid == 1U);
-  assert(rig.s.origin[0] == rig.pos[0]);
+  /* step 路径不再写参考：手势被消费，记录走显式 API */
+  assert(rig.o.result != WHEEL_HOME_RESULT_RECORDED);
+  assert(rig.s.reference_valid == 0U);
+  fill_in(&in);
+  assert(wheel_home_record_manual_reference(&rig.s, &in, rig.now) == 1U);
+  assert(rig.s.reference_valid == 1U);
+  origin0 = rig.s.origin[0];
+  assert(origin0 == rig.pos[0]);
+
   pump(500U);
-  assert(rig.o.result == WHEEL_HOME_RESULT_RECORDED);
+  assert(rig.s.origin[0] == origin0); /* 无任何路径再改写参考 */
 
   release_select();
   pump(120U);
@@ -568,23 +601,28 @@ static void test_short_press_without_reference(void)
   for (int w = 0; w < 4; w++) { assert(rig.o.pulse[w] == 0); }
 }
 
-/* 长按两秒时静止不足 300 ms：不记录，且不延后、不退化成短按。 */
+/* 长按两秒时静止不足 300 ms：统一记录入口在请求时刻拒绝；
+ * 静止重新满 300 ms 后的请求才写参考；不退化成短按归位。 */
 static void test_record_requires_still(void)
 {
+  wheel_home_input_t in;
+
   rig_reset(CPR);
-  /* 记录属于手动标定页：必须置位才能走到 step 路径的长按记录分支，
-   * 否则"移动中不记录"的断言只是被页面门控平凡满足。 */
   rig.manual_calib_page = 1U;
   press_select();
   pump(1900U);
-  step4(10U, 5000, 5000, 5000, 5000);
-  pump(100U);
+  step4(10U, 5000, 5000, 5000, 5000); /* 静止被打破：still 计时清零 */
+  pump(150U); /* 长按手势计满（press 边缘 + 2 s），静止刚恢复 ~150 ms */
 
-  assert(rig.o.reference_valid == 0U);
+  fill_in(&in);
+  assert(wheel_home_record_manual_reference(&rig.s, &in, rig.now) == 0U);
+  assert(rig.s.reference_valid == 0U);
   assert(rig.o.result != WHEEL_HOME_RESULT_RECORDED);
 
-  pump(400U); /* 之后的静止时间再长也不补记 */
-  assert(rig.o.reference_valid == 0U);
+  pump(300U); /* 静止重新满 300 ms */
+  fill_in(&in);
+  assert(wheel_home_record_manual_reference(&rig.s, &in, rig.now) == 1U);
+  assert(rig.s.reference_valid == 1U);
 
   release_select();
   pump(60U);
@@ -846,12 +884,17 @@ static void test_request_home_mode_guard(void)
   assert(rig.o.mode == WHEEL_HOME_RUNNING);
 }
 
-/* 长按记录参考只属于手动标定页：驾驶页长按不再写参考。 */
+/* 记录入口统一后：step 在任何页面都不再直接写参考。手动标定页的记录
+ * 只经显式 API（固件里只有该页会发 record_ref 请求，页面门控上移到
+ * ui_model/freertos）。 */
 static void test_long_press_record_gated_by_manual_page(void)
 {
+  wheel_home_input_t in;
+
   rig_reset(CPR);
 
-  /* 驾驶页（manual_calib_page == 0）：长按 2 s 不写参考。 */
+  /* 手动标定页长按 2 s：手势被消费，但参考未写入 */
+  rig.manual_calib_page = 1U;
   press_select();
   pump(2050U);
   assert(rig.o.reference_valid == 0U);
@@ -860,15 +903,41 @@ static void test_long_press_record_gated_by_manual_page(void)
   pump(60U);
   assert(rig.o.mode == WHEEL_HOME_MANUAL);
 
-  /* 手动标定页（manual_calib_page == 1）：同样的长按写参考。 */
+  /* 显式 API（UI record_ref 请求路径）写参考成功 */
+  fill_in(&in);
+  assert(wheel_home_record_manual_reference(&rig.s, &in, rig.now) == 1U);
+  assert(rig.s.reference_valid == 1U);
+  for (int w = 0; w < 4; w++) { assert(rig.s.origin[w] == rig.pos[w]); }
+  pump(60U);
+}
+
+/* 统一记录入口回归（审查项 #4）：坏帧让 UI 重新计时期间，任何路径都不得
+ * 提前写入参考——step 内已无记录路径，显式 API 也在 frame_valid=0 时
+ * 拒绝；帧恢复后手势重新计满，才经 API 写入。 */
+static void test_bad_frame_no_early_record(void)
+{
+  wheel_home_input_t in;
+
+  rig_reset(CPR);
   rig.manual_calib_page = 1U;
   press_select();
-  pump(2050U);
-  assert(rig.o.result == WHEEL_HOME_RESULT_RECORDED);
-  assert(rig.o.reference_valid == 1U);
-  for (int w = 0; w < 4; w++) { assert(rig.s.origin[w] == rig.pos[w]); }
+  pump(1900U); /* 有效帧长按 1.9 s，静止满 300 ms */
+
+  rig.frame_valid = 0U;
+  pump(150U); /* 坏帧：UI 正在重新计时，任何路径不得提前写入 */
+  assert(rig.s.reference_valid == 0U);
+  assert(rig.o.result != WHEEL_HOME_RESULT_RECORDED);
+  fill_in(&in); /* in.frame_valid = 0 */
+  assert(wheel_home_record_manual_reference(&rig.s, &in, rig.now) == 0U);
+  assert(rig.s.reference_valid == 0U);
+
+  /* 帧恢复 + 释放：手势消费、无参考写入、回到手动（等 UI 重新计时） */
+  rig.frame_valid = 1U;
   release_select();
-  pump(60U);
+  pump(200U);
+  assert(rig.s.reference_valid == 0U);
+  assert(rig.o.mode == WHEEL_HOME_MANUAL);
+  assert(rig.o.owns_motors == 0U);
 }
 
 /* 驾驶页长按 2 s 只消费手势：不记录参考，释放沿也不退化成短按归位，无输出。 */
@@ -1066,6 +1135,7 @@ int main(void)
   test_request_home_mode_guard();
   test_public_cancel();
   test_long_press_record_gated_by_manual_page();
+  test_bad_frame_no_early_record();
   test_drive_page_long_press_consumed();
   test_status_text();
   puts("wheel home gesture / arbitration / shortest path / proportional / settle / reverse / stall / timeout OK");
