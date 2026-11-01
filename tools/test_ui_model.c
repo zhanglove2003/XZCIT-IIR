@@ -1015,56 +1015,54 @@ int main(void)
     assert(r.m.page == UI_PAGE_OUTPUT_CAP);
     req_all_zero(&r);
 
-    /* 50% 已是上限：上推夹取，连推也不回绕、不溢出（夹住不发新值请求） */
+    /* 上推 engage：当拍 +5% → 55 并发新值请求（50% 不再是上限，fix round 2 扩程） */
     r.in.ly = 56U; /* 上推（offset -72） */
     r_step(&r);
-    assert(r.m.output_cap_pct == 50U);
+    assert(r.m.output_cap_pct == 55U);
+    assert(r.req.output_cap_changed == 1U);
+    r.in.ly = 128U;
+    r_step(&r);
+    assert(r.m.output_cap_pct == 55U);
     assert(r.req.output_cap_changed == 0U);
-    for (i = 0; i < 30; i++)
+
+    /* 下推 engage：当拍 -5% → 50 并发新值请求；400 ms 内不动 */
+    r.in.ly = 200U;
+    r_step(&r);
+    assert(r.m.output_cap_pct == 50U);
+    assert(r.req.output_cap_changed == 1U);
+    for (i = 0; i < 39; i++)
     {
       r_step(&r);
       assert(r.m.output_cap_pct == 50U);
       assert(r.req.output_cap_changed == 0U);
     }
-
-    /* 下推 engage：当拍 -5% → 45 并发新值请求；400 ms 内不动 */
-    r.in.ly = 200U;
-    r_step(&r);
+    r_step(&r); /* t0+400：连移 -5% → 45 */
     assert(r.m.output_cap_pct == 45U);
     assert(r.req.output_cap_changed == 1U);
-    for (i = 0; i < 39; i++)
+    for (i = 0; i < 17; i++)
     {
       r_step(&r);
       assert(r.m.output_cap_pct == 45U);
       assert(r.req.output_cap_changed == 0U);
     }
-    r_step(&r); /* t0+400：连移 -5% → 40 */
+    r_step(&r); /* t0+580：连移 -5% → 40 */
     assert(r.m.output_cap_pct == 40U);
-    assert(r.req.output_cap_changed == 1U);
-    for (i = 0; i < 17; i++)
-    {
-      r_step(&r);
-      assert(r.m.output_cap_pct == 40U);
-      assert(r.req.output_cap_changed == 0U);
-    }
-    r_step(&r); /* t0+580：连移 -5% → 35 */
-    assert(r.m.output_cap_pct == 35U);
     assert(r.req.output_cap_changed == 1U);
 
-    /* 反向一次跨中：改向 +5% → 40（重新起拍） */
+    /* 反向一次跨中：改向 +5% → 45（重新起拍） */
     r.in.ly = 56U;
     r_step(&r);
-    assert(r.m.output_cap_pct == 40U);
+    assert(r.m.output_cap_pct == 45U);
     /* 同向未回 24 以内：不复位也不再动 */
     r.in.ly = 100U; /* offset -28 */
     r_step(&r);
-    assert(r.m.output_cap_pct == 40U);
+    assert(r.m.output_cap_pct == 45U);
     /* 回中复位后再次下推 */
     r.in.ly = 128U;
     r_step(&r);
     r.in.ly = 200U;
     r_step(&r);
-    assert(r.m.output_cap_pct == 35U);
+    assert(r.m.output_cap_pct == 40U);
     r.in.ly = 128U;
     r_step(&r);
 
@@ -1104,6 +1102,32 @@ int main(void)
     r_free(&r, L1B, 3);
     assert(r.m.page == UI_PAGE_OUTPUT_CAP);
     assert(r.m.output_cap_pct == 10U);
+    req_all_zero(&r);
+
+    /* 连移上推到新上限 90%（fix round 2 扩程）：逐拍步进到 90 后夹住，
+     * 夹住期间不再发新值请求、不回绕 */
+    r.in.ly = 56U; /* engage：+5% → 15 */
+    r_step(&r);
+    assert(r.m.output_cap_pct == 15U);
+    assert(r.req.output_cap_changed == 1U);
+    for (i = 0; i < 400 && r.m.output_cap_pct < 90U; i++)
+    {
+      r_step(&r);
+    }
+    assert(r.m.output_cap_pct == 90U);
+    r.in.ly = 128U;
+    r_step(&r);
+    for (i = 0; i < 30; i++) /* 上边界 90 夹住：连推不动、不发请求 */
+    {
+      r.in.ly = 56U;
+      r_step(&r);
+      assert(r.m.output_cap_pct == 90U);
+      assert(r.req.output_cap_changed == 0U);
+      r.in.ly = 128U;
+      r_step(&r);
+      assert(r.m.output_cap_pct == 90U);
+      assert(r.req.output_cap_changed == 0U);
+    }
 
     /* 页面提示"L1返回"：L1 稳定边沿与 R1 同效，回子菜单原条目 */
     r_hold(&r, L1B, 3);

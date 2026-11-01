@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** ①2026-11-01 上板反馈：新增 60 个 Noto 阈值化字形偏粗且彼此粗细不一，按原有 17 字模的墨水密度自动匹配阈值重新生成，并提供主机端 PNG 预览；②新增"输出上限"子菜单页，运行时动态设置驾驶 PWM 上限（10%~50%，RAM 生效，断电回默认）。
+**Goal:** ①2026-11-01 上板反馈：新增 60 个 Noto 阈值化字形偏粗且彼此粗细不一，按原有 17 字模的墨水密度自动匹配阈值重新生成，并提供主机端 PNG 预览；②新增"输出上限"子菜单页，运行时动态设置驾驶 PWM 上限（10%~90%，fix round 2 扩程，RAM 生效，断电回默认）。
 
 **Architecture:** 字体侧改 tools/font_add_glyphs.py 的渲染-阈值管道（按 ink-ratio 目标自动选阈值）+ 新增 tools/render_preview.py（oled_gfx 帧缓冲 → PNG）；PWM 侧 drive_ctrl 增加运行时上限变量与 setter，ui_model 增加第 5 个子菜单条目与调整页，freertos 接线。
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- PWM 上限：**百分比一律为占空比口径（pct×168 = pct% × (ARR+1=16800)/100）：50% = 8400 = 现状满输出 = 上电默认**。setter 夹取 [840, 8400] 不变（840 = 5% 占空比为绝对下夹取点，页面档位 10% ↔ 1680）；只影响驾驶混合（drive_ctrl_mix 与其内部 map_axis 调用）；SELFCHECK_PWM_PULSE(8400)、WHEEL_HOME_MAX_PULSE(3360) 不受影响；存 RAM 不写 Flash。
+- PWM 上限：**百分比一律为占空比口径（pct×168 = pct% × (ARR+1=16800)/100）：50% = 8400 = 现状满输出 = 上电默认**。setter 夹取 [840, 15120]（fix round 2：上夹取点 = DRIVE_CTRL_ABS_MAX_PULSE = 90%×16800 = 15120；840 = 5% 占空比为绝对下夹取点，页面档位 10%~90% ↔ [1680, 15120]）；只影响驾驶混合（drive_ctrl_mix 与其内部 map_axis 调用）；SELFCHECK_PWM_PULSE(8400)、WHEEL_HOME_MAX_PULSE(3360) 不受影响；存 RAM 不写 Flash。
 - 调整页交互：摇杆上下 ±5% 步进（占空比口径 = ±840），阈值 48/24 与 400/180ms 连移沿用；L1 返回子菜单（原条目），R1 同；改动即时生效（改的是全局运行时变量，无"保存"动作）。
 - 字形：全部仍经 font_convert.py extra 路径生成；既有 17 个原始字模文件不得修改；重新生成后 oled_font.c 中原始 17 字形与 ascii/title 段逐字节不变。
 - 预览图：tools/render_preview.py 渲染全部中文字形栅格 + 品牌页/确认页/子菜单三页到 PNG，供上板前人工目检。
@@ -22,7 +22,7 @@
 
 1. 上限运行时变量的并发访问：Ctrl 任务单写（设置页请求经 req），drive_ctrl 消费在同任务——无跨任务竞争；但 snapshot/渲染读百分比时用 seq-lock 快照字段，不裸读全局。
 2. 上限变更瞬间正在输出的驾驶命令：下一控制周期按新上限重新映射（mix 每拍重算，天然生效），不得出现超过新上限的残留输出——测试钉住。
-3. 范围夹取：摇杆连移快速越过边界时停在 10%/50%，不回绕、不溢出（int32）。
+3. 范围夹取：摇杆连移快速越过边界时停在 10%/90%（fix round 2 扩程），不回绕、不溢出（int32）。
 4. 字体阈值匹配：新字形 ink-ratio 与原始 17 字形均值偏差 ≤15%，且彼此极差 ≤20%（预览图 + 程序化断言双验证）。
 5. 第 5 子菜单条目进入后：滚动窗口/滚动标记/焦点记忆仍正确（4→5 条目的窗口逻辑回归）。
 
@@ -52,7 +52,7 @@
 - Test: `tools/test_drive_ctrl.c`、`tools/test_ui_model.c`、`tools/test_ctrl_task.c`
 
 **Interfaces:**
-- drive_ctrl：`extern int32_t drive_ctrl_max_pulse;`（默认 DRIVE_CTRL_MAX_PULSE=8400）+ `void drive_ctrl_set_max_pulse(int32_t v);`（夹取 [840, 8400]）；`drive_ctrl_map`/`drive_ctrl_mix`/`map_axis` 全部改读运行时变量；转向 limit = drive_ctrl_max_pulse/2（int32 整除）。
+- drive_ctrl：`extern int32_t drive_ctrl_max_pulse;`（默认 DRIVE_CTRL_MAX_PULSE=8400）+ `void drive_ctrl_set_max_pulse(int32_t v);`（夹取 [840, DRIVE_CTRL_ABS_MAX_PULSE=15120]，fix round 2 扩程）；`drive_ctrl_map`/`drive_ctrl_mix`/`map_axis` 全部改读运行时变量；转向 limit = drive_ctrl_max_pulse/2（int32 整除）。
 - ui_model：`UI_SUB_OUTPUT_CAP=4`（第 5 条目）；新页 `UI_PAGE_OUTPUT_CAP`；子菜单 L1 进入；页内摇杆上下 ±5%（engage/release/连移沿用）；L1/R1 回子菜单原条目；快照字段 `uint8_t output_cap_pct;`（渲染与集成测试消费）。
 - freertos：设置页把模型产出的新值（req 单发口径：进页/实际步进当拍置位）落到 `drive_ctrl_set_max_pulse(pct × 168)`（pct 为占空比百分比：50% = 8400 = 现状满输出 = 默认，±5% 步进 = ±840；fix round 1 修正，初稿 ×84/420 为 8400 口径误写）；快照发布 output_cap_pct。
 - 渲染：新页显示 `输出上限`（16px）+ `NN%`（6×12 大数字区）+ 原始比较值 + 提示 `上下调整  L1返回`（中文，字形已有则用，缺则加进 Task 1 字形管道后统一生成——若 Task 1 先行完成则直接用新管道补字）。
@@ -93,3 +93,30 @@
 - `build/hal_f407_mecanum_4motor_src.bin`（fix 后）：size 63268 bytes，
   sha256 `545ed202368a1b645a2d56098eada7c2e46aeb1370dc8f43645ab443c2c15fea`
   （text/data/bss 不变，63128/132/54496）。
+
+### Fix round 2（2026-11-01 上限扩程：10%~90%）
+
+- 扩程：页面档位上限 50% → **90%**（用户要求，spec §5.3 已更新）。
+  setter 上夹取点新增 `DRIVE_CTRL_ABS_MAX_PULSE = 15120 = 90% × (ARR+1=16800)`
+  （8400 仍是 DRIVE_CTRL_MAX_PULSE 默认值，但不再是 setter 上限）；
+  `UI_CAP_MAX_PCT` 10..50 → **10..90**，新增 `UI_CAP_DEFAULT_PCT=50`
+  （默认与 50% 路径行为不变）；pct×168 换算、±5% 步进 = ±840 不动
+  （90×168=15120 自动正确）；freertos/ui_render 无需逻辑改动。
+- 同步测试：test_drive_ctrl（15120/15121 上夹取、9000 中段直通、
+  90% 满杆 mix 全轮=15120、转向=7560、混转缩放 B/D=5040）、
+  test_ui_model（页内连移上推到 90 夹住不发请求；上边界夹取从 50 档移到 90 档）、
+  test_ctrl_task 'o'（40% 后再加一档：连移上推到 90%，max_pulse=15120，
+  驾驶页武装推满四轮 compare=15120）、test_ui_render（MAX 15120 渲染）；
+  50% 默认路径断言全部保持不变。
+- 重跑全绿：test_motion.sh 全绿、boot_ctrl 7/7、test_font_convert.py 全过、
+  ARM make clean 零告警。
+- `build/hal_f407_mecanum_4motor_src.bin`（fix round 2 后）：size 63300 bytes，
+  sha256 `c0617ae0bfe756a91619f15114c482b932ef24d32d3c3f9c634653bf13481264`
+  （text/data/bss 63160/132/54496）。
+
+## 审查遗留（deferred minors，2026-11-01）
+
+- ~~ui_model.h output_cap_pct 注释仍描述被否决的"每拍直读"方案~~ — 已在 fix round 2 改注释
+- 页面下限 10%（1680）档无直接断言（行为已由审查者主机探针验证正确）
+- spec §5.3 第 79 行仍写"四个条目"与新增第 5 项矛盾 — 文档 nit
+- 上板目检项：新字形与原字模观感一致性、连移手感、断电回默认

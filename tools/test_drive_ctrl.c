@@ -6,6 +6,7 @@
 int main(void)
 {
   assert(DRIVE_CTRL_MAX_PULSE == 8400);
+  assert(DRIVE_CTRL_ABS_MAX_PULSE == 15120); /* 90% × (ARR+1=16800) */
   assert(DRIVE_CTRL_DEADZONE == 16);
 
   /* 死区：中心 128 ± 16 内全部为 0 */
@@ -83,11 +84,15 @@ int main(void)
     for (i = 0; i < 4; i++) assert(m[i] == 8400);
   }
 
-  /* setter 夹取 [840, 8400]，不回绕、不溢出 */
+  /* setter 夹取 [840, 15120]（fix round 2 扩程：上夹取点 = 90% 占空比），不回绕、不溢出 */
   drive_ctrl_set_max_pulse(839);
   assert(drive_ctrl_max_pulse == 840);
-  drive_ctrl_set_max_pulse(9000);
-  assert(drive_ctrl_max_pulse == 8400);
+  drive_ctrl_set_max_pulse(9000);       /* 8400 不再是 setter 上限：中段值直通 */
+  assert(drive_ctrl_max_pulse == 9000);
+  drive_ctrl_set_max_pulse(15121);
+  assert(drive_ctrl_max_pulse == 15120); /* 90% 上夹取 */
+  drive_ctrl_set_max_pulse(15120);
+  assert(drive_ctrl_max_pulse == 15120);
   drive_ctrl_set_max_pulse(-1000);
   assert(drive_ctrl_max_pulse == 840);
 
@@ -126,6 +131,24 @@ int main(void)
      * 等比缩放回 4200：A/C=-1400, B/D=-4200 */
     drive_ctrl_mix(255, 0, m);
     assert(m[0] == -1400 && m[2] == -1400 && m[1] == -4200 && m[3] == -4200);
+  }
+
+  /* 90% 占空比上限（15120）下：满杆 mix 全轮 = 15120；转向分量恒 = 上限/2 = 7560 */
+  drive_ctrl_set_max_pulse(90 * 168);
+  assert(drive_ctrl_max_pulse == 15120);
+  {
+    int i;
+    int32_t m[4];
+
+    drive_ctrl_mix(0, 128, m);
+    for (i = 0; i < 4; i++) assert(m[i] == 15120);
+
+    drive_ctrl_mix(128, 0, m); /* T=+15120/2=7560：A/C=+7560, B/D=-7560 */
+    assert(m[0] == 7560 && m[2] == 7560 && m[1] == -7560 && m[3] == -7560);
+
+    /* 缩放按新上限：v=15120, t=7560 → peak 22680 > 15120 → A/C=15120, B/D=5040 */
+    drive_ctrl_mix(0, 0, m);
+    assert(m[0] == 15120 && m[2] == 15120 && m[1] == 5040 && m[3] == 5040);
   }
 
   /* 上限变更瞬间正在输出的驾驶命令：下一拍 mix 立即按新上限重映射，

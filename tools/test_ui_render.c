@@ -606,6 +606,11 @@ static void test_output_cap(void)
   s.output_cap_pct = 10U;
   ui_render_draw(&s, 0U);
   assert(fb_ink_in(0, 18, 127, 29) > 0);
+
+  /* 90%（fix round 2 扩程后的上限档）：原始比较值 MAX 15120 可渲染 */
+  s.output_cap_pct = 90U;
+  ui_render_draw(&s, 0U);
+  assert(fb_ink_in(0, 34, 127, 45) > 0);   /* 原始比较值 MAX 15120 */
 }
 
 /* 其余页面与未知页面：无越界、清屏后不残留 */

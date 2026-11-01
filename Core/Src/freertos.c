@@ -836,7 +836,7 @@ void StartCtrlTask(void *argument)
        * 模型在 进页/页内步进实际改变百分比 的当拍置 output_cap_changed，
        * 这里落到 drive_ctrl 运行时上限。pct 为占空比百分比：pct×168 =
        * pct% × (ARR+1=16800)/100，50% = 8400 = 现状满输出（与默认一致，
-       * 进页当拍为幂等写）；set_max_pulse 幂等夹取 [840, 8400]。同一任务
+       * 进页当拍为幂等写）；set_max_pulse 幂等夹取 [840, 15120]（90%）。同一任务
        * 内读写，无竞争；变更当拍之后的驾驶混合（第 4 步）即按新上限
        * 重映射。 */
       if (ureq.output_cap_changed != 0U)

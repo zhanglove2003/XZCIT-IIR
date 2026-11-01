@@ -8,7 +8,8 @@
 
 volatile uint8_t drive_calibration_mode = 0U;
 
-/* 运行时驾驶 PWM 输出上限：默认 50% = 8400。设置页经 set_max_pulse 调整，
+/* 运行时驾驶 PWM 输出上限：默认 50% = 8400；设置页可调至
+ * [10%, 90%] = [1680, 15120]（setter 绝对夹取 [840, 15120]）。
  * 只在本任务（Ctrl）读写，无跨任务竞争。 */
 int32_t drive_ctrl_max_pulse = (int32_t)DRIVE_CTRL_MAX_PULSE;
 
@@ -18,9 +19,9 @@ void drive_ctrl_set_max_pulse(int32_t v)
   {
     v = DRIVE_CTRL_MIN_PULSE;
   }
-  if (v > (int32_t)DRIVE_CTRL_MAX_PULSE)
+  if (v > (int32_t)DRIVE_CTRL_ABS_MAX_PULSE)
   {
-    v = (int32_t)DRIVE_CTRL_MAX_PULSE;
+    v = (int32_t)DRIVE_CTRL_ABS_MAX_PULSE;
   }
   drive_ctrl_max_pulse = v;
 }

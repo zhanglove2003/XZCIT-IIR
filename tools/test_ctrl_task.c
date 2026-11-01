@@ -438,8 +438,9 @@ static void ui_script(ps2_state_t *p)
 
 /* --- output cap scenario ('o') ------------------------------------------ */
 /* 子菜单第 5 条目"输出上限"页：进入时 50%（占空比口径 = 8400 = 现状满输出），
- * 摇杆下推到 40% 后运行时上限落到 drive_ctrl_max_pulse=6720；R1 回子菜单
- * 原条目；再导航到驾驶页武装推满：四轮 compare=6720（上限即时生效，
+ * 摇杆下推到 40% 后运行时上限落到 drive_ctrl_max_pulse=6720；再上推连移到
+ * 扩程后的新上限 90%（drive_ctrl_max_pulse=15120，fix round 2）；R1 回子菜单
+ * 原条目；再导航到驾驶页武装推满：四轮 compare=15120（上限即时生效，
  * 无 8400 残留）。 */
 static int cap_test;
 static int ostage;
@@ -522,45 +523,59 @@ static void cap_script(ps2_state_t *p)
     p->ly = 128U;
     if ((uint32_t)(tick - omark) >= 30U) { ostage = 13; omark = tick; }
     break;
-  case 13: /* R1：输出上限页 → 子菜单原条目（第 5 项） */
+  case 13: /* 摇杆按住上推：+5% 连移到扩程后的新上限 90%（fix round 2） */
+    p->ly = 56U;
+    ui_snapshot_get(&snap);
+    if (snap.output_cap_pct == 90U)
+    {
+      assert(drive_ctrl_max_pulse == 90 * 168); /* 90% × 168 = 15120 */
+      ostage = 14; omark = tick;
+    }
+    if ((uint32_t)(tick - omark) >= 6000U) { puts("cap not raised"); assert(0); }
+    break;
+  case 14: /* 摇杆回中 */
+    p->ly = 128U;
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 15; omark = tick; }
+    break;
+  case 15: /* R1：输出上限页 → 子菜单原条目（第 5 项） */
     p->buttons = 0xF7FFU;
     ui_snapshot_get(&snap);
     if (snap.page == UI_PAGE_SUBMENU)
     {
       assert(snap.sub_sel == 4U);
-      assert(snap.output_cap_pct == 40U);
-      ostage = 14; omark = tick;
+      assert(snap.output_cap_pct == 90U);
+      ostage = 16; omark = tick;
     }
     if ((uint32_t)(tick - omark) >= 2000U) { puts("cap page not left"); assert(0); }
     break;
-  case 14: /* 释放 R1 */
-    if ((uint32_t)(tick - omark) >= 30U) { ostage = 15; omark = tick; }
+  case 16: /* 释放 R1 */
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 17; omark = tick; }
     break;
-  case 15: /* R1：子菜单 → 主菜单 */
+  case 17: /* R1：子菜单 → 主菜单 */
     p->buttons = 0xF7FFU;
     ui_snapshot_get(&snap);
-    if (snap.page == UI_PAGE_MENU) { ostage = 16; omark = tick; }
+    if (snap.page == UI_PAGE_MENU) { ostage = 18; omark = tick; }
     break;
-  case 16: /* 释放 R1 */
-    if ((uint32_t)(tick - omark) >= 30U) { ostage = 17; }
+  case 18: /* 释放 R1 */
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 19; }
     break;
-  case 17: /* 摇杆左移：选回"驾驶" */
+  case 19: /* 摇杆左移：选回"驾驶" */
     p->lx = 48U;
     ui_snapshot_get(&snap);
-    if (snap.menu_sel == 0U) { ostage = 18; omark = tick; }
+    if (snap.menu_sel == 0U) { ostage = 20; omark = tick; }
     break;
-  case 18: /* 摇杆回中 */
-    if ((uint32_t)(tick - omark) >= 30U) { ostage = 19; omark = tick; }
+  case 20: /* 摇杆回中 */
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 21; omark = tick; }
     break;
-  case 19: /* L1：主菜单 → 驾驶页 */
+  case 21: /* L1：主菜单 → 驾驶页 */
     p->buttons = 0xFBFFU;
     ui_snapshot_get(&snap);
-    if (snap.page == UI_PAGE_DRIVE) { ostage = 20; omark = tick; }
+    if (snap.page == UI_PAGE_DRIVE) { ostage = 22; omark = tick; }
     break;
-  case 20: /* 释放 L1，等回中武装 ≥100 ms */
-    if ((uint32_t)(tick - omark) >= 150U) { ostage = 21; omark = tick; }
+  case 22: /* 释放 L1，等回中武装 ≥100 ms */
+    if ((uint32_t)(tick - omark) >= 150U) { ostage = 23; omark = tick; }
     break;
-  case 21: /* 满前进：四轮 compare = 6720（40% 上限当拍生效） */
+  case 23: /* 满前进：四轮 compare = 15120（90% 上限当拍生效） */
     p->ly = 0U;
     if ((uint32_t)(tick - omark) >= 30U)
     {
@@ -568,10 +583,10 @@ static void cap_script(ps2_state_t *p)
       ui_snapshot_get(&snap);
       assert(snap.page == UI_PAGE_DRIVE);
       assert(snap.drive_permitted == 1U);
-      assert(snap.output_cap_pct == 40U);
+      assert(snap.output_cap_pct == 90U);
       for (i = 0; i < 4; i++)
       {
-        assert(htim8.compare[i] == 6720U);
+        assert(htim8.compare[i] == 15120U);
       }
       longjmp(done, 1);
     }

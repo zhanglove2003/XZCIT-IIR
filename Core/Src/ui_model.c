@@ -42,7 +42,7 @@ void ui_model_init(ui_model_t *m, uint32_t now_ms)
   m->axis_v.fast = 0U;
   m->run_seen_busy = 0U;
   m->window_armed = 0U;
-  m->output_cap_pct = UI_CAP_MAX_PCT; /* 上电默认 50% = 8400（RAM，不落盘） */
+  m->output_cap_pct = UI_CAP_DEFAULT_PCT; /* 上电默认 50% = 8400（RAM，不落盘） */
 }
 
 static int32_t ui_abs32(int32_t x)

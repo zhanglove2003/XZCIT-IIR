@@ -7,8 +7,13 @@
 #define DRIVE_CTRL_DEADZONE 16
 
 /* 满速占空比：TIM8 ARR=16799 → 50% = 8400，与自检上限一致。
- * 同时是运行时输出上限的可调上顶点（50%）与上电默认值。 */
+ * 同时是运行时输出上限的上电默认值（不再是 setter 的上夹取点）。 */
 #define DRIVE_CTRL_MAX_PULSE 8400U
+
+/* setter 绝对上夹取点：15120 = 90% × (ARR+1=16800)。"输出上限"设置页档位
+ * 上限为 90%（2026-11-01 扩程，±5% 步进 = ±840 不变）；
+ * >50% 的档位未经实车验证，上板须从 60% 起逐档低速确认。 */
+#define DRIVE_CTRL_ABS_MAX_PULSE 15120
 
 /* 运行时驾驶 PWM 输出上限下限：840 = 5% 占空比（"输出上限"设置页档位
  * 下限为 10% = 1680；840 仅为 setter 的绝对下夹取点） */
@@ -21,7 +26,8 @@
  * 单写者：Ctrl 任务（设置页模型 → set_max_pulse，同任务 mix 消费）。 */
 extern int32_t drive_ctrl_max_pulse;
 
-/* 设置运行时输出上限（比较值口径），夹取到 [DRIVE_CTRL_MIN_PULSE, DRIVE_CTRL_MAX_PULSE] */
+/* 设置运行时输出上限（比较值口径），
+ * 夹取到 [DRIVE_CTRL_MIN_PULSE, DRIVE_CTRL_ABS_MAX_PULSE] = [840, 15120] */
 void drive_ctrl_set_max_pulse(int32_t v);
 
 /* 通用摇杆轴映射（0=推杆向上/负方向端点，128=中位，255=向下/正方向端点）：

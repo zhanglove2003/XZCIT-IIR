@@ -54,13 +54,15 @@ typedef enum
 #define UI_DRV_STATUS_DEADBAND 1
 
 /* 输出上限设置页（第 5 子菜单条目）：摇杆上下 ±5%（占空比口径 = ±840）步进，
- * 范围 10%~50%（↔ [1680, 8400]），边界夹取不回绕；50% = 8400 = 现状满输出
- * （TIM8 ARR+1=16800 的 50% 占空比，与 drive_ctrl 默认一致）。
+ * 范围 10%~90%（↔ [1680, 15120]，2026-11-01 扩程；90% = 15120 =
+ * 90% × (TIM8 ARR+1=16800)；>50% 档未经实车验证，上板须从 60% 起逐档低速确认），
+ * 边界夹取不回绕；默认 50% = 8400 = 现状满输出（与 drive_ctrl 默认一致）。
  * 只改模型内 output_cap_pct，由 Ctrl 任务在 新值请求 拍落到 drive_ctrl
  * 运行时上限（RAM 生效、断电回默认 50%，不写 Flash）。 */
-#define UI_CAP_MIN_PCT  10U
-#define UI_CAP_MAX_PCT  50U
-#define UI_CAP_STEP_PCT 5U
+#define UI_CAP_MIN_PCT     10U
+#define UI_CAP_MAX_PCT     90U
+#define UI_CAP_DEFAULT_PCT 50U
+#define UI_CAP_STEP_PCT    5U
 
 /* 低有效原始键位；摇杆 0..255；user = USER 引脚电平(按下为 1) */
 typedef struct
@@ -115,8 +117,8 @@ typedef struct
   ui_stick_axis_t axis_v;    /* 纵向：子菜单列表 / 确认页焦点（ly） */
   uint8_t run_seen_busy;     /* 动作页已见过 action_busy=1（防请求当拍误判完成） */
   uint8_t window_armed;      /* 自检运行进入结果页时 5 s 窗口是否开着 */
-  uint8_t output_cap_pct;    /* 驾驶 PWM 上限百分比 10..50（默认 50；Ctrl 每拍
-                              * 直读并落到 drive_ctrl_set_max_pulse，见 freertos） */
+  uint8_t output_cap_pct;    /* 驾驶 PWM 上限百分比 10..90（默认 50；Ctrl 在
+                              * 新值请求拍落到 drive_ctrl_set_max_pulse） */
 } ui_model_t;
 
 void ui_model_init(ui_model_t *m, uint32_t now_ms);
