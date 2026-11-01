@@ -12,6 +12,7 @@
 
 #include "adc.h"
 #include "boot_ui.h"
+#include "cmsis_os.h"
 #include "main.h"
 
 #define POWER_STEP_MS          500U
@@ -127,6 +128,7 @@ void power_monitor_init(void)
 
 void power_monitor_step(uint32_t now_ms)
 {
+  power_snapshot_t tmp;
   uint32_t sum = 0U;
   uint8_t n = 0U;
   uint8_t configured;
@@ -147,6 +149,11 @@ void power_monitor_step(uint32_t now_ms)
     s_t0 = now_ms;
   }
 
+  /* 全部采样与判断先落在局部副本上：进行中的 step 不得改动已发布的
+   * s_snapshot，否则并发读者会拿到"vdd 新、battery 旧"的撕裂快照
+   * （审查项 #3）。 */
+  tmp = s_snapshot;
+
   /* VREFINT：8 次均值换算 3.3 V 轨 */
   if (adc_read_vrefint(&sum, &n) != 0U)
   {
@@ -154,57 +161,64 @@ void power_monitor_step(uint32_t now_ms)
                                  *VREFINT_CAL_ADDR);
     if (mv > 0U)
     {
-      s_snapshot.vdd_mv = mv;
-      s_snapshot.vdd_valid = 1U;
+      tmp.vdd_mv = mv;
+      tmp.vdd_valid = 1U;
     }
     else
     {
-      s_snapshot.vdd_valid = 0U;
+      tmp.vdd_valid = 0U;
     }
   }
   else
   {
-    s_snapshot.vdd_valid = 0U;
+    tmp.vdd_valid = 0U;
   }
 
   /* 运动许可：采样成功还必须够 3100 mV（掉压的轨不得出力/自检）。 */
-  s_snapshot.vdd_ok = (uint8_t)((s_snapshot.vdd_valid != 0U &&
-                                 s_snapshot.vdd_mv >= BOOT_UI_VDD_MIN_MV)
-                                    ? 1U
-                                    : 0U);
+  tmp.vdd_ok = (uint8_t)((tmp.vdd_valid != 0U &&
+                          tmp.vdd_mv >= BOOT_UI_VDD_MIN_MV)
+                             ? 1U
+                             : 0U);
 
   configured = power_monitor_battery_configured();
-  s_snapshot.battery_configured = configured;
+  tmp.battery_configured = configured;
 
   /* VDD 无效的采样轮跳过电池换算：vdd_mv 失真时换算出的 battery_mv
    * 不可信，宁可 battery_valid=0 / battery_mv=0，也不给出自相矛盾的快照 */
-  if (configured != 0U && s_snapshot.vdd_valid != 0U)
+  if (configured != 0U && tmp.vdd_valid != 0U)
   {
     uint32_t raw = 0U;
     if (adc_read_ch8(&raw) != 0U)
     {
       min_mv = power_monitor_battery_min_mv();
-      s_snapshot.battery_mv = power_monitor_battery_mv_div(
-          raw, s_snapshot.vdd_mv, POWER_BATT_DIV_NUM, POWER_BATT_DIV_DEN);
-      s_snapshot.battery_valid = 1U;
-      s_snapshot.battery_error = 0U;
-      s_snapshot.undervolt =
-          (s_snapshot.battery_mv < min_mv) ? 1U : 0U;
+      tmp.battery_mv = power_monitor_battery_mv_div(
+          raw, tmp.vdd_mv, POWER_BATT_DIV_NUM, POWER_BATT_DIV_DEN);
+      tmp.battery_valid = 1U;
+      tmp.battery_error = 0U;
+      tmp.undervolt = (tmp.battery_mv < min_mv) ? 1U : 0U;
     }
     else
     {
-      s_snapshot.battery_valid = 0U;
-      s_snapshot.battery_error = 1U;
-      s_snapshot.undervolt = 0U;
+      tmp.battery_valid = 0U;
+      tmp.battery_error = 1U;
+      tmp.undervolt = 0U;
     }
   }
   else
   {
-    s_snapshot.battery_mv = 0U;
-    s_snapshot.battery_valid = 0U;
-    s_snapshot.battery_error = 0U;
-    s_snapshot.undervolt = 0U;
+    tmp.battery_mv = 0U;
+    tmp.battery_valid = 0U;
+    tmp.battery_error = 0U;
+    tmp.undervolt = 0U;
   }
+
+  /* 一次性发布：临界区内单条结构体拷贝。写者（powerTask，低优先级）
+   * 拷贝期间被 BASEPRI 屏蔽，读者（ctrl_power_read 同样在临界区里拷贝）
+   * 无法插入；读者的临界区也挡住写者插入——两份拷贝天然互斥，
+   * 读侧 ctrlPowerRead 拷贝期间写者不可能半提交。 */
+  taskENTER_CRITICAL();
+  s_snapshot = tmp;
+  taskEXIT_CRITICAL();
 }
 
 const power_snapshot_t *power_monitor_get(void)

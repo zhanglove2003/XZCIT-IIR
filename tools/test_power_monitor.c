@@ -27,6 +27,11 @@ static int s_ch8_poll_fail;   /* 仅让 CH8 转换失败，VREFINT 照常成功 
 static int s_vref_batches; /* ConfigChannel(VREFINT) 次数 = vrefint 采样批数 */
 static int s_ch8_gets;     /* CH8 实际取数次数 */
 
+/* 审查项 #3：step 进行中的已发布快照捕获（撕䉤断言用）。
+ * 置位后第一次走到 CH8 失败的 PollForConversion 时拍下 power_monitor_get()。 */
+static uint8_t s_capture_mid;
+static power_snapshot_t s_mid_snap;
+
 int HAL_ADC_ConfigChannel(ADC_HandleTypeDef *h, ADC_ChannelConfTypeDef *c)
 {
   (void)h;
@@ -46,7 +51,15 @@ int HAL_ADC_PollForConversion(ADC_HandleTypeDef *h, uint32_t timeout_ms)
 {
   (void)h; (void)timeout_ms;
   if (s_poll_fail) { return 1; }
-  if (s_ch8_poll_fail && s_cur_ch != ADC_CHANNEL_VREFINT) { return 1; }
+  if (s_ch8_poll_fail && s_cur_ch != ADC_CHANNEL_VREFINT)
+  {
+    if (s_capture_mid != 0U)
+    {
+      s_mid_snap = *power_monitor_get(); /* 采样中途的已发布快照 */
+      s_capture_mid = 0U;
+    }
+    return 1;
+  }
   return 0;
 }
 uint32_t HAL_ADC_GetValue(ADC_HandleTypeDef *h)
@@ -160,6 +173,71 @@ int main(void)
   s = power_monitor_get();
   assert(s->vdd_mv == 3102U);
   assert(s->vdd_ok == 1U);
+
+  /* 9. 发布原子性（审查项 #3：电源快照撕裂）：step 进行中（CH8 采样失败
+   *    的 PollForConversion 里）读到的已发布快照必须仍是上一次完整快照，
+   *    不得出现"vdd 新、battery 旧"的半提交混搭；发布后各字段自洽。 */
+  power_monitor_init();
+  s_test_configured = 1U;
+  s_test_min_mv = 3300U;
+  s_vref_val = 1490U;  /* vdd = 3300 mV */
+  s_ch8_val = 0U;      /* battery_mv = 0 → undervolt = 1 */
+  s_ch8_poll_fail = 0;
+  power_monitor_step(6000U);
+  s = power_monitor_get();
+  assert(s->vdd_valid == 1U && s->vdd_mv == 3300U && s->vdd_ok == 1U);
+  assert(s->battery_valid == 1U && s->battery_mv == 0U);
+  assert(s->undervolt == 1U && s->battery_error == 0U);
+  {
+    power_snapshot_t prev = *s;
+
+    s_vref_val = 1585U;  /* 本轮 vdd 变为 3102 mV */
+    s_ch8_poll_fail = 1; /* CH8 失败 */
+    s_capture_mid = 1U;
+    power_monitor_step(6501U);
+    s = power_monitor_get();
+    /* 采样中途：已发布快照必须逐字段等于上一次完整快照 */
+    assert(s_mid_snap.vdd_valid == prev.vdd_valid);
+    assert(s_mid_snap.vdd_mv == prev.vdd_mv);
+    assert(s_mid_snap.vdd_ok == prev.vdd_ok);
+    assert(s_mid_snap.battery_configured == prev.battery_configured);
+    assert(s_mid_snap.battery_valid == prev.battery_valid);
+    assert(s_mid_snap.battery_mv == prev.battery_mv);
+    assert(s_mid_snap.battery_error == prev.battery_error);
+    assert(s_mid_snap.undervolt == prev.undervolt);
+    /* 发布后：整体自洽（valid/error/undervolt/mv 成对一致） */
+    assert(s->vdd_valid == 1U && s->vdd_mv == 3102U && s->vdd_ok == 1U);
+    assert(s->battery_valid == 0U);
+    assert(s->battery_error == 1U);
+    assert(s->undervolt == 0U);
+    assert(s->battery_mv == 0U);
+    s_ch8_poll_fail = 0;
+  }
+
+  /* 10. 组合回归：vref 成功 + CH8 失败后恢复、未配置清空——发布后的
+   *     快照各字段必须成对自洽（valid==1 ⟺ mv 可信；error==1 ⟹ valid==0；
+   *     undervolt==1 ⟹ valid==1）。 */
+  power_monitor_init();
+  s_test_configured = 1U;
+  s_test_min_mv = 3300U;
+  s_vref_val = 1490U;
+  s_ch8_val = 4095U;
+  power_monitor_step(7000U);
+  s = power_monitor_get();
+  assert(s->battery_valid == 1U && s->battery_error == 0U &&
+         s->undervolt == 0U && s->battery_mv == 3300U);
+  s_ch8_poll_fail = 1;
+  power_monitor_step(7501U);
+  s = power_monitor_get();
+  assert(!(s->battery_valid == 1U) ); /* error 路径 valid 必须为 0 */
+  assert(s->battery_error == 1U && s->undervolt == 0U);
+  s_test_configured = 0U;
+  s_ch8_poll_fail = 0;
+  power_monitor_step(8002U);
+  s = power_monitor_get();
+  assert(s->battery_configured == 0U);
+  assert(s->battery_valid == 0U && s->battery_mv == 0U &&
+         s->battery_error == 0U && s->undervolt == 0U);
 
   printf("power_monitor host test passed\n");
   return 0;

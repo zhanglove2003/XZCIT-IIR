@@ -299,9 +299,10 @@ static void ctrl_ui_publish(const ui_snapshot_t *snap)
   s_ui_snap_seq = s_ui_snap_seq + 1U; /* 变偶数：稳定 */
 }
 
-/* power_monitor_get() 返回的是 powerTask 正在写的内部指针：
- * 跨任务读必须用临界区做一次性结构体拷贝防撕裂。快照只有十来个字，
- * 关调度拷贝的代价远低于引入一套 seq-lock 的复杂度。 */
+/* power_monitor 的快照发布与读取双方都在临界区内做单条结构体拷贝
+ * （写者 step 先在局部副本完成全部采样与判断，最后一次发布，见
+ * power_monitor.c）：拷贝互斥，读者不可能拿到"字段更新到一半"的撕裂
+ * 快照。快照只有十来个字，关调度拷贝的代价远低于引入一套 seq-lock。 */
 static void ctrl_power_read(power_snapshot_t *out)
 {
   taskENTER_CRITICAL();
