@@ -122,6 +122,7 @@ $CP -c port=SWD freq=100 mode=HOTPLUG reset=SWrst -rst -run -score
 
 - 设计 spec：`docs/superpowers/specs/2026-10-31-oled-menu-driving-design.md`
 - 实施计划与构建指纹：`docs/superpowers/plans/`
+- **调试坑与解决方案：`docs/troubleshooting.md`（遇到怪现象先查这里）**
 - 字体预览：`docs/superpowers/plans/preview-*.png`
 
 ## 待办（下一迭代）
