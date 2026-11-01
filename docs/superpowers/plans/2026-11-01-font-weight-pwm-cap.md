@@ -120,3 +120,21 @@
 - 页面下限 10%（1680）档无直接断言（行为已由审查者主机探针验证正确）
 - spec §5.3 第 79 行仍写"四个条目"与新增第 5 项矛盾 — 文档 nit
 - 上板目检项：新字形与原字模观感一致性、连移手感、断电回默认
+
+### PR #4 审查修复（2026-11-01，7 项：3 P1 + 4 P2）
+
+- 逐项 TDD（先红后绿），每项一个独立 commit（#1..#7，见
+  `.superpowers/sdd/2026-11-01-font-weight-pwm-cap/pr4-review-fix-report.md`）：
+  #1 归位坏帧当拍取消（ctrl 场景 'n'）、#2 电机健康逐轮 measurable
+  （motor_health 用例 11）、#3 电源快照一次性发布（power_monitor 用例 9/10）、
+  #4 手动标定统一记录入口（test_wheel_home 坏帧回归）、#5 确认页右推改
+  启动请求（ui_model 用例 23）、#6 回中武装查按键释放（ctrl 场景 'd'）、
+  #7 电池屏 error 优先 + 标题结论分离（ui_render result 用例）。
+- 重跑全绿：`bash tools/test_motion.sh` 全绿（新增 ctrl 'n'/'d' 两场景）、
+  `bash tools/test_boot_ctrl_integration.sh` 7/7 PASS、
+  `python3 tools/test_font_convert.py` 全过、ARM make clean 零告警。
+- `build/hal_f407_mecanum_4motor_src.bin`（PR #4 审查修复后）：size 63348 bytes，
+  sha256 `663c659b774fd91bf2bd93e3449dff10f7ab0c2d90da6ea8d8cabd076d32ea60`
+  （text/data/bss 63208/132/54496）。
+- 行为变化注记：POWER_BATTERY_CONFIGURED=0 时结果页标题恒"未通过"
+  （spec §9.2：电池未配置不得显示"全部通过"），电池分压配置后恢复。
