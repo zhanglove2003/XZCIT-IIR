@@ -10,9 +10,13 @@ static void cyc(motor_health_t *h, uint32_t t, int32_t pwm, int32_t fb,
 {
   motor_health_in_t in;
 
-  for (int i = 0; i < 4; i++) { in.pwm[i] = pwm; in.fb[i] = fb; }
+  for (int i = 0; i < 4; i++)
+  {
+    in.pwm[i] = pwm;
+    in.fb[i] = fb;
+    in.measurable[i] = measurable;
+  }
   in.now_ms = t;
-  in.measurable = measurable;
   motor_health_step(h, &in, out);
 }
 
@@ -104,6 +108,44 @@ int main(void)
     for (uint32_t i = 0U; i < 200U; i++) { cyc(&h, t, 2000, 40, 1U, &out); t += 10U; }
   }
   assert(out.fault_mask == 0U);
+
+  /* 11. 逐轮门控（审查项 #2）：一轮换向只宽限该轮，其余轮照常在
+   *     宽限+窗口后锁存 NO FB。轮 0 每 100 ms 换向一次（换向当拍调用方
+   *     置 measurable[0]=0），轮 1..3 持续满输出零反馈。
+   *     旧的全局 measurable 会让轮 1..3 的窗口被反复清零、永远锁不上。 */
+  motor_health_init(&h);
+  {
+    uint32_t t;
+    uint8_t latched = 0U;
+
+    for (t = 0U; t < 1500U; t += 10U)
+    {
+      motor_health_in_t in;
+      motor_health_out_t o2;
+
+      for (int i = 0; i < 4; i++)
+      {
+        in.pwm[i] = 2000;
+        in.fb[i] = 0;
+        in.measurable[i] = 1U;
+      }
+      in.pwm[0] = ((t / 100U) % 2U == 0U) ? 2000 : -2000;
+      if ((t % 100U) == 0U)
+      {
+        in.measurable[0] = 0U; /* 换向当拍：只暂停该轮监测 */
+      }
+      in.now_ms = t;
+      motor_health_step(&h, &in, &o2);
+      out = o2;
+      if ((o2.fault_mask & 0x0EU) == 0x0EU)
+      {
+        latched = 1U;
+      }
+    }
+    assert(latched == 1U);              /* 静止轮照常锁存 */
+    assert((out.fault_mask & 0x01U) == 0U); /* 反复换向轮未被误锁 */
+    assert(out.stop_all == 1U);
+  }
 
   puts("motor health: PWM floor / grace / window / DIR ERR / jitter / latch / clear OK");
   return 0;

@@ -26,7 +26,10 @@ typedef struct
   int32_t pwm[4];  /* 实际施加的 signed PWM（forward-positive） */
   int32_t fb[4];   /* 本周期编码器增量（forward-positive 净计数） */
   uint32_t now_ms;
-  uint8_t measurable; /* 0 = 睡眠/换向等待/手动对齐/未移交自检，本轮不监测 */
+  /* 逐轮监测门控：measurable[w]=0 表示该轮本轮不监测（睡眠/该轮换向等待/
+   * 手动对齐/未移交自检）。逐轮是为了"一轮换向只宽限该轮"，其余轮的
+   * 监测窗口不被打断（spec §11.4）。 */
+  uint8_t measurable[4];
 } motor_health_in_t;
 
 typedef struct

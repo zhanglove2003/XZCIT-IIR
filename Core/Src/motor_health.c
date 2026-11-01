@@ -56,8 +56,8 @@ void motor_health_step(motor_health_t *h, const motor_health_in_t *in,
 
     out->code[i] = MOTOR_HEALTH_DISABLED;
 
-    /* 不满足检测条件：不累计、不判故障、也不记为在线。 */
-    if (in->measurable == 0U || dir == 0 ||
+    /* 不满足检测条件：不累计、不判故障、也不记为在线（逐轮门控）。 */
+    if (in->measurable[i] == 0U || dir == 0 ||
         mh_abs(pwm) < MOTOR_HEALTH_MIN_PWM)
     {
       h->window_active[i] = 0U;

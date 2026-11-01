@@ -1007,12 +1007,13 @@ void StartCtrlTask(void *argument)
     }
 
     /* 4b) 运动反馈监测：PWM 够大却不动 -> NO FB；方向相反 -> DIR ERR。
-     *    只判定与本轮降级，硬件动作统一由 ctrl_apply() 执行。 */
+     *    只判定与本轮降级，硬件动作统一由 ctrl_apply() 执行。
+     *    门控逐轮（审查项 #2）：任一轮换向只宽限该轮自己，其余轮的
+     *    监测窗口照常累积，不再整轮暂停。 */
     {
       motor_health_in_t hin;
       motor_health_out_t hout;
-      uint8_t measurable = 1U;
-      uint8_t reversing = 0U;
+      uint8_t measurable[4];
 
       if (s_ctrl_health_ready == 0U)
       {
@@ -1025,24 +1026,30 @@ void StartCtrlTask(void *argument)
       {
         hin.pwm[w] = command[w];
         hin.fb[w] = in.delta[w];
+        measurable[w] = 1U;
 
-        /* 换向：符号与上一轮不同，重新给启动宽限。 */
+        /* 换向：符号与上一轮不同，重新给该轮启动宽限。 */
         if (s_ctrl_last_pwm[w] != 0 && command[w] != 0 &&
             ((s_ctrl_last_pwm[w] > 0) != (command[w] > 0)))
         {
-          reversing = 1U;
+          measurable[w] = 0U;
         }
       }
       hin.now_ms = HAL_GetTick();
 
-      /* 睡眠 / 换向 / 手动标定页 / 手柄失联 / 渲染层未就绪：本轮不监测。 */
-      if (awake == 0U || reversing != 0U ||
-          s_ui_model.page == UI_PAGE_MANUAL_CAL || in.frame_valid == 0U ||
-          boot_ui_ready == 0U)
+      /* 睡眠 / 手动标定页 / 手柄失联 / 渲染层未就绪：全轮本轮不监测。 */
+      if (awake == 0U || s_ui_model.page == UI_PAGE_MANUAL_CAL ||
+          in.frame_valid == 0U || boot_ui_ready == 0U)
       {
-        measurable = 0U;
+        for (w = 0U; w < 4U; w++)
+        {
+          measurable[w] = 0U;
+        }
       }
-      hin.measurable = measurable;
+      for (w = 0U; w < 4U; w++)
+      {
+        hin.measurable[w] = measurable[w];
+      }
 
       /* 故障清除的唯一入口：菜单自检服务完整跑完一轮，且这一轮四轮全过。
        * 不接受长按/记录参考等操作来清故障，避免"黑掉一台车"当成修好。 */
