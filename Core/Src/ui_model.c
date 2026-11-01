@@ -26,6 +26,7 @@ void ui_model_init(ui_model_t *m, uint32_t now_ms)
   m->confirm_since_ms = now_ms;
   m->confirm_remain_ms = (uint16_t)UI_CONFIRM_COUNTDOWN_MS;
   m->confirm_blocked = 0U;
+  m->confirm_start_requested = 0U;
   for (i = 0U; i < UI_BTN_COUNT; i++)
   {
     m->btn_filtered[i] = 0U;
@@ -159,10 +160,12 @@ static void go_page(ui_model_t *m, ui_page_t p, uint32_t now)
   m->sel_since_ms = now;
   if (p == UI_PAGE_CHECK_CONFIRM)
   {
-    /* 进入确认页即锚定 5 s 倒计时（含 R1/越区从动作页退回的重进）。 */
+    /* 进入确认页即锚定 5 s 倒计时（含 R1/越区从动作页退回的重进）；
+     * 同时清掉上次遗留的启动请求。 */
     m->confirm_since_ms = now;
     m->confirm_remain_ms = (uint16_t)UI_CONFIRM_COUNTDOWN_MS;
     m->confirm_blocked = 0U;
+    m->confirm_start_requested = 0U;
   }
 }
 
@@ -413,11 +416,16 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
       break;
     case UI_PAGE_CHECK_CONFIRM:
       /* 新流程：L1 边沿=立即开始，不再看焦点。前置不满足（ready=0）时
-       * 不发请求、不转页——页面冻结倒计时并显示原因，避免落到无人运行
-       * 的 CHECK_RUN 页（Ctrl 对请求的拒绝不回喂模型，见 spec §4）。 */
+       * 置启动请求而不发请求、不转页——页面冻结倒计时并显示原因；
+       * ready 恢复后由倒计时块自动启动（见下方确认页收尾），
+       * 避免落到无人运行的 CHECK_RUN 页（spec §4，审查项 #5）。 */
       if (in->selfcheck_ready != 0U)
       {
         start_selfcheck(m, req, now);
+      }
+      else
+      {
+        m->confirm_start_requested = 1U;
       }
       break;
     case UI_PAGE_CHECK_RESULT:
@@ -526,7 +534,9 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
     break;
   case UI_PAGE_CHECK_CONFIRM:
     /* 焦点字段保留（ly 仅更新显示用旧字段），不再参与启动/取消裁决：
-     * 摇杆右（lx≥176）立即开始、摇杆左（lx≤80）取消回品牌页（spec §4）。 */
+     * 摇杆右（lx≥176）置启动请求、摇杆左（lx≤80）取消回品牌页（spec §4，
+     * 审查项 #5：右推立即启动与 ready 要求四轴回中互斥，改为请求——
+     * 摇杆回到回中区 ready 恢复即自动启动，页面期间显示"请回中摇杆"）。 */
     if (evy > 0)
     {
       m->confirm_focus = 1U;
@@ -539,10 +549,7 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
     }
     if (in->lx >= UI_CONFIRM_START_LX)
     {
-      if (in->selfcheck_ready != 0U)
-      {
-        start_selfcheck(m, req, now);
-      }
+      m->confirm_start_requested = 1U;
     }
     else if (in->lx <= UI_CONFIRM_CANCEL_LX)
     {
@@ -590,23 +597,34 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
 
   /* 确认页 5 s 倒计时（spec §4）：上面各转移若已离开本页则跳过。
    * ready=0 冻结——remain 不减，锚点按剩余时间回推，恢复后继续走剩余；
-   * 归零当拍自发 selfcheck_start（req 单发语义，本拍即被 Ctrl 消费）。 */
+   * 归零当拍自发 selfcheck_start（req 单发语义，本拍即被 Ctrl 消费）。
+   * 有启动请求（右推/L1 在 ready=0 时留下）且 ready 恢复：立即自发
+   * 启动，不再等剩余（摇杆回到回中区即满足，审查项 #5）。 */
   if (m->page == UI_PAGE_CHECK_CONFIRM)
   {
     if (in->selfcheck_ready != 0U)
     {
-      uint32_t elapsed = (uint32_t)(now - m->confirm_since_ms);
-
-      m->confirm_blocked = 0U;
-      if (elapsed >= UI_CONFIRM_COUNTDOWN_MS)
+      if (m->confirm_start_requested != 0U)
       {
         m->confirm_remain_ms = 0U;
+        m->confirm_blocked = 0U;
         start_selfcheck(m, req, now);
       }
       else
       {
-        m->confirm_remain_ms =
-            (uint16_t)(UI_CONFIRM_COUNTDOWN_MS - elapsed);
+        uint32_t elapsed = (uint32_t)(now - m->confirm_since_ms);
+
+        m->confirm_blocked = 0U;
+        if (elapsed >= UI_CONFIRM_COUNTDOWN_MS)
+        {
+          m->confirm_remain_ms = 0U;
+          start_selfcheck(m, req, now);
+        }
+        else
+        {
+          m->confirm_remain_ms =
+              (uint16_t)(UI_CONFIRM_COUNTDOWN_MS - elapsed);
+        }
       }
     }
     else

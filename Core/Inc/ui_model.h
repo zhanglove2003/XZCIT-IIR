@@ -109,6 +109,10 @@ typedef struct
   uint32_t confirm_since_ms;
   uint16_t confirm_remain_ms;
   uint8_t confirm_blocked;
+  /* 确认页启动请求（审查项 #5）：右推 lx≥176 / L1 在 ready=0 时置位，
+   * 进页（go_page）清零；selfcheck_ready 恢复且已请求 → 立即自发
+   * selfcheck_start（摇杆回到回中区即满足，无需额外延时）。 */
+  uint8_t confirm_start_requested;
   /* 按键滤波：索引 0=R1 1=L1 2=SELECT 3=USER。 */
   uint8_t btn_filtered[4], btn_candidate[4], btn_frames[4];
   uint32_t btn_press_ms[4];  /* 稳定按下沿时刻（SELECT 长按锚点） */

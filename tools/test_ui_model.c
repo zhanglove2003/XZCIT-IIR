@@ -1146,6 +1146,72 @@ int main(void)
     assert(r.m.sub_sel == 4U);
   }
 
+  /* 23. 确认页右推=启动请求（审查项 #5："右移立即自检"与 selfcheck_ready
+   *     要求四轴回中互斥的死路）：ready=0 时右推不发启动、置请求、页面
+   *     冻结显示原因；回中使 ready 恢复 → 无需延时自动启动。L1 在
+   *     !ready 时同样置请求而非无动作；R1 离页清请求，重进不残留。 */
+  {
+    rig_t r;
+    int i;
+
+    /* a) ready=0 右推：无启动、置请求、冻结显示原因 */
+    rig_init(&r, 1000U);
+    goto_confirm(&r, 0U);
+    assert(r.m.confirm_start_requested == 0U);
+    r.in.lx = 208U;
+    r_step(&r);
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    assert(r.req.selfcheck_start == 0U);
+    assert(r.m.confirm_start_requested == 1U);
+    assert(r.m.confirm_blocked == 1U); /* 页面显示"请回中摇杆" */
+    for (i = 0; i < 100; i++)          /* 持续右推 1 s：仍不启动 */
+    {
+      r_step(&r);
+      assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+      assert(r.req.selfcheck_start == 0U);
+    }
+
+    /* b) 回中（ready 恢复）→ 下一拍自动启动 */
+    r.in.lx = 128U;
+    r.in.selfcheck_ready = 1U;
+    r_step(&r);
+    assert(r.req.selfcheck_start == 1U);
+    assert(r.m.page == UI_PAGE_CHECK_RUN);
+
+    /* c) L1 在 !ready 时置请求；ready 恢复自动启动 */
+    rig_init(&r, 1000U);
+    goto_confirm(&r, 0U);
+    r_hold(&r, L1B, 3);
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    assert(r.req.selfcheck_start == 0U);
+    assert(r.m.confirm_start_requested == 1U);
+    r_free(&r, L1B, 3);
+    r.in.selfcheck_ready = 1U;
+    r_step(&r);
+    assert(r.req.selfcheck_start == 1U);
+    assert(r.m.page == UI_PAGE_CHECK_RUN);
+
+    /* d) R1 离页（回子菜单）清请求：重进后不残留、不自发启动 */
+    rig_init(&r, 1000U);
+    goto_confirm(&r, 0U);
+    r.in.lx = 208U;
+    r_step(&r);
+    assert(r.m.confirm_start_requested == 1U);
+    r_hold(&r, R1B, 3);
+    assert(r.m.page == UI_PAGE_SUBMENU); /* back_page 是子菜单 */
+    r_free(&r, R1B, 3);
+    r.in.lx = 128U;
+    r_hold(&r, L1B, 3); /* 子菜单"重新自检"L1 重进确认页 */
+    r_free(&r, L1B, 3);
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    assert(r.m.confirm_start_requested == 0U);
+    r.in.selfcheck_ready = 1U;
+    r_step(&r);
+    assert(r.req.selfcheck_start == 0U); /* 无请求：走倒计时而非立即启动 */
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    assert(r.m.confirm_blocked == 0U);
+  }
+
   puts("ui_model pages / debounce / nav / window / classify OK");
   return 0;
 }
