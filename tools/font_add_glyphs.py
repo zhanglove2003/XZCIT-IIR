@@ -74,10 +74,12 @@ def encode(grid):
 
 def main():
     chars = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_CHARS
+    out_name = sys.argv[2] if len(sys.argv) > 2 else 'CNADD16x16.h'
+    arr_name = out_name[:-2] if out_name.endswith('.h') else out_name
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE, index=FONT_INDEX)
     lines = ['/* 补充汉字字模（阴码 · 行列式（横向字节，8 列一条）· 逆向（低位在前，首点在 bit0）· 16x16）',
              ' * 由 tools/font_add_glyphs.py 从 Noto Sans CJK SC Bold 16px 渲染生成，供 tools/font_convert.py 增补使用。 */',
-             'const unsigned char CNADD16x16[%d][32] = {' % len(chars)]
+             'const unsigned char %s[%d][32] = {' % (arr_name, len(chars))]
     for ch in chars:
         grid = render(ch, font)
         art = [' * ' + ''.join('#' if v else '.' for v in row) for row in grid]
@@ -86,9 +88,10 @@ def main():
         lines.append('    {' + hexes + '}, /* %s' % ch)
         lines.extend(l + ' */' if i == len(art) - 1 else l + '' for i, l in enumerate(art))
     lines.append('};')
-    with open(OUT, 'w', encoding='utf-8') as f:
+    out_path = os.path.join(os.path.dirname(OUT), out_name)
+    with open(out_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines) + '\n')
-    print('written', OUT, len(chars), 'glyphs')
+    print('written', out_path, len(chars), 'glyphs')
 
 
 if __name__ == '__main__':

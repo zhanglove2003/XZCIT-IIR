@@ -208,7 +208,8 @@ static const uint8_t card_icon_wrench[24] = {
 #define NAME_X_OFF 20 /* 卡片中文名起点距卡片左框（图标右侧） */
 #define NAME_Y_OFF 8
 
-/* 逐轮状态短文本（自检与归位共用口径：0 等待 1 运行 2 通过 3 失败） */
+/* 逐轮状态短文本（自检页 6×12 数据行用短代码：0 等待 1 运行 2 通过 3 失败；
+ * 四轮行行距 12px 放不下 16px 汉字，归位页的中文状态见 home_state_text） */
 static const char *state_text(uint8_t state)
 {
   switch (state)
@@ -221,6 +222,22 @@ static const char *state_text(uint8_t state)
       return "FAIL";
     default:
       return "WAIT";
+  }
+}
+
+/* 归位页逐轮中文状态（2×2 状态格，16px） */
+static const char *home_state_text(uint8_t state)
+{
+  switch (state)
+  {
+    case 1U:
+      return "运动中";
+    case 2U:
+      return "到位";
+    case 3U:
+      return "失败";
+    default:
+      return "等待";
   }
 }
 
@@ -239,10 +256,88 @@ static void draw_centered_6x12(int16_t y, const char *text)
   oled_gfx_text6x12((int16_t)((OLED_WIDTH - (int16_t)oled_gfx_text6x12_width(text)) / 2), y, text);
 }
 
-/* 16px 中文文本水平居中（只能用于页面主体，不得进顶栏） */
-static void draw_centered_16(int16_t y, const char *utf8)
+/* ---------------- 混排绘制（16px 汉字 + 6×12 ASCII 同行） ----------------
+ * 汉字步进 18px（16px 字形 + 2px 字距），ASCII 步进 6px、在 16px 行内垂直居中
+ * （y+2 起，12px 高）。用于"R1 菜单 L1 自检"、按USER取消 等中英混排提示行。 */
+#define MIX_CN_STEP    18U
+#define MIX_ASCII_STEP 6U
+
+static uint16_t mixed16_width(const char *utf8)
 {
-  oled_gfx_text16((int16_t)((OLED_WIDTH - (int16_t)oled_gfx_text16_width(utf8)) / 2), y, utf8);
+  const uint8_t *p = (const uint8_t *)utf8;
+  uint16_t width = 0U;
+  uint8_t last_cn = 0U;
+
+  while (*p != 0U)
+  {
+    if (*p < 0x80U)
+    {
+      p++;
+      width = (uint16_t)(width + MIX_ASCII_STEP);
+      last_cn = 0U;
+    }
+    else if ((*p & 0xF0U) == 0xE0U && p[1] != 0U && p[2] != 0U)
+    {
+      p += 3;
+      width = (uint16_t)(width + MIX_CN_STEP);
+      last_cn = 1U;
+    }
+    else
+    {
+      p++;
+    }
+  }
+  /* 末尾汉字字距（18 - 16）不计入宽度，便于居中（与 oled_gfx_text16_width 一致） */
+  if ((last_cn != 0U) && (width >= (MIX_CN_STEP - 16U)))
+  {
+    width = (uint16_t)(width - (MIX_CN_STEP - 16U));
+  }
+  return width;
+}
+
+static void draw_mixed16(int16_t x, int16_t y, const char *utf8)
+{
+  const uint8_t *p = (const uint8_t *)utf8;
+
+  while (*p != 0U)
+  {
+    if (*p < 0x80U)
+    {
+      char c = (char)*p;
+      char buf[2];
+
+      if (c < ' ' || c > '~')
+      {
+        c = ' ';
+      }
+      buf[0] = c;
+      buf[1] = '\0';
+      oled_gfx_text6x12(x, (int16_t)(y + 2), buf);
+      p++;
+      x = (int16_t)(x + MIX_ASCII_STEP);
+    }
+    else if ((*p & 0xF0U) == 0xE0U && p[1] != 0U && p[2] != 0U)
+    {
+      const uint8_t *glyph = oled_font_cn_lookup((const char *)p);
+
+      if (glyph != 0)
+      {
+        oled_gfx_bitmap(x, y, 16, 16, glyph);
+      }
+      p += 3;
+      x = (int16_t)(x + MIX_CN_STEP);
+    }
+    else
+    {
+      p++;
+    }
+  }
+}
+
+/* 16px 中文/混排文本水平居中（16px 字形只能用于页面主体，不得进驾驶顶栏） */
+static void draw_centered_mixed16(int16_t y, const char *utf8)
+{
+  draw_mixed16((int16_t)(((int16_t)OLED_WIDTH - (int16_t)mixed16_width(utf8)) / 2), y, utf8);
 }
 
 /* 10×16 标题逐字绘制（未收录字形跳过，留空位） */
@@ -274,7 +369,7 @@ static void draw_name_row(int16_t y, char name, const char *text)
 
 /* ---------------- 九个页面 ---------------- */
 
-/* 品牌页：10×16 标题 + 6×12 副标题 + 底部一行提示/最高优先级异常 */
+/* 品牌页：10×16 标题 + 6×12 副标题 + 底部 16px 中文提示/最高优先级异常行 */
 static void draw_brand(const ui_snapshot_t *s)
 {
   const char *hint;
@@ -284,25 +379,25 @@ static void draw_brand(const ui_snapshot_t *s)
 
   if (s->fault_mask != 0U)
   {
-    hint = "MOTOR FAULT";
+    hint = "电机故障";
   }
   else if (s->frame_valid == 0U)
   {
-    hint = "NO GAMEPAD";
+    hint = "手柄未连接";
   }
   else if (s->undervolt != 0U)
   {
-    hint = "BATTERY LOW";
+    hint = "电池欠压";
   }
   else if (s->vdd_ok == 0U)
   {
-    hint = "VDD LOW";
+    hint = "供电不足";
   }
   else
   {
-    hint = "R1:MENU  L1:CHECK";
+    hint = "R1 菜单 L1 自检";
   }
-  draw_centered_6x12(52, hint);
+  draw_centered_mixed16(48, hint);
 }
 
 /* 主菜单：两张 92×32 卡片（图标 + 中文名），选中卡片居中轻跳，相邻卡片屏幕边缘露出 */
@@ -343,11 +438,12 @@ static void draw_menu(const ui_snapshot_t *s, uint32_t now_ms)
   }
 }
 
-/* 子菜单：16px 标题 + 三行反白列表（滚动窗口）+ 窄滚动标记 */
+/* 子菜单：16px 标题 + 三行 16px 中文条目反白列表（行高 16、行距 0，
+ * 标题 y0..15 + 窗口 y16..63 恰好占满 64px，滚动档位 16px）+ 窄滚动标记 */
 static void draw_submenu(const ui_snapshot_t *s)
 {
   static const char *const items[UI_SUB_COUNT] = {
-    "RESULT VIEW", "RUN SELFCHECK", "GO HOME", "MANUAL CAL"
+    "自检结果", "重新自检", "回到初始位", "手动标定"
   };
   uint8_t r;
   int16_t y;
@@ -362,19 +458,19 @@ static void draw_submenu(const ui_snapshot_t *s)
     {
       break;
     }
-    y = (int16_t)(18 + r * 14);
+    y = (int16_t)(16 + r * 16);
     if (idx == s->sub_sel)
     {
-      oled_gfx_text6x12_inv(0, y, items[idx]);
+      oled_gfx_text16_inv(0, y, items[idx]);
     }
     else
     {
-      oled_gfx_text6x12(0, y, items[idx]);
+      oled_gfx_text16(0, y, items[idx]);
     }
   }
-  /* 窄滚动标记：x=126 一列，拇指位置随 sub_scroll 平移（可到顶/到底） */
-  thumb_y = (int16_t)(18 + (int16_t)s->sub_scroll * 30);
-  oled_gfx_fill_rect(126, thumb_y, 1, 14);
+  /* 窄滚动标记：x=126 一列，拇指位置随 sub_scroll 平移（16px/档） */
+  thumb_y = (int16_t)(16 + (int16_t)s->sub_scroll * 16);
+  oled_gfx_fill_rect(126, thumb_y, 1, 16);
 }
 
 /* 驾驶仪表盘：顶栏 + 四轮行（固定数据布局，无动画）。
@@ -431,7 +527,7 @@ static void draw_drive(const ui_snapshot_t *s)
   if (hint != 0U)
   {
     /* 中文提示居中于正文（"请先自检" 4 字 = 70px，x=29..98，y=26..41） */
-    draw_centered_16(26, "请先自检");
+    draw_centered_mixed16(26, "请先自检");
     return;
   }
 
@@ -447,33 +543,60 @@ static void draw_drive(const ui_snapshot_t *s)
   }
 }
 
-/* 自检启动确认：5 s 倒计时自动开始（spec §4，2026-11-01）；
- * 前置不满足时冻结并显示 BLOCKED。本任务先出英文占位，中文化为下一任务。 */
+/* 自检启动确认：四条 16px 横带占满 64px（标题/倒计时/按键提示×2，行距 0）。
+ * 第二行为 剩余秒数（6×12）+ "秒后自动开始"；前置不满足时冻结并把这半行
+ * 换成原因（手柄未连接/请回中摇杆/供电不足），数字保留冻结值。 */
 static void draw_check_confirm(const ui_snapshot_t *s)
 {
-  char line[16];
+  char digit[3];
+  const char *row2;
+  uint16_t w;
+  int16_t x;
 
-  draw_centered_6x12(8, "AUTO START");
-  draw_centered_6x12(24, "WHEELS WILL SPIN");
+  draw_centered_mixed16(0, "即将转动四轮");
+
+  (void)snprintf(digit, sizeof(digit), "%u",
+                 (unsigned)(s->confirm_remain_ms / 1000U));
   if (s->confirm_blocked != 0U)
   {
-    draw_centered_6x12(40, "BLOCKED");
+    if (s->frame_valid == 0U)
+    {
+      row2 = "手柄未连接";
+    }
+    else if ((s->vdd_ok == 0U) || (s->undervolt != 0U))
+    {
+      row2 = "供电不足";
+    }
+    else
+    {
+      row2 = "请回中摇杆";
+    }
   }
-  (void)snprintf(line, sizeof(line), "%us",
-                 (unsigned)(s->confirm_remain_ms / 1000U));
-  draw_centered_6x12(52, line);
+  else
+  {
+    row2 = "秒后自动开始";
+  }
+  /* 数字（6px）+ 2px 间隙 + 汉字行，整组水平居中：数字与汉字不重叠 */
+  w = (uint16_t)(MIX_ASCII_STEP + 2U + mixed16_width(row2));
+  x = (int16_t)(((int16_t)OLED_WIDTH - (int16_t)w) / 2);
+  oled_gfx_text6x12(x, 18, digit);
+  draw_mixed16((int16_t)(x + MIX_ASCII_STEP + 2), 16, row2);
+
+  draw_centered_mixed16(32, "按USER取消");
+  draw_centered_mixed16(48, "右移或L1立即");
 }
 
-/* 自检进度：逐轮 等待/运行/通过/失败；动作中右上角转圈动画（12×12，100 ms/帧） */
+/* 自检进度：16px 标题"正在自检" + 6×12 逐轮短代码行；
+ * 动作中右上角转圈动画（12×12，100 ms/帧），与标题水平不重叠 */
 static void draw_check_run(const ui_snapshot_t *s, uint32_t now_ms)
 {
   static const char wheel_names[4] = {'A', 'B', 'C', 'D'};
   uint8_t i;
 
-  draw_centered_6x12(0, "SELFCHECK");
+  draw_centered_mixed16(0, "正在自检");
   for (i = 0; i < 4U; i++)
   {
-    draw_name_row((int16_t)(12 + i * WHEEL_ROW_STEP), wheel_names[i],
+    draw_name_row((int16_t)(16 + i * WHEEL_ROW_STEP), wheel_names[i],
                   state_text(s->selfcheck_state[i]));
   }
   if (s->action_busy != 0U)
@@ -482,66 +605,71 @@ static void draw_check_run(const ui_snapshot_t *s, uint32_t now_ms)
   }
 }
 
-/* 自检结果两屏：0=电机四轮 1=电池；左右翻屏由 ui_model 切 result_view */
+/* 自检结果两屏：0=电机四轮 1=电池；左右翻屏由 ui_model 切 result_view。
+ * 标题行左侧 16px 屏名，右侧 16px 总体结论（全部通过/未通过）。 */
 static void draw_check_result(const ui_snapshot_t *s)
 {
   static const char wheel_names[4] = {'A', 'B', 'C', 'D'};
-  char line[32];
+  char line[16];
+  const char *verdict;
+  uint8_t i;
+
+  draw_mixed16(0, 0, (s->result_view == 0U) ? "电机" : "电池");
+  verdict = (s->selfcheck_passed != 0U) ? "全部通过" : "未通过";
+  draw_mixed16((int16_t)((int16_t)OLED_WIDTH - (int16_t)mixed16_width(verdict)), 0, verdict);
 
   if (s->result_view == 0U)
   {
-    uint8_t i;
-
-    oled_gfx_text6x12(0, 0, "MOTOR RESULT");
     for (i = 0; i < 4U; i++)
     {
       /* 快照无逐轮原因文本：失败只显示 FAIL，逐轮原因由 motor_test 日志查看 */
-      draw_name_row((int16_t)(12 + i * WHEEL_ROW_STEP), wheel_names[i],
+      draw_name_row((int16_t)(16 + i * WHEEL_ROW_STEP), wheel_names[i],
                     state_text(s->selfcheck_state[i]));
     }
   }
   else
   {
-    oled_gfx_text6x12(0, 0, "BATTERY");
     if (s->battery_valid == 0U)
     {
-      draw_centered_16(24, "电池未配置");
+      draw_centered_mixed16(28, "未配置");
     }
     else if (s->battery_error != 0U)
     {
-      draw_centered_6x12(24, "SAMPLE ERROR");
+      draw_centered_mixed16(28, "采样错误");
     }
     else if (s->undervolt != 0U)
     {
-      draw_centered_6x12(24, "UNDERVOLT");
+      draw_centered_mixed16(28, "欠压");
     }
     else
     {
       /* 完整 mV 数值，不截高位（B OVF 时也在此显示全值） */
       (void)snprintf(line, sizeof(line), "%lu mV", (unsigned long)s->battery_mv);
-      draw_centered_6x12(24, line);
+      draw_centered_6x12(30, line);
     }
   }
 }
 
-/* 回到初始位：逐轮 等待/运动/到位/失败；不满足条件时显示原因 */
+/* 回到初始位：16px 标题 + 阻塞原因行（无参考/请回中/故障）+
+ * 2×2 四轮状态格（16px 中文状态：等待/运动中/到位/失败）。
+ * 四轮各 16px 状态无法排进 12px 行距的单列，故改两列两行网格。 */
 static void draw_home(const ui_snapshot_t *s)
 {
   static const char wheel_names[4] = {'A', 'B', 'C', 'D'};
   const char *reason = NULL;
   uint8_t i;
 
-  oled_gfx_text6x12(0, 0, "GO HOME");
+  draw_centered_mixed16(0, "回到初始位");
   switch (s->home_block_reason)
   {
     case 1U:
-      reason = "NO REF";
+      reason = "无参考";
       break;
     case 2U:
-      reason = "WAIT CENTER";
+      reason = "请回中";
       break;
     case 3U:
-      reason = "FAULT";
+      reason = "故障";
       break;
     default:
       reason = NULL;
@@ -549,28 +677,34 @@ static void draw_home(const ui_snapshot_t *s)
   }
   if (reason != NULL)
   {
-    oled_gfx_text6x12(54, 0, reason);
+    draw_centered_mixed16(16, reason);
   }
   for (i = 0; i < 4U; i++)
   {
-    draw_name_row((int16_t)(12 + i * WHEEL_ROW_STEP), wheel_names[i],
-                  state_text(s->home_state[i]));
+    int16_t x = ((i % 2U) != 0U) ? 64 : 0; /* A B / C D 两列 */
+    int16_t y = (i < 2U) ? 32 : 48;
+    char buf[2];
+
+    buf[0] = wheel_names[i];
+    buf[1] = '\0';
+    oled_gfx_text6x12(x, (int16_t)(y + 2), buf);
+    draw_mixed16((int16_t)(x + 8), y, home_state_text(s->home_state[i]));
   }
 }
 
-/* 手动标定：对齐标记后长按 SELECT 2 s 记录参考 */
+/* 手动标定：四条 16px 横带（标题/对齐四轮/静止后长按SELECT/已记录或无参考） */
 static void draw_manual_cal(const ui_snapshot_t *s)
 {
-  oled_gfx_text6x12(19, 0, "MANUAL CAL");
-  draw_centered_6x12(20, "ALIGN WHEEL MARKS");
-  draw_centered_6x12(36, "HOLD SELECT 2S");
+  draw_centered_mixed16(0, "手动标定");
+  draw_centered_mixed16(16, "对齐四轮");
+  draw_centered_mixed16(32, "静止后长按SELECT");
   if (s->reference_valid != 0U)
   {
-    draw_centered_6x12(52, "REF RECORDED");
+    draw_centered_mixed16(48, "已记录");
   }
   else
   {
-    draw_centered_6x12(52, "NO REFERENCE");
+    draw_centered_mixed16(48, "无参考");
   }
 }
 

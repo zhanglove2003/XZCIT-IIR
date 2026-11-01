@@ -160,6 +160,33 @@ void oled_gfx_text16(int16_t x, int16_t y, const char *utf8)
   }
 }
 
+/* 16×16 汉字反白：白底条 + 黑字（子菜单选中行用）。
+ * 未收录字形跳过（条底仍填充），ASCII 只推进光标，与 oled_gfx_text16 一致。 */
+void oled_gfx_text16_inv(int16_t x, int16_t y, const char *utf8)
+{
+  int16_t cx = x;
+  const uint8_t *p = (const uint8_t *)utf8;
+
+  oled_gfx_fill_rect(x, y, (int16_t)oled_gfx_text16_width(utf8), 16);
+  while (*p != 0U)
+  {
+    if ((*p & 0xF0U) == 0xE0U && p[1] != 0U && p[2] != 0U)
+    {
+      const uint8_t *glyph = oled_font_cn_lookup((const char *)p);
+      if (glyph != 0)
+      {
+        bitmap_draw(cx, y, 16, 16, glyph, 0U);
+      }
+      p += 3;
+      cx = (int16_t)(cx + TEXT16_STEP);
+    }
+    else
+    {
+      p++;
+    }
+  }
+}
+
 uint16_t oled_gfx_text16_width(const char *utf8)
 {
   const uint8_t *p = (const uint8_t *)utf8;

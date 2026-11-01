@@ -14,6 +14,7 @@ void oled_gfx_fill_rect(int16_t x, int16_t y, int16_t w, int16_t h);
 void oled_gfx_text6x12(int16_t x, int16_t y, const char *ascii);
 void oled_gfx_text6x12_inv(int16_t x, int16_t y, const char *ascii);
 void oled_gfx_text16(int16_t x, int16_t y, const char *utf8);
+void oled_gfx_text16_inv(int16_t x, int16_t y, const char *utf8);
 uint16_t oled_gfx_text6x12_width(const char *ascii);
 uint16_t oled_gfx_text16_width(const char *utf8);
 const uint8_t *oled_gfx_buffer(void);

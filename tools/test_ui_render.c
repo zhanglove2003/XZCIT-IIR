@@ -52,7 +52,7 @@ static void assert_cn_lookup(const char *utf8)
   }
 }
 
-/* 中文 16px 文本清单（驾驶页提示/结果页/卡片名/子菜单标题） */
+/* 中文 16px 文本清单（全界面中文化后各页用字，逐字符 lookup 防渲染静默跳字） */
 static void test_cn_glyphs_used(void)
 {
   assert_cn_lookup("请先自检");
@@ -60,6 +60,44 @@ static void test_cn_glyphs_used(void)
   assert_cn_lookup("驾驶");
   assert_cn_lookup("检查标定");
   assert_cn_lookup("检查与标定");
+  /* 品牌页提示与异常 */
+  assert_cn_lookup("菜单");
+  assert_cn_lookup("电机故障");
+  assert_cn_lookup("手柄未连接");
+  assert_cn_lookup("电池欠压");
+  assert_cn_lookup("供电不足");
+  assert_cn_lookup("请回中摇杆");
+  /* 确认页 */
+  assert_cn_lookup("即将转动四轮");
+  assert_cn_lookup("秒后自动开始");
+  assert_cn_lookup("取消");
+  assert_cn_lookup("右移或立即");
+  /* 子菜单条目 */
+  assert_cn_lookup("自检结果");
+  assert_cn_lookup("重新自检");
+  assert_cn_lookup("回到初始位");
+  assert_cn_lookup("手动标定");
+  /* 结果页 */
+  assert_cn_lookup("电机");
+  assert_cn_lookup("电池");
+  assert_cn_lookup("全部通过");
+  assert_cn_lookup("未通过");
+  assert_cn_lookup("未配置");
+  assert_cn_lookup("欠压");
+  assert_cn_lookup("采样错误");
+  assert_cn_lookup("正在自检");
+  /* 归位页 */
+  assert_cn_lookup("等待");
+  assert_cn_lookup("运动中");
+  assert_cn_lookup("到位");
+  assert_cn_lookup("失败");
+  assert_cn_lookup("无参考");
+  assert_cn_lookup("请回中");
+  assert_cn_lookup("故障");
+  /* 标定页 */
+  assert_cn_lookup("对齐四轮");
+  assert_cn_lookup("静止后长按");
+  assert_cn_lookup("已记录");
 }
 
 /* 格式化三函数 */
@@ -136,22 +174,44 @@ static void test_anim(void)
   assert(ui_render_slide_offset(300U, 0U) == 0);
 }
 
-/* 品牌页：标题区有墨迹、底部仅一行提示 */
+/* 品牌页：标题区有墨迹、底部 16px 中文提示行（y48..63，与副标题不重叠） */
 static void test_brand(void)
 {
   ui_snapshot_t s;
+  uint8_t normal[128 * 8];
 
   snap_init(&s, UI_PAGE_BRAND);
   ui_render_draw(&s, 0U);
   assert(fb_ink_in(14, 14, 113, 29) > 0);        /* 标题 XZCIT-MFSC */
   assert(fb_ink_in(28, 36, 99, 47) > 0);         /* 副标题 */
-  assert(fb_ink_in(0, 48, 127, 51) == 0);        /* 提示行之上留空 */
-  assert(fb_ink_in(0, 52, 127, 63) > 0);         /* 底部一行提示 */
+  assert(fb_ink_in(0, 30, 127, 35) == 0);        /* 标题与副标题之间留空 */
+  assert(fb_ink_in(0, 48, 127, 63) > 0);         /* 底部 16px 提示行 */
+  assert(fb_ink_in(0, 48, 7, 63) == 0);          /* "R1 菜单 L1 自检" 居中，左缘留空 */
+  memcpy(normal, oled_gfx_buffer(), sizeof(normal));
 
-  /* 品牌页故障时底部显示异常而非操作提示 */
+  /* 异常提示替换为中文：故障/失联/欠压/VDD 各不相同且不与副标题重叠 */
   s.fault_mask = 1U;
   ui_render_draw(&s, 0U);
-  assert(fb_ink_in(0, 52, 127, 63) > 0);
+  assert(fb_ink_in(0, 48, 127, 63) > 0);
+  assert(fb_ink_in(28, 36, 99, 47) > 0);         /* 副标题区照常绘制 */
+  assert(memcmp(oled_gfx_buffer(), normal, sizeof(normal)) != 0);
+  {
+    uint8_t fault[128 * 8];
+    memcpy(fault, oled_gfx_buffer(), sizeof(fault));
+    s.fault_mask = 0U;
+    s.frame_valid = 0U;
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), fault, sizeof(fault)) != 0);
+    s.frame_valid = 1U;
+    s.undervolt = 1U;
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), fault, sizeof(fault)) != 0);
+    s.undervolt = 0U;
+    s.vdd_ok = 0U;
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), fault, sizeof(fault)) != 0);
+    s.vdd_ok = 1U;
+  }
 }
 
 /* 驾驶页：四行布局、列间隙、顶栏优先级、未自检提示 */
@@ -301,7 +361,7 @@ static void test_menu(void)
   assert(fb_ink_in(0, 20, 127, 51) > 0);
 }
 
-/* 子菜单：16px 标题、反白列表、滚动窗口与窄滚动标记 */
+/* 子菜单：16px 标题 + 三行 16px 反白列表（行高 16、行距 0，窗口 y16..63）+ 窄滚动标记 */
 static void test_submenu(void)
 {
   ui_snapshot_t s;
@@ -311,22 +371,27 @@ static void test_submenu(void)
   s.sub_scroll = 0U;
   ui_render_draw(&s, 0U);
   assert(fb_ink_in(0, 0, 127, 15) > 0);          /* 16px 标题区 */
-  assert(fb_ink_in(0, 18, 119, 29) > 0);         /* 首行反白条 */
-  assert(fb_ink_in(126, 18, 127, 61) > 0);       /* 窄滚动标记 */
+  assert(fb_ink_in(0, 16, 119, 31) > 0);         /* 首行反白条 */
+  assert(fb_ink_in(0, 32, 119, 63) > 0);         /* 其余两行列表 */
+  assert(fb_ink_in(126, 16, 127, 63) > 0);       /* 窄滚动标记 */
+  /* 反白条与下一行不重叠：条底 y31，下一行字形自 y32 起仍有墨 */
+  assert(fb_ink_in(0, 24, 119, 31) > 0);
+  assert(fb_ink_in(0, 32, 119, 47) > 0);
 
-  /* 滚动窗口：scroll=1 时列表整体平移，标记位置改变 */
+  /* 滚动窗口：scroll=1 时列表整体平移，标记位置随 scroll 平移（16px/档） */
   s.sub_sel = 3U;
   s.sub_scroll = 1U;
   ui_render_draw(&s, 0U);
-  assert(fb_ink_in(0, 46, 119, 57) > 0);
-  assert(oled_gfx_buffer()[(48 >> 3) * OLED_WIDTH + 126] != 0); /* 标记移到窗口底部 */
+  assert(fb_ink_in(0, 48, 119, 63) > 0);         /* 第 3 行（手动标定）仍在窗口内 */
+  assert(oled_gfx_buffer()[(32 >> 3) * OLED_WIDTH + 126] != 0); /* 标记移到中档 */
+  assert(oled_gfx_buffer()[(16 >> 3) * OLED_WIDTH + 126] == 0); /* 顶部档位已空 */
   s.sub_sel = 0U;
   s.sub_scroll = 0U;
   ui_render_draw(&s, 0U);
-  assert(oled_gfx_buffer()[(18 >> 3) * OLED_WIDTH + 126] != 0); /* 标记回到窗口顶部 */
+  assert(oled_gfx_buffer()[(16 >> 3) * OLED_WIDTH + 126] != 0); /* 标记回到窗口顶部 */
 }
 
-/* 结果页两屏 */
+/* 结果页两屏：16px 标题（电机/电池）+ 右侧总体结论（全部通过/未通过）+ 四轮行 */
 static void test_result(void)
 {
   ui_snapshot_t s;
@@ -338,21 +403,40 @@ static void test_result(void)
   s.selfcheck_state[3] = 0U;
   s.result_view = 0U;
   ui_render_draw(&s, 0U);
-  assert(fb_ink_in(0, 0, 127, 11) > 0);          /* 标题 */
-  assert(fb_ink_in(0, 12, 59, 59) > 0);          /* 四轮名与状态 */
+  assert(fb_ink_in(0, 0, 33, 15) > 0);           /* 标题 电机（16px） */
+  assert(fb_ink_in(58, 0, 127, 15) > 0);         /* 右侧未通过（16px） */
+  assert(fb_ink_in(34, 0, 57, 15) == 0);         /* 标题与结论之间留空 */
+  assert(fb_ink_in(0, 16, 59, 59) > 0);          /* 四轮名与状态（6×12 行） */
 
-  /* 电池屏：未配置 → 中文提示"电池未配置"（16px 居中于正文 x20..107, y24..39） */
+  /* 全部通过：总体结论切换 */
+  s.selfcheck_passed = 1U;
+  ui_render_draw(&s, 0U);
+  assert(fb_ink_in(34, 0, 127, 15) > 0);
+  s.selfcheck_passed = 0U;
+
+  /* 电池屏：未配置 → 16px 提示"未配置"居中于正文（34px 宽，x47..80, y28..43） */
   s.result_view = 1U;
   s.battery_valid = 0U;
   ui_render_draw(&s, 0U);
-  assert(fb_ink_in(0, 12, 127, 63) > 0);
-  assert(fb_ink_in(20, 24, 107, 39) > 0);
+  assert(fb_ink_in(0, 0, 33, 15) > 0);           /* 标题 电池 */
+  assert(fb_ink_in(47, 28, 80, 43) > 0);
   {
     uint8_t not_config[128 * 8];
     memcpy(not_config, oled_gfx_buffer(), sizeof(not_config));
 
-    /* 有效 → 完整 mV 数值，不截高位：12345 与 1234 显示不同 */
+    /* 采样错误 / 欠压 → 各自中文提示 */
     s.battery_valid = 1U;
+    s.battery_error = 1U;
+    ui_render_draw(&s, 0U);
+    assert(fb_ink_in(0, 28, 127, 43) > 0);
+    assert(memcmp(oled_gfx_buffer(), not_config, sizeof(not_config)) != 0);
+    s.battery_error = 0U;
+    s.undervolt = 1U;
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), not_config, sizeof(not_config)) != 0);
+    s.undervolt = 0U;
+
+    /* 有效 → 完整 mV 数值，不截高位：12345 与 1234 显示不同 */
     s.battery_mv = 12345U;
     ui_render_draw(&s, 0U);
     assert(memcmp(oled_gfx_buffer(), not_config, sizeof(not_config)) != 0);
@@ -362,34 +446,143 @@ static void test_result(void)
   }
 }
 
-/* 其余页面与未知页面：无越界、清屏后不残留 */
-static void test_other_pages(void)
+/* 确认页：四条 16px 横带（标题/倒计时/按键提示×2），倒计时数字与汉字不重叠 */
+static void test_confirm(void)
 {
   ui_snapshot_t s;
-  int i;
+  uint8_t f5[128 * 8];
 
   snap_init(&s, UI_PAGE_CHECK_CONFIRM);
-  s.confirm_focus = 0U;
+  s.confirm_remain_ms = 5000U;
   ui_render_draw(&s, 0U);
-  assert(fb_ink_in(0, 0, 127, 63) > 0);
+  assert(fb_ink_in(0, 0, 127, 15) > 0);          /* 即将转动四轮 */
+  assert(fb_ink_in(0, 32, 127, 47) > 0);         /* 按USER取消 */
+  assert(fb_ink_in(0, 48, 127, 63) > 0);         /* 右移或L1立即 */
+  /* 倒计时行：数字（6×12）与"秒后自动开始"（16px）之间 2px 间隙全暗 */
+  assert(fb_ink_in(0, 16, 127, 31) > 0);
+  for (int x = 13; x <= 14; x++)
+  {
+    for (int y = 16; y <= 31; y++)
+    {
+      assert(fb_bit((uint8_t)x, (uint8_t)y) == 0);
+    }
+  }
+  memcpy(f5, oled_gfx_buffer(), sizeof(f5));
+
+  /* 剩余秒数变化 → 数字变化（帧不同） */
+  s.confirm_remain_ms = 4000U;
+  ui_render_draw(&s, 0U);
+  assert(memcmp(oled_gfx_buffer(), f5, sizeof(f5)) != 0);
+
+  /* 前置不满足：原因替换"秒后自动开始"，数字保留（冻结值），不越界 */
+  s.confirm_remain_ms = 5000U;
+  s.confirm_blocked = 1U;
+  s.frame_valid = 0U;                            /* 手柄未连接 */
+  ui_render_draw(&s, 0U);
+  assert(fb_ink_in(0, 16, 127, 31) > 0);
+  assert(fb_ink_in(0, 16, 15, 31) == 0);         /* 数字居中组合，左缘留空 */
+  assert(fb_ink_in(0, 32, 127, 47) > 0);
+  {
+    uint8_t no_pad[128 * 8];
+    memcpy(no_pad, oled_gfx_buffer(), sizeof(no_pad));
+
+    s.frame_valid = 1U;                          /* 请回中摇杆 */
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), no_pad, sizeof(no_pad)) != 0);
+
+    s.vdd_ok = 0U;                               /* 供电不足 */
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), no_pad, sizeof(no_pad)) != 0);
+    s.vdd_ok = 1U;
+  }
+}
+
+/* 自检进度页：16px 标题"正在自检" + 6×12 四轮行，标题与转圈动画不重叠 */
+static void test_check_run(void)
+{
+  ui_snapshot_t s;
 
   snap_init(&s, UI_PAGE_CHECK_RUN);
   s.action_busy = 1U;
   s.selfcheck_state[0] = 1U;
   ui_render_draw(&s, 0U);
-  assert(fb_ink_in(0, 0, 127, 63) > 0);
-  assert(fb_ink_in(114, 0, 125, 11) > 0); /* 转圈动画帧在右上角 */
+  assert(fb_ink_in(29, 0, 98, 15) > 0);          /* 正在自检（70px 居中） */
+  assert(fb_ink_in(114, 0, 125, 11) > 0);        /* 转圈动画帧在右上角 */
+  assert(fb_ink_in(99, 0, 113, 15) == 0);        /* 标题与动画不重叠 */
+  assert(fb_ink_in(0, 16, 59, 27) > 0);          /* A 轮行 */
+}
+
+/* 回到初始位：16px 标题 + 阻塞原因行 + 2×2 四轮状态格（16px 中文状态） */
+static void test_home(void)
+{
+  ui_snapshot_t s;
+  uint8_t all_wait[128 * 8];
 
   snap_init(&s, UI_PAGE_HOME);
   s.reference_valid = 1U;
-  s.home_state[0] = 2U;
-  s.home_state[1] = 1U;
   ui_render_draw(&s, 0U);
-  assert(fb_ink_in(0, 0, 127, 63) > 0);
+  assert(fb_ink_in(20, 0, 107, 15) > 0);         /* 回到初始位（88px 居中） */
+  assert(fb_ink_in(0, 16, 127, 31) == 0);        /* 未阻塞时原因行为空 */
+  assert(fb_ink_in(0, 34, 5, 45) > 0);           /* A 轮名 */
+  assert(fb_ink_in(64, 34, 69, 45) > 0);         /* B 轮名 */
+  assert(fb_ink_in(8, 32, 55, 47) > 0);          /* 等待（16px，列 1） */
+  assert(fb_ink_in(72, 32, 119, 47) > 0);        /* 等待（列 2） */
+  memcpy(all_wait, oled_gfx_buffer(), sizeof(all_wait));
+
+  /* 逐轮状态切换：运动中/到位/失败 均改变帧 */
+  s.home_state[0] = 1U;
+  ui_render_draw(&s, 0U);
+  assert(memcmp(oled_gfx_buffer(), all_wait, sizeof(all_wait)) != 0);
+  s.home_state[0] = 2U;
+  ui_render_draw(&s, 0U);
+  assert(memcmp(oled_gfx_buffer(), all_wait, sizeof(all_wait)) != 0);
+  s.home_state[0] = 3U;
+  ui_render_draw(&s, 0U);
+  assert(memcmp(oled_gfx_buffer(), all_wait, sizeof(all_wait)) != 0);
+  s.home_state[0] = 0U;
+
+  /* 阻塞原因：无参考 / 请回中 / 故障 各不相同 */
+  s.home_block_reason = 1U;
+  ui_render_draw(&s, 0U);
+  assert(fb_ink_in(0, 16, 127, 31) > 0);
+  {
+    uint8_t no_ref[128 * 8];
+    memcpy(no_ref, oled_gfx_buffer(), sizeof(no_ref));
+    s.home_block_reason = 2U;
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), no_ref, sizeof(no_ref)) != 0);
+    s.home_block_reason = 3U;
+    ui_render_draw(&s, 0U);
+    assert(memcmp(oled_gfx_buffer(), no_ref, sizeof(no_ref)) != 0);
+    s.home_block_reason = 0U;
+  }
+}
+
+/* 手动标定：四条 16px 横带（标题/对齐提示/长按提示/状态） */
+static void test_manual_cal(void)
+{
+  ui_snapshot_t s;
+  uint8_t no_ref[128 * 8];
 
   snap_init(&s, UI_PAGE_MANUAL_CAL);
   ui_render_draw(&s, 0U);
-  assert(fb_ink_in(0, 0, 127, 63) > 0);
+  assert(fb_ink_in(32, 0, 95, 15) > 0);          /* 手动标定（64px 居中） */
+  assert(fb_ink_in(32, 16, 95, 31) > 0);         /* 对齐四轮 */
+  assert(fb_ink_in(0, 32, 127, 47) > 0);         /* 静止后长按SELECT */
+  assert(fb_ink_in(29, 48, 98, 63) > 0);         /* 无参考（70px 居中） */
+  memcpy(no_ref, oled_gfx_buffer(), sizeof(no_ref));
+
+  s.reference_valid = 1U;
+  ui_render_draw(&s, 0U);
+  assert(fb_ink_in(38, 48, 89, 63) > 0);         /* 已记录（52px 居中） */
+  assert(memcmp(oled_gfx_buffer(), no_ref, sizeof(no_ref)) != 0);
+}
+
+/* 其余页面与未知页面：无越界、清屏后不残留 */
+static void test_other_pages(void)
+{
+  ui_snapshot_t s;
+  int i;
 
   /* 未知 page：不越界写缓冲（ASan 兜底），缓冲保持清屏状态 */
   snap_init(&s, (ui_page_t)99);
@@ -410,6 +603,10 @@ int main(void)
   test_menu();
   test_submenu();
   test_result();
+  test_confirm();
+  test_check_run();
+  test_home();
+  test_manual_cal();
   test_other_pages();
   puts("ui_render OK");
   return 0;
