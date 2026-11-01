@@ -447,22 +447,21 @@ static void draw_drive(const ui_snapshot_t *s)
   }
 }
 
-/* 自检启动确认：默认焦点在"取消" */
+/* 自检启动确认：5 s 倒计时自动开始（spec §4，2026-11-01）；
+ * 前置不满足时冻结并显示 BLOCKED。本任务先出英文占位，中文化为下一任务。 */
 static void draw_check_confirm(const ui_snapshot_t *s)
 {
-  draw_centered_6x12(8, "START SELFCHECK");
-  draw_centered_6x12(24, "WHEELS WILL SPIN");
+  char line[16];
 
-  if (s->confirm_focus == 0U)
+  draw_centered_6x12(8, "AUTO START");
+  draw_centered_6x12(24, "WHEELS WILL SPIN");
+  if (s->confirm_blocked != 0U)
   {
-    oled_gfx_text6x12_inv(28, 44, "CANCEL");
-    oled_gfx_text6x12(84, 44, "START");
+    draw_centered_6x12(40, "BLOCKED");
   }
-  else
-  {
-    oled_gfx_text6x12(28, 44, "CANCEL");
-    oled_gfx_text6x12_inv(84, 44, "START");
-  }
+  (void)snprintf(line, sizeof(line), "%us",
+                 (unsigned)(s->confirm_remain_ms / 1000U));
+  draw_centered_6x12(52, line);
 }
 
 /* 自检进度：逐轮 等待/运行/通过/失败；动作中右上角转圈动画（12×12，100 ms/帧） */

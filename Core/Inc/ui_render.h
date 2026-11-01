@@ -13,6 +13,8 @@ typedef struct {
   ui_page_t page;
   uint8_t menu_sel, sub_sel, sub_scroll, confirm_focus, result_view;
   uint32_t sel_since_ms;
+  uint16_t confirm_remain_ms; /* 确认页 5 s 倒计时剩余毫秒（渲染画秒数） */
+  uint8_t confirm_blocked;    /* 1=自检前置不满足，倒计时冻结，显示原因 */
   uint8_t drive_permitted;      /* Ctrl 仲裁：当前允许输出 */
   uint8_t action_busy, selfcheck_passed;
   uint8_t selfcheck_state[4];   /* 0 等待 1 运行 2 通过 3 失败 */

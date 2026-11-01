@@ -23,6 +23,9 @@ void ui_model_init(ui_model_t *m, uint32_t now_ms)
   m->confirm_focus = 0U;
   m->result_view = 0U;
   m->sel_since_ms = now_ms;
+  m->confirm_since_ms = now_ms;
+  m->confirm_remain_ms = (uint16_t)UI_CONFIRM_COUNTDOWN_MS;
+  m->confirm_blocked = 0U;
   for (i = 0U; i < UI_BTN_COUNT; i++)
   {
     m->btn_filtered[i] = 0U;
@@ -153,6 +156,25 @@ static void go_page(ui_model_t *m, ui_page_t p, uint32_t now)
 {
   m->page = p;
   m->sel_since_ms = now;
+  if (p == UI_PAGE_CHECK_CONFIRM)
+  {
+    /* 进入确认页即锚定 5 s 倒计时（含 R1/越区从动作页退回的重进）。 */
+    m->confirm_since_ms = now;
+    m->confirm_remain_ms = (uint16_t)UI_CONFIRM_COUNTDOWN_MS;
+    m->confirm_blocked = 0U;
+  }
+}
+
+/* 自检启动转移：发请求当拍进 CHECK_RUN；取消/越区回到本页重走倒计时。 */
+static void start_selfcheck(ui_model_t *m, ui_model_req_t *req, uint32_t now)
+{
+  if (req != NULL)
+  {
+    req->selfcheck_start = 1U;
+  }
+  m->back_page = UI_PAGE_CHECK_CONFIRM;
+  m->run_seen_busy = 0U;
+  go_page(m, UI_PAGE_CHECK_RUN, now);
 }
 
 void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
@@ -359,19 +381,12 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
       }
       break;
     case UI_PAGE_CHECK_CONFIRM:
-      if (m->confirm_focus != 0U)
+      /* 新流程：L1 边沿=立即开始，不再看焦点。前置不满足（ready=0）时
+       * 不发请求、不转页——页面冻结倒计时并显示原因，避免落到无人运行
+       * 的 CHECK_RUN 页（Ctrl 对请求的拒绝不回喂模型，见 spec §4）。 */
+      if (in->selfcheck_ready != 0U)
       {
-        if (req != NULL)
-        {
-          req->selfcheck_start = 1U;
-        }
-        m->back_page = UI_PAGE_CHECK_CONFIRM;
-        m->run_seen_busy = 0U;
-        go_page(m, UI_PAGE_CHECK_RUN, now);
-      }
-      else
-      {
-        go_page(m, m->back_page, now); /* 焦点在取消：返回 */
+        start_selfcheck(m, req, now);
       }
       break;
     case UI_PAGE_CHECK_RESULT:
@@ -389,7 +404,8 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
     return;
   }
 
-  /* USER：品牌页进自检确认；结果页窗口内进标定；手动标定页备用退出。
+  /* USER：品牌页进自检确认；确认页再按取消（进页那帧按住不出边沿，须先
+   * 见释放——去抖口径天然满足）；结果页窗口内进标定；手动标定页备用退出。
    * R1 按住期间不受理（同 L1 的优先级规则）。 */
   if (user_edge != 0U && sel_held == 0U && r1_held == 0U)
   {
@@ -399,6 +415,9 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
       m->back_page = UI_PAGE_BRAND;
       m->confirm_focus = 0U;
       go_page(m, UI_PAGE_CHECK_CONFIRM, now);
+      break;
+    case UI_PAGE_CHECK_CONFIRM:
+      go_page(m, UI_PAGE_BRAND, now); /* 取消倒计时回品牌主页（spec §4） */
       break;
     case UI_PAGE_CHECK_RESULT:
       if (in->result_window_open != 0U)
@@ -471,15 +490,28 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
     }
     break;
   case UI_PAGE_CHECK_CONFIRM:
+    /* 焦点字段保留（ly 仅更新显示用旧字段），不再参与启动/取消裁决：
+     * 摇杆右（lx≥176）立即开始、摇杆左（lx≤80）取消回品牌页（spec §4）。 */
     if (evy > 0)
     {
-      m->confirm_focus = 1U; /* 开始 */
+      m->confirm_focus = 1U;
       m->sel_since_ms = now;
     }
     else if (evy < 0)
     {
-      m->confirm_focus = 0U; /* 取消（默认） */
+      m->confirm_focus = 0U;
       m->sel_since_ms = now;
+    }
+    if (in->lx >= UI_CONFIRM_START_LX)
+    {
+      if (in->selfcheck_ready != 0U)
+      {
+        start_selfcheck(m, req, now);
+      }
+    }
+    else if (in->lx <= UI_CONFIRM_CANCEL_LX)
+    {
+      go_page(m, UI_PAGE_BRAND, now);
     }
     break;
   case UI_PAGE_CHECK_RESULT:
@@ -491,6 +523,35 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
     break;
   default:
     break;
+  }
+
+  /* 确认页 5 s 倒计时（spec §4）：上面各转移若已离开本页则跳过。
+   * ready=0 冻结——remain 不减，锚点按剩余时间回推，恢复后继续走剩余；
+   * 归零当拍自发 selfcheck_start（req 单发语义，本拍即被 Ctrl 消费）。 */
+  if (m->page == UI_PAGE_CHECK_CONFIRM)
+  {
+    if (in->selfcheck_ready != 0U)
+    {
+      uint32_t elapsed = (uint32_t)(now - m->confirm_since_ms);
+
+      m->confirm_blocked = 0U;
+      if (elapsed >= UI_CONFIRM_COUNTDOWN_MS)
+      {
+        m->confirm_remain_ms = 0U;
+        start_selfcheck(m, req, now);
+      }
+      else
+      {
+        m->confirm_remain_ms =
+            (uint16_t)(UI_CONFIRM_COUNTDOWN_MS - elapsed);
+      }
+    }
+    else
+    {
+      m->confirm_blocked = 1U;
+      m->confirm_since_ms =
+          now - (uint32_t)(UI_CONFIRM_COUNTDOWN_MS - m->confirm_remain_ms);
+    }
   }
 }
 

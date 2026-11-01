@@ -99,22 +99,27 @@ static void goto_submenu(rig_t *r, uint8_t sel)
   }
 }
 
-/* 走到 CHECK_RUN（经子菜单"重新自检"→确认页焦点"开始"），busy 未置位。 */
+/* 走到 CHECK_RUN（经子菜单"重新自检"→确认页 L1 立即开始），busy 未置位。 */
 static void goto_check_run(rig_t *r)
 {
   goto_submenu(r, 1U);
   r_hold(r, L1B, 3);
   r_free(r, L1B, 3);
   assert(r->m.page == UI_PAGE_CHECK_CONFIRM);
-  assert(r->m.confirm_focus == 0U);
-  r->in.ly = 200U;
-  r_step(r);
-  r->in.ly = 128U;
-  r_step(r);
-  assert(r->m.confirm_focus == 1U);
+  r->in.selfcheck_ready = 1U; /* 前置满足：L1 才能立即启动 */
   r_hold(r, L1B, 3);
   r_free(r, L1B, 3);
   assert(r->m.page == UI_PAGE_CHECK_RUN);
+}
+
+/* 走到 CHECK_CONFIRM（经子菜单"重新自检"），ready 按给定值喂。 */
+static void goto_confirm(rig_t *r, uint8_t ready)
+{
+  goto_submenu(r, 1U);
+  r->in.selfcheck_ready = ready;
+  r_hold(r, L1B, 3);
+  r_free(r, L1B, 3);
+  assert(r->m.page == UI_PAGE_CHECK_CONFIRM);
 }
 
 int main(void)
@@ -206,13 +211,10 @@ int main(void)
     }
     /* 确认页：按住 L1 只产生一帧 selfcheck_start */
     rig_init(&r, 1000U);
+    r.in.selfcheck_ready = 1U;
     r_hold(&r, L1B, 3);
     r_free(&r, L1B, 3);
     assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
-    r.in.ly = 200U;
-    r_step(&r);
-    r.in.ly = 128U;
-    r_step(&r);
     r_hold(&r, L1B, 2);
     assert(r.req.selfcheck_start == 0U);
     r_step(&r);
@@ -274,13 +276,10 @@ int main(void)
     rig_t r;
     int i;
     rig_init(&r, 1000U);
+    r.in.selfcheck_ready = 1U;
     r_hold(&r, L1B, 3);
     r_free(&r, L1B, 3);
     assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
-    r.in.ly = 200U;
-    r_step(&r);
-    r.in.ly = 128U;
-    r_step(&r);
     r_hold(&r, SELB, 3);
     for (i = 0; i < 5; i++)
     {
@@ -294,21 +293,17 @@ int main(void)
     r_free(&r, SELB, 3);
   }
 
-  /* 6. 自检确认页：默认焦点取消；下移到"开始"后 L1 发 selfcheck_start；
+  /* 6. 自检确认页：L1 立即发 selfcheck_start（新流程，无焦点选择）；
    *    busy 结束进结果页；selfcheck_passed=0 进 DRIVE 后 req 无运动请求。 */
   {
     rig_t r;
     int i;
     rig_init(&r, 1000U);
+    r.in.selfcheck_ready = 1U;
     r_hold(&r, L1B, 3);
     r_free(&r, L1B, 3);
     assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
-    assert(r.m.confirm_focus == 0U); /* 默认取消 */
-    r.in.ly = 200U;
-    r_step(&r);
-    assert(r.m.confirm_focus == 1U);
-    r.in.ly = 128U;
-    r_step(&r);
+    assert(r.m.confirm_focus == 0U); /* 焦点字段保留但不再参与选择 */
     r_hold(&r, L1B, 2);
     r_step(&r);
     assert(r.req.selfcheck_start == 1U);
@@ -544,7 +539,6 @@ int main(void)
     r_step(&r);
     /* 再进一次，测 R1 取消 */
     assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
-    assert(r.m.confirm_focus == 1U);
     r_hold(&r, L1B, 3);
     r_free(&r, L1B, 3);
     assert(r.m.page == UI_PAGE_CHECK_RUN);
@@ -670,14 +664,10 @@ int main(void)
   {
     rig_t r;
     rig_init(&r, 1000U);
-    r_hold(&r, L1B, 3); /* BRAND → CHECK_CONFIRM，焦点默认取消 */
+    r.in.selfcheck_ready = 1U;
+    r_hold(&r, L1B, 3); /* BRAND → CHECK_CONFIRM */
     r_free(&r, L1B, 3);
     assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
-    r.in.ly = 200U;
-    r_step(&r);
-    r.in.ly = 128U;
-    r_step(&r);
-    assert(r.m.confirm_focus == 1U);
     r_hold(&r, R1B, 3); /* R1 边沿：返回 BRAND，并保持按住 */
     assert(r.m.page == UI_PAGE_BRAND);
     r_hold(&r, L1B, 3); /* R1 按住中 L1 稳定：不得产生确认副作用 */
@@ -707,6 +697,181 @@ int main(void)
     r_step(&r); /* R1 释放后 USER 重新按下：正常进确认页 */
     assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
     r.in.user_pressed = 0U;
+    r_step(&r);
+  }
+
+  /* 17. 确认页 5 s 倒计时自动启动（spec §4 2026-11-01 新流程）：
+   *     a) ready=1 归零当拍自发一帧 selfcheck_start 并进 CHECK_RUN；
+   *     b) confirm_remain_ms 单调递减；c) ready=0 冻结不减、恢复后继续
+   *     走剩余（不重置 5000）；d) ready=0 时 L1/摇杆右不发请求不转页；
+   *     e) 进页即按住 USER 不算取消，先见释放后再按才回 BRAND；
+   *     f) USER 新边沿取消回 BRAND；L1 立即启动；lx=200 立即启动；lx=60 取消。 */
+  {
+    rig_t r;
+    int i;
+    int fired;
+    uint16_t prev;
+
+    /* a) 归零当拍自发启动，只发一帧 */
+    fired = 0;
+    rig_init(&r, 1000U);
+    goto_confirm(&r, 1U);
+    for (i = 0; i < 520; i++)
+    {
+      r_step(&r);
+      if (r.req.selfcheck_start != 0U)
+      {
+        fired++;
+        assert(fired == 1); /* 单发 */
+      }
+      if (fired != 0)
+      {
+        assert(r.m.page == UI_PAGE_CHECK_RUN);
+      }
+      else
+      {
+        assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+      }
+    }
+    assert(fired == 1);
+
+    /* b) remain 单调递减（递减到启动前为止） */
+    rig_init(&r, 1000U);
+    goto_confirm(&r, 1U);
+    prev = r.m.confirm_remain_ms;
+    for (i = 0; i < 495; i++)
+    {
+      r_step(&r);
+      assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+      assert(r.m.confirm_blocked == 0U);
+      assert(r.m.confirm_remain_ms < prev);
+      prev = r.m.confirm_remain_ms;
+    }
+
+    /* c) 冻结：ready=0 时 remain 不减、blocked=1、5100 ms 不启动；
+     *    走一段→冻结→恢复：继续走完剩余才启动（不重置为 5000）。 */
+    rig_init(&r, 1000U);
+    goto_confirm(&r, 0U);
+    for (i = 0; i < 510; i++)
+    {
+      r_step(&r);
+      assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+      assert(r.req.selfcheck_start == 0U);
+      assert(r.m.confirm_blocked == 1U);
+      assert(r.m.confirm_remain_ms == (uint16_t)UI_CONFIRM_COUNTDOWN_MS);
+    }
+    r.in.selfcheck_ready = 1U;
+    for (i = 0; i < 200; i++) /* 走 2000 ms：remain → 3000 */
+    {
+      r_step(&r);
+      assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    }
+    assert(r.m.confirm_remain_ms == (uint16_t)(UI_CONFIRM_COUNTDOWN_MS - 2000U));
+    r.in.selfcheck_ready = 0U;
+    for (i = 0; i < 150; i++) /* 冻结 1500 ms：进度保留 */
+    {
+      r_step(&r);
+      assert(r.m.confirm_blocked == 1U);
+      assert(r.m.confirm_remain_ms == (uint16_t)(UI_CONFIRM_COUNTDOWN_MS - 2000U));
+    }
+    r.in.selfcheck_ready = 1U;
+    for (i = 0; i < 299; i++) /* 恢复后 2990 ms：仍未启动 */
+    {
+      r_step(&r);
+      assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+      assert(r.req.selfcheck_start == 0U);
+    }
+    r_step(&r); /* 剩余走完：启动 */
+    assert(r.req.selfcheck_start == 1U);
+    assert(r.m.page == UI_PAGE_CHECK_RUN);
+
+    /* d) ready=0：L1 与摇杆右都不发请求、不转页（页面只显示原因） */
+    rig_init(&r, 1000U);
+    goto_confirm(&r, 0U);
+    r_hold(&r, L1B, 3);
+    r_free(&r, L1B, 3);
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    assert(r.req.selfcheck_start == 0U);
+    r.in.lx = 200U;
+    r_step(&r);
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    assert(r.req.selfcheck_start == 0U);
+    r.in.lx = 128U;
+    r_step(&r);
+
+    /* e) 进页那帧 USER 仍按住 → 不算取消；见释放后新按才回 BRAND */
+    rig_init(&r, 1000U);
+    r.in.user_pressed = 1U;
+    r_step(&r);
+    r_step(&r);
+    r_step(&r);
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    for (i = 0; i < 10; i++)
+    {
+      r_step(&r);
+      assert(r.m.page == UI_PAGE_CHECK_CONFIRM); /* 按住不取消 */
+    }
+    r.in.user_pressed = 0U;
+    for (i = 0; i < 3; i++) { r_step(&r); }
+    r.in.user_pressed = 1U; /* 新边沿 → 取消 */
+    r_step(&r);
+    r_step(&r);
+    r_step(&r);
+    assert(r.m.page == UI_PAGE_BRAND);
+    r.in.user_pressed = 0U;
+    r_step(&r);
+
+    /* f) L1 进入后 USER 新边沿同样取消回 BRAND */
+    rig_init(&r, 1000U);
+    goto_confirm(&r, 0U);
+    r.in.user_pressed = 1U;
+    r_step(&r);
+    r_step(&r);
+    r_step(&r);
+    assert(r.m.page == UI_PAGE_BRAND);
+    r.in.user_pressed = 0U;
+    r_step(&r);
+  }
+
+  /* 18. 确认页立即启动/取消：L1 边沿、lx=200 启动；lx=60 取消回 BRAND。 */
+  {
+    rig_t r;
+
+    /* L1 立即启动（经 USER 进页，ready=1） */
+    rig_init(&r, 1000U);
+    r.in.selfcheck_ready = 1U;
+    r.in.user_pressed = 1U;
+    r_step(&r);
+    r_step(&r);
+    r_step(&r);
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    r.in.user_pressed = 0U;
+    r_step(&r);
+    r_step(&r);
+    r_step(&r);
+    r_hold(&r, L1B, 2);
+    assert(r.req.selfcheck_start == 0U);
+    r_step(&r);
+    assert(r.req.selfcheck_start == 1U);
+    assert(r.m.page == UI_PAGE_CHECK_RUN);
+    r_free(&r, L1B, 3);
+
+    /* lx=200 立即启动 */
+    rig_init(&r, 1000U);
+    goto_confirm(&r, 1U);
+    r.in.lx = 200U;
+    r_step(&r);
+    assert(r.req.selfcheck_start == 1U);
+    assert(r.m.page == UI_PAGE_CHECK_RUN);
+
+    /* lx=60 取消回 BRAND */
+    rig_init(&r, 1000U);
+    goto_confirm(&r, 1U);
+    r.in.lx = 60U;
+    r_step(&r);
+    assert(r.m.page == UI_PAGE_BRAND);
+    assert(r.req.selfcheck_start == 0U);
+    r.in.lx = 128U;
     r_step(&r);
   }
 

@@ -497,7 +497,8 @@ static void assert_selfcheck_output_pattern(void)
 }
 
 /* 导航辅助：品牌页到"重新自检"的确认页（SUBMENU sub_sel==1）。
- * 每步以快照为转移条件，帧间留足 3 帧去抖。 */
+ * 每步以快照为转移条件，帧间留足 3 帧去抖。
+ * 确认页已是 5 s 倒计时新流程：无焦点选择，case 12 的 L1 直接启动。 */
 static void selfcheck_nav(int *stage, uint32_t *mark)
 {
   ui_snapshot_t snap;
@@ -556,15 +557,6 @@ static void selfcheck_nav(int *stage, uint32_t *mark)
     break;
   case 9:
     cbuttons = 0xFFFFU;
-    if ((uint32_t)(tick - *mark) >= 30U) { *stage = 10; *mark = tick; }
-    break;
-  case 10: /* 下移焦点到"开始" */
-    cbuttons = 0xFFFFU; cly = 208U;
-    ui_snapshot_get(&snap);
-    if (snap.confirm_focus == 1U) { *stage = 11; *mark = tick; }
-    break;
-  case 11:
-    cbuttons = 0xFFFFU; cly = 128U;
     if ((uint32_t)(tick - *mark) >= 30U) { *stage = 12; *mark = tick; }
     break;
   default:
@@ -591,8 +583,7 @@ static void selfcheck_script(ps2_state_t *p)
       selfcheck_nav(&cstage, &cmark);
     }
     break;
-  case 1: case 2: case 3: case 4: case 5: case 6: case 7: case 8:
-  case 9: case 10: case 11:
+  case 1: case 2: case 3: case 4: case 5: case 6: case 7: case 8: case 9:
     selfcheck_nav(&cstage, &cmark);
     break;
   case 12: /* L1：确认页"开始" → 自检启动（RUNNING） */
@@ -645,18 +636,9 @@ static void selfcheck_script(ps2_state_t *p)
     cbuttons = 0xFFFFU; clx = 128U; cly = 128U;
     if ((uint32_t)(tick - cmark) >= 30U) { cstage = 21; }
     break;
-  case 21: /* 确认页：焦点必须回到"开始"（满推杆可能已把它拨回取消） */
-    ui_snapshot_get(&snap);
-    if (snap.page == UI_PAGE_CHECK_CONFIRM && snap.confirm_focus == 1U)
-    {
-      cstage = 22; cmark = tick;
-    }
-    else
-    {
-      cly = 208U; /* 下移焦点到"开始" */
-      ui_snapshot_get(&snap);
-      if (snap.confirm_focus == 1U) { cly = 128U; cstage = 22; cmark = tick; }
-    }
+  case 21: /* 确认页：新流程无焦点，摇杆已回中，直接进 L1 重跑 */
+    cbuttons = 0xFFFFU; cly = 128U;
+    if ((uint32_t)(tick - cmark) >= 30U) { cstage = 22; cmark = tick; }
     break;
   case 22: /* 摇杆回中片刻（自检前置要求四轴回中），L1 重新发起 */
     cbuttons = 0xFBFFU; cly = 128U;
@@ -868,7 +850,7 @@ static void relatch_script(ps2_state_t *p)
     xbuttons = 0xFFFFU;
     if ((uint32_t)(tick - xmark) >= 30U)
     {
-      /* 复用自检导航：从主菜单起到确认页（stage 2..11）。 */
+      /* 复用自检导航：从主菜单起到确认页（stage 2..9）。 */
       cstage = 2; cmark = tick;
       cbuttons = 0xFFFFU; clx = 128U; cly = 128U;
       xstage = 8;
@@ -1036,7 +1018,7 @@ static void selfcheck_preamble_step(void)
   ui_snapshot_t snap;
 
   cn++;
-  if (cstage <= 11) { selfcheck_nav(&cstage, &cmark); return; }
+  if (cstage <= 9) { selfcheck_nav(&cstage, &cmark); return; }
   switch (cstage)
   {
   case 100: /* 冷启动回中性预热：链路建立 + 再武装 100 ms */
@@ -1134,6 +1116,7 @@ static void selfcheck_preamble_step(void)
 static int power_gate_test;
 static int pstage;
 static uint32_t pmark, pn;
+static uint16_t p_frozen_remain; /* 掉压冻结时确认页剩余毫秒（不减断言用） */
 
 static void power_gate_script(ps2_state_t *p)
 {
@@ -1444,25 +1427,44 @@ static void power_gate_script(ps2_state_t *p)
     p->buttons = 0xFFFFU;
     if ((uint32_t)(tick - pmark) >= 30U) { pstage = 49; pmark = tick; }
     break;
-  case 49: /* 焦点移到"开始" */
-    ui_snapshot_get(&snap);
-    if (snap.confirm_focus == 1U) { p->ly = 128U; pstage = 50; pmark = tick; }
-    else { p->ly = 208U; }
+  case 49: /* ready=0（vdd 掉压）：倒计时冻结，仍停留确认页 */
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) {
+      ui_snapshot_get(&snap);
+      assert(snap.page == UI_PAGE_CHECK_CONFIRM);
+      assert(snap.confirm_blocked == 1U);
+      p_frozen_remain = snap.confirm_remain_ms;
+      pstage = 495; pmark = tick;
+    }
     break;
-  case 50:
-    p->ly = 128U;
-    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 51; pmark = tick; }
+  case 495: /* 冻结 600 ms：remain 不减、不自发启动 */
+    if ((uint32_t)(tick - pmark) >= 600U) {
+      ui_snapshot_get(&snap);
+      assert(snap.page == UI_PAGE_CHECK_CONFIRM);
+      assert(snap.confirm_blocked == 1U);
+      assert(snap.confirm_remain_ms == p_frozen_remain);
+      pstage = 50; pmark = tick;
+    }
     break;
-  case 51: /* L1：页面进 CHECK_RUN，但 vdd_ok=0 → 服务请求必须被拒 */
+  case 50: /* ready=0 时 L1：模型不发请求、不转页（页面显示原因） */
     p->buttons = 0xFBFFU;
-    ui_snapshot_get(&snap);
-    if (snap.page == UI_PAGE_CHECK_RUN) { pstage = 52; pmark = tick; }
+    if ((uint32_t)(tick - pmark) >= 60U) {
+      ui_snapshot_get(&snap);
+      assert(snap.page == UI_PAGE_CHECK_CONFIRM);
+      pstage = 51; pmark = tick;
+    }
+    break;
+  case 51: /* 释放 L1 */
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - pmark) >= 30U) { pstage = 52; pmark = tick; }
     break;
   case 52: /* 1.5 s 后：服务从未启动——state 停留在上一轮全过的 2，
-            * 不出现 1（运行）/3（失败），无任何输出 */
+            * 不出现 1（运行）/3（失败），无任何输出，页面仍被挡 */
     p->buttons = 0xFFFFU;
-    ui_snapshot_get(&snap);
     if ((uint32_t)(tick - pmark) >= 1500U) {
+      ui_snapshot_get(&snap);
+      assert(snap.page == UI_PAGE_CHECK_CONFIRM);
+      assert(snap.confirm_blocked == 1U);
       assert(snap.action_busy == 0U);
       assert(snap.vdd_ok == 0U);
       for (int i = 0; i < 4; i++) {

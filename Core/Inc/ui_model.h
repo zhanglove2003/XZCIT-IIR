@@ -40,6 +40,12 @@ typedef enum
 
 /* 手动标定页 SELECT 长按记录参考；漂移/坏帧取消本次计时（spec §8）。 */
 #define UI_SELECT_LONG_PRESS_MS 2000U
+/* 确认页 5 s 倒计时自动启动（spec §4，2026-11-01）：
+ * 归零当拍自发 selfcheck_start；前置不满足时冻结并置 confirm_blocked。
+ * 摇杆右/左立即开始/取消阈值：lx ≥ 176 / lx ≤ 80（同导航 engage 48 偏移）。 */
+#define UI_CONFIRM_COUNTDOWN_MS 5000U
+#define UI_CONFIRM_START_LX     176U
+#define UI_CONFIRM_CANCEL_LX    80U
 /* 归位/自检期间摇杆越出驾驶死区（同 wheel_home 16 的口径）即取消动作。 */
 #define UI_STICK_DRIFT_LIMIT 16
 /* 行驶状态分类死区：|v|/|t| <= 该值视为 0（输入为映射后的脉宽）。 */
@@ -52,6 +58,8 @@ typedef struct
   uint8_t lx, ly, rx, ry;
   uint8_t user_pressed, frame_valid;
   uint8_t selfcheck_passed;   /* Ctrl 回喂：本次上电自检是否已通过 */
+  uint8_t selfcheck_ready;    /* Ctrl 回喂：自检前置全部满足（帧有效+四轴
+                               * 回中+vdd_ok+非标定），0 时确认页倒计时冻结 */
   uint8_t action_busy;        /* Ctrl 回喂：自检/归位执行中 */
   uint8_t result_window_open; /* 自检刚结束的 5 s 标定入口窗口（Ctrl 计时） */
   uint32_t now_ms;
@@ -77,6 +85,12 @@ typedef struct
   ui_page_t page, back_page;
   uint8_t menu_sel, sub_sel, sub_scroll, confirm_focus, result_view;
   uint32_t sel_since_ms; /* 焦点/滑动动画锚点 */
+  /* 确认页 5 s 倒计时（spec §4）：进入页面时锚定，ready=0 冻结（锚点随
+   * 剩余时间回推，恢复后继续走剩余）。confirm_focus 保留但不再参与启动
+   * 裁决——启动只看 L1 边沿 / lx≥176 / 倒计时归零。 */
+  uint32_t confirm_since_ms;
+  uint16_t confirm_remain_ms;
+  uint8_t confirm_blocked;
   /* 按键滤波：索引 0=R1 1=L1 2=SELECT 3=USER。 */
   uint8_t btn_filtered[4], btn_candidate[4], btn_frames[4];
   uint32_t btn_press_ms[4];  /* 稳定按下沿时刻（SELECT 长按锚点） */

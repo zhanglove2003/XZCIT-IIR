@@ -754,6 +754,15 @@ void StartCtrlTask(void *argument)
        * selfcheck_passed 来自 Ctrl 自己的菜单自检服务（单归属）：
        * 只有四轮全过的完整一轮才为 1，重新发起/取消即归 0。 */
       uin.selfcheck_passed = s_ctrl_check.passed;
+      /* 自检前置回喂（spec §4 倒计时冻结判据）：帧有效 + 四轴回中 +
+       * 供电正常 + 非标定模式——与下方 selfcheck_start 消费门槛同一口径
+       * （不含服务占用：RUNNING 时页面早已离开确认页，倒计时不再推进）。 */
+      uin.selfcheck_ready = (uint8_t)(
+          (in.frame_valid != 0U &&
+           ctrl_sticks_centered_raw(in.lx, in.ly, in.rx, in.ry) != 0U &&
+           pw.vdd_ok != 0U && drive_calibration_mode == 0U)
+              ? 1U
+              : 0U);
       uin.action_busy = s_ctrl_action_busy;
       uin.result_window_open = result_window;
       uin.now_ms = HAL_GetTick();
@@ -1082,6 +1091,8 @@ void StartCtrlTask(void *argument)
       snap.sub_sel = s_ui_model.sub_sel;
       snap.sub_scroll = s_ui_model.sub_scroll;
       snap.confirm_focus = s_ui_model.confirm_focus;
+      snap.confirm_remain_ms = s_ui_model.confirm_remain_ms;
+      snap.confirm_blocked = s_ui_model.confirm_blocked;
       snap.result_view = s_ui_model.result_view;
       snap.sel_since_ms = s_ui_model.sel_since_ms;
       snap.drive_permitted = drive_permitted;
