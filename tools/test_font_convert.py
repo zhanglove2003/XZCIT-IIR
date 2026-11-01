@@ -80,6 +80,45 @@ def test_cn_task2_glyphs():
         assert any(any(row) for row in img), ch
 
 
+# ---- 2026-11-01 字体粗细匹配（font-weight plan Task 1）----
+
+# oled_font_cn 前 17 项 = 原始字模集（CNINT/CNST/CNZJ 等点阵字模），作为墨水密度基准
+ORIGINAL_COUNT = 17
+
+
+def _ink_ratio(ch):
+    img = fc.cn_bitmap(ch)
+    return sum(sum(row) for row in img) / 256.0
+
+
+def _original_mu():
+    ratios = [_ink_ratio(spec[0]) for spec in fc.CN_GLYPHS_SPEC[:ORIGINAL_COUNT]]
+    return sum(ratios) / len(ratios)
+
+
+def test_task2_ink_matches_original_set():
+    """60 个新增字形墨水密度：逐字落在 [0.85μ, 1.15μ]，且整体极差 ≤ 0.20μ。"""
+    mu = _original_mu()
+    ratios = [_ink_ratio(ch) for ch in TASK2_CHARS]
+    bad = [(ch, r) for ch, r in zip(TASK2_CHARS, ratios)
+           if not 0.85 * mu <= r <= 1.15 * mu]
+    assert not bad, 'ink 超出 [0.85μ,1.15μ] (μ=%.4f): %s' % (
+        mu, ', '.join('%s=%.3f' % (c, r) for c, r in bad))
+    spread = max(ratios) - min(ratios)
+    assert spread <= 0.20 * mu, '极差 %.4f > 0.20μ=%.4f' % (spread, 0.20 * mu)
+
+
+def test_regen_cnadd2_idempotent():
+    """font_add_glyphs auto 模式重新生成 CNADD2_16x16.h 幂等：磁盘内容与生成器一致。"""
+    import font_add_glyphs as fag
+    content = fag.build_content_named(fc.TASK2_CHARS, fag.auto_params(fc.TASK2_CHARS),
+                                      'CNADD2_16x16')
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        'font_src', 'CNADD2_16x16.h')
+    with open(path, encoding='utf-8') as f:
+        assert f.read() == content, 'CNADD2_16x16.h 与生成器输出不一致（请重跑 font_add_glyphs.py）'
+
+
 def test_regen_idempotent():
     """font_convert 重新生成幂等：磁盘上的 oled_font.c/h 与 generate() 一致。"""
     header, source = fc.generate()
