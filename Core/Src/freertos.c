@@ -892,12 +892,20 @@ void StartCtrlTask(void *argument)
 
       if (s_ctrl_check.passed == 0U || pw.vdd_ok == 0U)
       {
-        /* 自检未通过或掉压：喂"无效帧"（按键/摇杆仍可被 UI 读走）。
-         * 掉压时归位 RUNNING 借 wheel_home 既有的 200 ms 帧失联取消路径
-         * 落地（wh_abort → CANCELLED、零脉冲、恢复后要求重新释放）——
-         * 与坏帧/失联取消同一机制，不另开取消入口。 */
+        /* 自检未通过或掉压：喂"无效帧"（按键/摇杆仍可被 UI 读走）。 */
         arbitrate.frame_valid = 0U;
         arbitrate.buttons = 0xFFFFU;
+      }
+      /* spec §11.9：归位出现无效手柄帧即停止并取消——当拍走公开取消
+       * 入口（cancel_pending 由本拍稍后的 wheel_home_step 落地：wh_abort
+       * → CANCELLED、四轮零脉冲、恢复后要求先看到释放）。wheel_home 内部
+       * 的 200 ms 帧失联规则保留作兜底（如 BUTTON_HELD 手势路径），
+       * 但 RUNNING 的电机输出不再等它。 */
+      if (arbitrate.frame_valid == 0U &&
+          (s_ctrl_home.mode == WHEEL_HOME_RUNNING ||
+           s_ctrl_home.mode == WHEEL_HOME_BUTTON_HELD))
+      {
+        wheel_home_cancel(&s_ctrl_home);
       }
       wheel_home_step(&s_ctrl_home, &arbitrate, &out);
 

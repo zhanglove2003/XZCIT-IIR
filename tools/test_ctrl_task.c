@@ -105,16 +105,12 @@ static void asleep(void){
  for(int i=0;i<4;i++)assert(htim8.compare[i]==0);
 }
 
-/* Homing: navigate the menu to the manual-calibration page, long-press to
- * record the reference (manual_calib_page gated), then request homing from
- * the submenu with L1 — the same L1 press must not cancel it — and check a
- * quarter turn on the two rear encoders produces corrective pulses only on
- * those two channels. */
-static void home_script(void){
+/* 归位导航公共段（'h' 与 'n' 场景共用）：阶段 0..19 把页面从品牌页一路
+ * 走到"子菜单 L1 提交归位进 HOME 页（L1 按住中）"，结束后 hstage==20。 */
+static void home_nav(void){
   wheel_home_output_t st;
   ui_snapshot_t snap;
 
-  hcycles++;
   switch(hstage){
   case 0: /* 回中武装预热：等链路再武装完成、状态机 MANUAL、页面 BRAND */
     hbuttons=0xFFFFU; hly=128U; hlx=128U;
@@ -233,6 +229,23 @@ static void home_script(void){
     ui_snapshot_get(&snap);
     if(snap.page==UI_PAGE_HOME){ hstage=20; hmark=tick; }
     break;
+  default:
+    break;
+  }
+}
+
+/* Homing: navigate the menu to the manual-calibration page, long-press to
+ * record the reference (manual_calib_page gated), then request homing from
+ * the submenu with L1 — the same L1 press must not cancel it — and check a
+ * quarter turn on the two rear encoders produces corrective pulses only on
+ * those two channels. */
+static void home_script(void){
+  wheel_home_output_t st;
+  ui_snapshot_t snap;
+
+  hcycles++;
+  if(hstage<20){ home_nav(); return; }
+  switch(hstage){
   case 20: /* 继续按住 L1：请求已 pending，同一次 L1 不得取消它 */
     hbuttons=0xFBFFU;
     if((uint32_t)(tick-hmark)>=60U){ hstage=21; hmark=tick; }
@@ -925,6 +938,65 @@ static void selfcheck_frame_loss_script(ps2_state_t *p)
       assert(snap.selfcheck_state[0] == 3U); /* 受试轮定格失败 */
       assert(snap.action_busy == 0U);        /* 服务已退出 RUNNING */
       assert(snap.selfcheck_passed == 0U);   /* 取消不通过 */
+      longjmp(done, 1);
+    }
+    break;
+  default:
+    break;
+  }
+}
+
+/* --- homing frame-loss scenario ('n') ----------------------------------- */
+/* spec §11.9：归位 RUNNING 中出现无效手柄帧当拍停止并取消——不再等
+ * wheel_home 内部 200 ms 帧失联兜底。断言：首帧失效后两个控制周期内
+ * 四轮 compare 全 0、result=CANCELLED。 */
+static int homefl_test;
+static int nstage;
+static uint32_t nn, nmark;
+static uint8_t nbad;
+
+static void home_frame_loss_script(void)
+{
+  wheel_home_output_t st;
+
+  nn++;
+  switch (nstage)
+  {
+  case 0: /* 复用归位导航：L1 提交归位进 HOME 页（按住中） */
+    hcycles++;
+    if (hstage < 20) { home_nav(); }
+    if (hstage >= 20) { nstage = 1; nmark = tick; }
+    break;
+  case 1: /* 继续按住 L1 60 ms（同一次提交不得取消请求） */
+    if ((uint32_t)(tick - nmark) >= 60U) { nstage = 2; nmark = tick; }
+    break;
+  case 2: /* 释放 → 放行门 100 ms → RUNNING（C/D 出力） */
+    hbuttons = 0xFFFFU;
+    wheel_home_get_status(&st);
+    if (st.mode == WHEEL_HOME_RUNNING)
+    {
+      int i, moved = 0;
+      for (i = 0; i < 4; i++) { if (htim8.compare[i] != 0U) { moved = 1; } }
+      assert(moved != 0); /* 先确认真的在出力 */
+      nstage = 3; nmark = tick;
+    }
+    if ((uint32_t)(tick - nmark) >= 2000U)
+    {
+      puts("homing never started"); assert(0);
+    }
+    break;
+  case 3: /* 首帧失效（ps2_poll 改回 BAD） */
+    nbad = 1U;
+    nstage = 4; nmark = tick;
+    break;
+  case 4: /* 两个控制周期内（远小于 200 ms 兜底）：必须已停并取消 */
+    wheel_home_get_status(&st);
+    if ((uint32_t)(tick - nmark) >= 6U)
+    {
+      int i;
+      for (i = 0; i < 4; i++) { assert(htim8.compare[i] == 0U); }
+      assert(st.mode != WHEEL_HOME_RUNNING);
+      assert(st.result == WHEEL_HOME_RESULT_CANCELLED);
       longjmp(done, 1);
     }
     break;
@@ -1744,6 +1816,9 @@ uint8_t ps2_poll(ps2_state_t *p){
  }
  if(home_test){home_script();p->buttons=hbuttons;p->lx=hlx;p->ly=hly;
    p->rx=128U;p->ry=128U;tick+=3U;return PS2_FRAME_OK;}
+ if(homefl_test){home_frame_loss_script();p->buttons=hbuttons;p->lx=hlx;p->ly=hly;
+   p->rx=128U;p->ry=128U;tick+=3U;
+   return (nbad!=0U)?PS2_FRAME_BAD:PS2_FRAME_OK;}
  current_phase=phase++;
  if(current_phase==0)first_poll_tick=tick;
  assert(current_phase!=1 || (uint32_t)(tick-first_poll_tick)<=20U);
@@ -1858,6 +1933,14 @@ int main(int argc, char **argv){
    pm_set_vdd_ok(1U);
    if(!setjmp(done))StartCtrlTask(0);
    puts("ctrl failed recheck keeps latch / pass+neutral restores OK");return 0;
+ }
+ if(argc>1 && argv[1][0]=='n'){
+   homefl_test=1;tick=0U;phase=0;pwm_ccer=0U;
+   nstage=0;nn=0U;nbad=0U;hstage=0;hcycles=0;
+   pm_set_vdd_ok(1U);
+   pre_reset();
+   if(!setjmp(done))StartCtrlTask(0);
+   puts("ctrl homing frame-loss cancels same-cycle OK");return 0;
  }
  pre_reset();
  if(!setjmp(done))StartCtrlTask(0);
