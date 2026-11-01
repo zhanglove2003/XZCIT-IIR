@@ -429,6 +429,10 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
         go_page(m, UI_PAGE_MANUAL_CAL, now);
       }
       break;
+    case UI_PAGE_OUTPUT_CAP:
+      /* 页面提示"L1返回"：L1 与 R1 同效，回子菜单原条目（sub_sel 保留） */
+      go_page(m, m->back_page, now);
+      break;
     default: /* DRIVE/CHECK_RUN/HOME/MANUAL_CAL 无 L1 动作 */
       break;
     }

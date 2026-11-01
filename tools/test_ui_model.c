@@ -1104,6 +1104,22 @@ int main(void)
     r_free(&r, L1B, 3);
     assert(r.m.page == UI_PAGE_OUTPUT_CAP);
     assert(r.m.output_cap_pct == 10U);
+
+    /* 页面提示"L1返回"：L1 稳定边沿与 R1 同效，回子菜单原条目 */
+    r_hold(&r, L1B, 3);
+    assert(r.m.page == UI_PAGE_SUBMENU); /* 第 3 帧（边沿当拍）已离开 */
+    assert(r.m.sub_sel == 4U);
+    r_free(&r, L1B, 3);
+    assert(r.m.page == UI_PAGE_SUBMENU);
+
+    /* L1 再进再出往返一次：边沿语义不受退出方式影响 */
+    r_hold(&r, L1B, 3);
+    r_free(&r, L1B, 3);
+    assert(r.m.page == UI_PAGE_OUTPUT_CAP);
+    r_hold(&r, L1B, 3);
+    r_free(&r, L1B, 3);
+    assert(r.m.page == UI_PAGE_SUBMENU);
+    assert(r.m.sub_sel == 4U);
   }
 
   puts("ui_model pages / debounce / nav / window / classify OK");
