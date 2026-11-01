@@ -177,6 +177,15 @@ static void start_selfcheck(ui_model_t *m, ui_model_req_t *req, uint32_t now)
   go_page(m, UI_PAGE_CHECK_RUN, now);
 }
 
+/* 确认页倒计时冻结（ready==0 与坏帧共用口径）：remain 不减、blocked=1，
+ * 锚点按剩余时间回推——恢复后继续走剩余，绝不跳过剩余直接启动（spec §4）。 */
+static void confirm_freeze(ui_model_t *m, uint32_t now)
+{
+  m->confirm_blocked = 1U;
+  m->confirm_since_ms =
+      now - (uint32_t)(UI_CONFIRM_COUNTDOWN_MS - m->confirm_remain_ms);
+}
+
 void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
 {
   uint32_t now = in->now_ms;
@@ -196,7 +205,9 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
   }
 
   /* 坏帧：冻结全部去抖/摇杆/长按推进，不清零（spec §11 坏帧当轮不沿用旧指令，
-   * 页面状态保持，等待恢复帧重新计数）。 */
+   * 页面状态保持，等待恢复帧重新计数）。确认页倒计时同样冻结并显示原因：
+   * 锚点必须在本早退内回推，否则恢复帧 elapsed 已超 5000 会跳过剩余直接
+   * 自动启动（手柄重连瞬间意外转轮）。 */
   if (in->frame_valid == 0U)
   {
     if (m->page == UI_PAGE_MANUAL_CAL && m->btn_filtered[UI_BTNIDX_SEL] != 0U)
@@ -204,6 +215,10 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
       /* spec §8：坏帧取消本次长按计时 */
       m->btn_press_ms[UI_BTNIDX_SEL] = now;
       m->btn_long_fired[UI_BTNIDX_SEL] = 0U;
+    }
+    if (m->page == UI_PAGE_CHECK_CONFIRM)
+    {
+      confirm_freeze(m, now);
     }
     return;
   }
@@ -548,9 +563,7 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
     }
     else
     {
-      m->confirm_blocked = 1U;
-      m->confirm_since_ms =
-          now - (uint32_t)(UI_CONFIRM_COUNTDOWN_MS - m->confirm_remain_ms);
+      confirm_freeze(m, now);
     }
   }
 }

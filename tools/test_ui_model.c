@@ -875,6 +875,78 @@ int main(void)
     r_step(&r);
   }
 
+  /* 19. 坏帧冻结确认页倒计时：走 2 s → 坏帧 7 s（remain 不变、blocked=1、
+   *     不启动）→ 恢复帧不启动且 remain 保持，走完剩余才启动。 */
+  {
+    rig_t r;
+    int i;
+
+    rig_init(&r, 1000U);
+    goto_confirm(&r, 1U);
+    for (i = 0; i < 197; i++) /* 走 2 s（去抖偏移后整 2 s）：remain → 3000 */
+    {
+      r_step(&r);
+    }
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    assert(r.m.confirm_remain_ms == (uint16_t)(UI_CONFIRM_COUNTDOWN_MS - 2000U));
+    r.in.frame_valid = 0U;
+    for (i = 0; i < 700; i++)
+    {
+      r_step(&r);
+      assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+      assert(r.req.selfcheck_start == 0U);
+      assert(r.m.confirm_blocked == 1U);
+      assert(r.m.confirm_remain_ms == (uint16_t)(UI_CONFIRM_COUNTDOWN_MS - 2000U));
+    }
+    r.in.frame_valid = 1U;
+    r_step(&r); /* 恢复帧：不得跳过剩余直接启动 */
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    assert(r.req.selfcheck_start == 0U);
+    assert(r.m.confirm_blocked == 0U);
+    assert(r.m.confirm_remain_ms == (uint16_t)(UI_CONFIRM_COUNTDOWN_MS - 2010U));
+    for (i = 0; i < 298; i++) /* 恢复后继续走剩余（~2.99 s 仍未启动） */
+    {
+      r_step(&r);
+      assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+      assert(r.req.selfcheck_start == 0U);
+    }
+    r_step(&r);
+    assert(r.req.selfcheck_start == 1U);
+    assert(r.m.page == UI_PAGE_CHECK_RUN);
+  }
+
+  /* 20. 回绕点的确认页倒计时：跨 UINT32 回绕仍按 5 s 归零自发启动。 */
+  {
+    rig_t r;
+    int i;
+    int fired = 0;
+
+    rig_init(&r, UINT32_MAX - 100U);
+    r.in.selfcheck_ready = 1U;
+    r_hold(&r, L1B, 3);
+    r_free(&r, L1B, 3);
+    assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+    for (i = 0; i < 520; i++)
+    {
+      r_step(&r);
+      if (r.req.selfcheck_start != 0U)
+      {
+        fired++;
+        assert(fired == 1);
+      }
+      if (fired != 0)
+      {
+        assert(r.m.page == UI_PAGE_CHECK_RUN);
+      }
+      else
+      {
+        assert(r.m.page == UI_PAGE_CHECK_CONFIRM);
+        assert(r.m.confirm_blocked == 0U);
+      }
+    }
+    assert(fired == 1);
+  }
+
   puts("ui_model pages / debounce / nav / window / classify OK");
   return 0;
 }
