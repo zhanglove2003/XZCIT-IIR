@@ -609,6 +609,83 @@ static void cap_script(ps2_state_t *p)
   }
 }
 
+/* --- drive rearm button-release gate scenario ('d') ---------------------- */
+/* spec §7：驾驶页回中武装的条件含 R1/L1/SELECT 全部释放连续 100 ms。
+ * 按住 L1 进入驾驶页并保持：即使四轴回中满 100 ms 也不武装（旧实现
+ * 只看摇杆回中，会带着按键武装）；释放后重新计时，满 100 ms 才武装。 */
+static int rearm_test;
+static int dstage;
+static uint32_t dn, dmark;
+
+static void rearm_script(ps2_state_t *p)
+{
+  ui_snapshot_t snap;
+
+  dn++;
+  p->buttons = 0xFFFFU; p->lx = 128U; p->rx = 128U;
+  p->ry = 128U; p->ly = 128U;
+  switch (dstage)
+  {
+  case 0: /* 冷启动回中性预热（前置自检已由 preamble 跑完一轮全过） */
+    if (dn >= 40U) { dstage = 1; dmark = tick; }
+    break;
+  case 1: /* R1 → 主菜单 */
+    p->buttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MENU) { dstage = 2; dmark = tick; }
+    break;
+  case 2: /* 释放 R1 ≥3 稳定帧 */
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - dmark) >= 30U) { dstage = 3; dmark = tick; }
+    break;
+  case 3: /* 按住 L1：主菜单 → 驾驶页，并持续按住 */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_DRIVE) { dstage = 4; dmark = tick; }
+    break;
+  case 4: /* 按住 L1 超过 200 ms：四轴一直回中，也不许武装 */
+    p->buttons = 0xFBFFU;
+    if ((uint32_t)(tick - dmark) >= 200U)
+    {
+      int i;
+      ui_snapshot_get(&snap);
+      assert(snap.page == UI_PAGE_DRIVE);
+      assert(snap.drive_permitted == 0U);
+      for (i = 0; i < 4; i++) { assert(htim8.compare[i] == 0U); }
+      dstage = 5; dmark = tick;
+    }
+    break;
+  case 5: /* 释放 L1：重新计时；满 100 ms 前不武装 */
+    p->buttons = 0xFFFFU;
+    if ((uint32_t)(tick - dmark) >= 150U)
+    {
+      ui_snapshot_get(&snap);
+      assert(snap.drive_permitted == 1U); /* 释放后重新计满才武装 */
+      dstage = 6; dmark = tick;
+    }
+    else if ((uint32_t)(tick - dmark) >= 60U &&
+             (uint32_t)(tick - dmark) < 100U)
+    {
+      ui_snapshot_get(&snap);
+      assert(snap.drive_permitted == 0U); /* 释放后 60~99 ms：还没武装 */
+    }
+    break;
+  case 6: /* 武装后推满：出力 8400 */
+    p->ly = 0U;
+    if ((uint32_t)(tick - dmark) >= 30U)
+    {
+      int i;
+      ui_snapshot_get(&snap);
+      assert(snap.drive_permitted == 1U);
+      for (i = 0; i < 4; i++) { assert(htim8.compare[i] == 8400U); }
+      longjmp(done, 1);
+    }
+    break;
+  default:
+    break;
+  }
+}
+
 /* --- menu selfcheck scenario ('c') -------------------------------------- */
 /* 菜单发起自检：RUNNING 期间服务独占 command（驾驶推杆不出力），
  * 推满摇杆触发越区取消；重跑全过后 5 s 结果窗口打开并超时回品牌页。 */
@@ -1795,6 +1872,7 @@ uint8_t ps2_poll(ps2_state_t *p){
   * 打断居中计时导致再武装永远无法完成。 */
  if(ui_test){ ui_script(p); tick+=3U; return PS2_FRAME_OK; }
  if(cap_test){ cap_script(p); tick+=3U; return PS2_FRAME_OK; }
+ if(rearm_test){ rearm_script(p); tick+=3U; return PS2_FRAME_OK; }
  if(selfcheck_test){
    selfcheck_script(p);
    p->buttons=cbuttons;p->lx=clx;p->ly=cly;p->rx=128U;p->ry=128U;
@@ -1941,6 +2019,13 @@ int main(int argc, char **argv){
    pre_reset();
    if(!setjmp(done))StartCtrlTask(0);
    puts("ctrl homing frame-loss cancels same-cycle OK");return 0;
+ }
+ if(argc>1 && argv[1][0]=='d'){
+   rearm_test=1;tick=0U;dn=0U;dstage=0;
+   pm_set_vdd_ok(1U);
+   pre_reset();
+   if(!setjmp(done))StartCtrlTask(0);
+   puts("ctrl drive rearm requires button release OK");return 0;
  }
  pre_reset();
  if(!setjmp(done))StartCtrlTask(0);

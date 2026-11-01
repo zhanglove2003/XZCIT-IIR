@@ -7,6 +7,7 @@ common=(-std=c11 -Wall -Wextra -Werror -ICore/Inc)
 gcc "${common[@]}" -Wno-unused-parameter -Itools/host_stubs tools/test_ctrl_task.c Core/Src/freertos.c Core/Src/drive_ctrl.c Core/Src/ui_model.c Core/Src/wheel_home.c Core/Src/wheel_feedback.c Core/Src/motor_health.c Core/Src/buzzer.c Core/Src/motor_test.c Core/Src/selfcheck_service.c -o "$test_dir/ctrl"
 "$test_dir/ctrl" homing
 "$test_dir/ctrl" n
+"$test_dir/ctrl" d
 "$test_dir/ctrl" p
 "$test_dir/ctrl" k
 "$test_dir/ctrl" fault

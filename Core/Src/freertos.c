@@ -848,9 +848,15 @@ void StartCtrlTask(void *argument)
 
     /* 2c) 驾驶许可仲裁：驾驶页 + 自检通过 + 无故障 + 回中武装。
      *     回中计时用独立变量（口径同 CTRL_REARM_MS）：页面重进即重新起算，
-     *     出杆重置计时；武装后出杆即驾驶，离开驾驶页立即解除。 */
+     *     出杆重置计时；武装后出杆即驾驶，离开驾驶页立即解除。
+     *     回中条件还要求 R1/L1/SELECT 全部释放（spec §7，审查项 #6）：
+     *     按住任一键时重置计时，防止"带键进页"在 100 ms 后意外武装。 */
     {
       uint8_t centered = ctrl_sticks_centered_raw(in.lx, in.ly, in.rx, in.ry);
+      /* 按键低有效：位 0/10/11 全为 1 才是"全部释放"（与归位放行门同 mask）。 */
+      uint8_t gate_released =
+          (uint8_t)((in.buttons & WHEEL_HOME_REQUEST_GATE_MASK) ==
+                    WHEEL_HOME_REQUEST_GATE_MASK);
       uint32_t now = HAL_GetTick();
 
       if (s_ui_model.page != UI_PAGE_DRIVE)
@@ -860,7 +866,7 @@ void StartCtrlTask(void *argument)
       }
       else if (s_drive_center_armed == 0U)
       {
-        if (centered != 0U)
+        if (centered != 0U && gate_released != 0U)
         {
           if ((uint32_t)(now - s_drive_center_start) >= CTRL_REARM_MS)
           {
@@ -869,7 +875,8 @@ void StartCtrlTask(void *argument)
         }
         else
         {
-          s_drive_center_start = now; /* 出杆：重新计时，防止带杆进页窜车 */
+          /* 出杆或按键没松开：重新计时，防止带杆/带键进页窜车 */
+          s_drive_center_start = now;
         }
       }
       /* action_busy 由自检/归位状态回喂；本次上电未通过自检时驾驶页
