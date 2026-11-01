@@ -87,7 +87,7 @@ void drive_ctrl_mix(uint8_t ly, uint8_t rx, int32_t out[4])
 
   if (peak > drive_ctrl_max_pulse)
   {
-    /* 等比缩放回限幅：峰值 12600*8400 < 2^31 无溢出 */
+    /* 等比缩放回限幅：峰值 22680*15120 < 2^31 无溢出（90% 档满前进+满转向） */
     out[0] = out[2] = wheel[0] * drive_ctrl_max_pulse / peak;
     out[1] = out[3] = wheel[1] * drive_ctrl_max_pulse / peak;
   }
