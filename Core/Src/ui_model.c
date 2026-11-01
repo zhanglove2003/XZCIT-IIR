@@ -398,7 +398,8 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
         if (req != NULL)
         {
           /* 进页当拍把当前百分比请求为新值：页面显示的 百分比/原始值
-           * 与生效上限从第一拍起一致（默认档 50% = 4200 = 8400 的一半）。 */
+           * 与生效上限从第一拍起一致（默认档 50% = 8400 = 现状满输出，
+           * 进页当拍为幂等写）。 */
           req->output_cap_changed = 1U;
         }
         go_page(m, UI_PAGE_OUTPUT_CAP, now);

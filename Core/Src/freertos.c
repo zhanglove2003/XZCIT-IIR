@@ -834,14 +834,14 @@ void StartCtrlTask(void *argument)
 
       /* 输出上限落地（单发新值请求，同其余 req 的当拍消费口径）：
        * 模型在 进页/页内步进实际改变百分比 的当拍置 output_cap_changed，
-       * 这里落到 drive_ctrl 运行时上限（pct×84 = pct% × 8400/100，
-       * set_max_pulse 幂等夹取）。单发口径让"从未进过设置页"的运行保持
-       * drive_ctrl 默认 8400；进页当拍即应用当前档（50%=4200），页面显示
-       * 的百分比/原始值与生效上限从第一拍起一致。同一任务内读写，无竞争；
-       * 变更当拍之后的驾驶混合（第 4 步）即按新上限重映射。 */
+       * 这里落到 drive_ctrl 运行时上限。pct 为占空比百分比：pct×168 =
+       * pct% × (ARR+1=16800)/100，50% = 8400 = 现状满输出（与默认一致，
+       * 进页当拍为幂等写）；set_max_pulse 幂等夹取 [840, 8400]。同一任务
+       * 内读写，无竞争；变更当拍之后的驾驶混合（第 4 步）即按新上限
+       * 重映射。 */
       if (ureq.output_cap_changed != 0U)
       {
-        drive_ctrl_set_max_pulse((int32_t)s_ui_model.output_cap_pct * 84);
+        drive_ctrl_set_max_pulse((int32_t)s_ui_model.output_cap_pct * 168);
       }
     }
 

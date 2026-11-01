@@ -710,8 +710,8 @@ static void draw_manual_cal(const ui_snapshot_t *s)
 }
 
 /* 输出上限（第 5 子菜单条目）：16px 标题 + 大号 NN%（6×12）+
- * 原始比较值行（pct×84 = 上限比较值）+ 底部中文提示（16px）。
- * 百分比/比较值由快照直读（RAM 生效，无"保存"动作）。 */
+ * 原始比较值行（pct×168 = pct% × (ARR+1=16800)/100，占空比口径）+
+ * 底部中文提示（16px）。百分比/比较值由快照直读（RAM 生效，无"保存"动作）。 */
 static void draw_output_cap(const ui_snapshot_t *s)
 {
   char buf[12];
@@ -720,7 +720,7 @@ static void draw_output_cap(const ui_snapshot_t *s)
   (void)snprintf(buf, sizeof(buf), "%u%%", (unsigned)s->output_cap_pct);
   draw_centered_6x12(18, buf);
   (void)snprintf(buf, sizeof(buf), "MAX %lu",
-                 (unsigned long)((uint32_t)s->output_cap_pct *
+                 (unsigned long)((uint32_t)s->output_cap_pct * 2U *
                                  (DRIVE_CTRL_MAX_PULSE / 100U)));
   draw_centered_6x12(34, buf);
   draw_centered_mixed16(48, "上下调整  L1返回");

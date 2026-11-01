@@ -53,10 +53,11 @@ typedef enum
 /* 行驶状态分类死区：|v|/|t| <= 该值视为 0（输入为映射后的脉宽）。 */
 #define UI_DRV_STATUS_DEADBAND 1
 
-/* 输出上限设置页（第 5 子菜单条目）：摇杆上下 ±5% 步进，范围 10%~50%，
- * 边界夹取不回绕；50% = 8400（TIM8 ARR=16799 的硬件半桥上限）。
- * 只改模型内 output_cap_pct，由 Ctrl 任务每拍落到 drive_ctrl 运行时上限
- * （RAM 生效、断电回默认 50%，不写 Flash）。 */
+/* 输出上限设置页（第 5 子菜单条目）：摇杆上下 ±5%（占空比口径 = ±840）步进，
+ * 范围 10%~50%（↔ [1680, 8400]），边界夹取不回绕；50% = 8400 = 现状满输出
+ * （TIM8 ARR+1=16800 的 50% 占空比，与 drive_ctrl 默认一致）。
+ * 只改模型内 output_cap_pct，由 Ctrl 任务在 新值请求 拍落到 drive_ctrl
+ * 运行时上限（RAM 生效、断电回默认 50%，不写 Flash）。 */
 #define UI_CAP_MIN_PCT  10U
 #define UI_CAP_MAX_PCT  50U
 #define UI_CAP_STEP_PCT 5U
@@ -81,9 +82,9 @@ typedef struct
 {
   uint8_t selfcheck_start, home_start, record_ref, cancel_motion;
   /* 1=本拍产出新输出上限值（进入设置页或页内步进实际改变了百分比）：
-   * 值在 m->output_cap_pct，Ctrl 当拍落 drive_ctrl_set_max_pulse。
-   * 用单发新值而非每拍直读：未进过设置页时保持 drive_ctrl 默认 8400，
-   * 页面显示的 百分比/原始值 与生效上限从进页那一拍起就一致。 */
+   * 值在 m->output_cap_pct，Ctrl 当拍落 drive_ctrl_set_max_pulse（pct×168）。
+   * 单发新值口径：只在用户真正进页/步进时写运行时变量（50% 档与默认
+   * 8400 相同，进页为幂等写），语义与 req 单发一致。 */
   uint8_t output_cap_changed;
 } ui_model_req_t;
 

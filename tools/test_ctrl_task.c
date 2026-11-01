@@ -437,9 +437,10 @@ static void ui_script(ps2_state_t *p)
 }
 
 /* --- output cap scenario ('o') ------------------------------------------ */
-/* 子菜单第 5 条目"输出上限"页：进入时 50%（8400），摇杆下推到 40% 后
- * 运行时上限落到 drive_ctrl_max_pulse=3360；R1 回子菜单原条目；再导航到
- * 驾驶页武装推满：四轮 compare=3360（上限即时生效，无 8400 残留）。 */
+/* 子菜单第 5 条目"输出上限"页：进入时 50%（占空比口径 = 8400 = 现状满输出），
+ * 摇杆下推到 40% 后运行时上限落到 drive_ctrl_max_pulse=6720；R1 回子菜单
+ * 原条目；再导航到驾驶页武装推满：四轮 compare=6720（上限即时生效，
+ * 无 8400 残留）。 */
 static int cap_test;
 static int ostage;
 static uint32_t capn;   /* 场景内 ps2_poll 帧计数 */
@@ -494,13 +495,13 @@ static void cap_script(ps2_state_t *p)
     p->ly = 128U;
     if ((uint32_t)(tick - omark) >= 30U) { ostage = 9; }
     break;
-  case 9: /* L1：子菜单 → 输出上限页；进页当拍应用当前档 50%（=4200） */
+  case 9: /* L1：子菜单 → 输出上限页；进页当拍应用当前档 50%（=8400=默认，幂等） */
     p->buttons = 0xFBFFU;
     ui_snapshot_get(&snap);
     if (snap.page == UI_PAGE_OUTPUT_CAP)
     {
       assert(snap.output_cap_pct == 50U);
-      assert(drive_ctrl_max_pulse == 50 * 84); /* 进页即生效，显示与实际一致 */
+      assert(drive_ctrl_max_pulse == 50 * 168); /* 进页即生效，显示与实际一致 */
       ostage = 10; omark = tick;
     }
     break;
@@ -512,7 +513,7 @@ static void cap_script(ps2_state_t *p)
     ui_snapshot_get(&snap);
     if (snap.output_cap_pct == 40U)
     {
-      assert(drive_ctrl_max_pulse == 3360); /* 40% × 84 */
+      assert(drive_ctrl_max_pulse == 40 * 168); /* 40% × 168 = 6720 */
       ostage = 12; omark = tick;
     }
     if ((uint32_t)(tick - omark) >= 2000U) { puts("cap not adjusted"); assert(0); }
@@ -559,7 +560,7 @@ static void cap_script(ps2_state_t *p)
   case 20: /* 释放 L1，等回中武装 ≥100 ms */
     if ((uint32_t)(tick - omark) >= 150U) { ostage = 21; omark = tick; }
     break;
-  case 21: /* 满前进：四轮 compare = 3360（新上限当拍生效） */
+  case 21: /* 满前进：四轮 compare = 6720（40% 上限当拍生效） */
     p->ly = 0U;
     if ((uint32_t)(tick - omark) >= 30U)
     {
@@ -570,7 +571,7 @@ static void cap_script(ps2_state_t *p)
       assert(snap.output_cap_pct == 40U);
       for (i = 0; i < 4; i++)
       {
-        assert(htim8.compare[i] == 3360U);
+        assert(htim8.compare[i] == 6720U);
       }
       longjmp(done, 1);
     }

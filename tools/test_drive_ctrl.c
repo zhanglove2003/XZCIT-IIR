@@ -65,10 +65,23 @@ int main(void)
     assert(m[0] == -2800 && m[2] == -2800 && m[1] == -8400 && m[3] == -8400);
   }
 
-  /* ===== font-weight plan Task 2: 运行时驾驶 PWM 输出上限 ===== */
+  /* ===== font-weight plan Task 2: 运行时驾驶 PWM 输出上限 =====
+   * 百分比为占空比口径：pct×168（16800/100），50% = 8400 = 现状满输出。 */
 
-  /* 默认值 = 8400 不变：既有 8400 期望值全部不受影响 */
+  /* 默认值 = 8400（50% 占空比）不变：既有 8400 期望值全部不受影响 */
   assert(drive_ctrl_max_pulse == (int32_t)DRIVE_CTRL_MAX_PULSE);
+
+  /* 占空比口径换算：50% 档 → 8400，满杆输出与现状完全一致 */
+  drive_ctrl_set_max_pulse(50 * 168);
+  assert(drive_ctrl_max_pulse == 8400);
+  assert(drive_ctrl_map(0) == 8400);
+  {
+    int i;
+    int32_t m[4];
+
+    drive_ctrl_mix(0, 128, m);
+    for (i = 0; i < 4; i++) assert(m[i] == 8400);
+  }
 
   /* setter 夹取 [840, 8400]，不回绕、不溢出 */
   drive_ctrl_set_max_pulse(839);
@@ -78,7 +91,7 @@ int main(void)
   drive_ctrl_set_max_pulse(-1000);
   assert(drive_ctrl_max_pulse == 840);
 
-  /* 10% 上限下：满杆=840；死区/对称语义不变；转向分量恒 = 上限/2 */
+  /* 下夹取点 840（5% 占空比）下：满杆=840；死区/对称语义不变；转向分量恒 = 上限/2 */
   drive_ctrl_set_max_pulse(840);
   assert(drive_ctrl_map(0) == 840);
   assert(drive_ctrl_map(255) == -840);
@@ -100,7 +113,7 @@ int main(void)
     assert(m[0] == 840 && m[2] == 840 && m[1] == 280 && m[3] == 280);
   }
 
-  /* 50% 上限（可调范围顶点 10%~50%）下：满杆=4200 */
+  /* 25% 占空比上限（4200）下：满杆=4200 */
   drive_ctrl_set_max_pulse(4200);
   {
     int i;
@@ -125,7 +138,7 @@ int main(void)
     drive_ctrl_mix(0, 128, m);
     for (i = 0; i < 4; i++) assert(m[i] == 8400);
 
-    drive_ctrl_set_max_pulse(3360); /* 40% */
+    drive_ctrl_set_max_pulse(3360); /* 20% 占空比 */
     drive_ctrl_mix(0, 128, m);
     for (i = 0; i < 4; i++)
     {
