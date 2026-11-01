@@ -5,7 +5,7 @@
 用法：
   python3 tools/render_preview.py glyphs out.png
       88 个 16x16 中文字形（oled_font_cn 顺序）4 倍放大 + 字标注，拼成栅格图。
-  python3 tools/render_preview.py page brand|confirm|submenu out.png
+  python3 tools/render_preview.py page brand|confirm|submenu|cap out.png
       主机构建（preview_ui_main.c + oled_gfx + ui_render + oled_font + ui_model，
       链接方式同 tools/test_ui_render.c）渲染整页帧缓冲，4 倍放大输出 1bit PNG。
 """

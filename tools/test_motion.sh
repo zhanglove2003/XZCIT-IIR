@@ -11,6 +11,7 @@ gcc "${common[@]}" -Wno-unused-parameter -Itools/host_stubs tools/test_ctrl_task
 "$test_dir/ctrl" fault
 "$test_dir/ctrl" s
 "$test_dir/ctrl" u
+"$test_dir/ctrl" o
 "$test_dir/ctrl" c
 "$test_dir/ctrl" x
 "$test_dir/ctrl"

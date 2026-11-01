@@ -42,6 +42,7 @@ void ui_model_init(ui_model_t *m, uint32_t now_ms)
   m->axis_v.fast = 0U;
   m->run_seen_busy = 0U;
   m->window_armed = 0U;
+  m->output_cap_pct = UI_CAP_MAX_PCT; /* 上电默认 50% = 8400（RAM，不落盘） */
 }
 
 static int32_t ui_abs32(int32_t x)
@@ -202,6 +203,7 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
     req->home_start = 0U;
     req->record_ref = 0U;
     req->cancel_motion = 0U;
+    req->output_cap_changed = 0U;
   }
 
   /* 坏帧：冻结全部去抖/摇杆/长按推进，不清零（spec §11 坏帧当轮不沿用旧指令，
@@ -337,6 +339,9 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
     case UI_PAGE_MANUAL_CAL:
       go_page(m, m->back_page, now);
       break;
+    case UI_PAGE_OUTPUT_CAP:
+      go_page(m, m->back_page, now); /* 回子菜单原条目（sub_sel 保留） */
+      break;
     default:
       break;
     }
@@ -387,6 +392,16 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
         m->back_page = UI_PAGE_SUBMENU;
         m->run_seen_busy = 0U;
         go_page(m, UI_PAGE_HOME, now);
+        break;
+      case UI_SUB_OUTPUT_CAP: /* 输出上限：进设置页（改动即时生效，无确认动作） */
+        m->back_page = UI_PAGE_SUBMENU;
+        if (req != NULL)
+        {
+          /* 进页当拍把当前百分比请求为新值：页面显示的 百分比/原始值
+           * 与生效上限从第一拍起一致（默认档 50% = 4200 = 8400 的一半）。 */
+          req->output_cap_changed = 1U;
+        }
+        go_page(m, UI_PAGE_OUTPUT_CAP, now);
         break;
       default: /* 手动标定 */
         m->back_page = UI_PAGE_SUBMENU;
@@ -534,6 +549,34 @@ void ui_model_step(ui_model_t *m, const ui_model_in_t *in, ui_model_req_t *req)
     {
       m->result_view ^= 1U; /* 电机明细 / 电池 两屏切换 */
       m->sel_since_ms = now;
+    }
+    break;
+  case UI_PAGE_OUTPUT_CAP:
+    /* 摇杆上下 ±5% 步进（上=增/下=减），边界夹取不回绕；
+     * 沿用导航轴的 engage/release/连移节奏。实际改变百分比的当拍发
+     * output_cap_changed 新值请求（边界夹住不动则不发），Ctrl 落到
+     * drive_ctrl 运行时上限，下一拍 mix 按新上限重算。 */
+    if (evy != 0)
+    {
+      int32_t pct = (int32_t)m->output_cap_pct - (int32_t)evy * (int32_t)UI_CAP_STEP_PCT;
+
+      if (pct < (int32_t)UI_CAP_MIN_PCT)
+      {
+        pct = (int32_t)UI_CAP_MIN_PCT;
+      }
+      if (pct > (int32_t)UI_CAP_MAX_PCT)
+      {
+        pct = (int32_t)UI_CAP_MAX_PCT;
+      }
+      if ((uint8_t)pct != m->output_cap_pct)
+      {
+        m->output_cap_pct = (uint8_t)pct;
+        m->sel_since_ms = now;
+        if (req != NULL)
+        {
+          req->output_cap_changed = 1U;
+        }
+      }
     }
     break;
   default:

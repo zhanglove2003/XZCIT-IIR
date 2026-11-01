@@ -98,6 +98,10 @@ static void test_cn_glyphs_used(void)
   assert_cn_lookup("对齐四轮");
   assert_cn_lookup("静止后长按");
   assert_cn_lookup("已记录");
+  /* 输出上限页（2026-11-01 第 5 子菜单条目） */
+  assert_cn_lookup("输出上限");
+  assert_cn_lookup("上下调整");
+  assert_cn_lookup("返回");
 }
 
 /* 格式化三函数 */
@@ -578,6 +582,32 @@ static void test_manual_cal(void)
   assert(memcmp(oled_gfx_buffer(), no_ref, sizeof(no_ref)) != 0);
 }
 
+/* 输出上限页：16px 标题 + 大号 NN%（6×12）+ 原始比较值行 + 底部中文提示 */
+static void test_output_cap(void)
+{
+  ui_snapshot_t s;
+  uint8_t f50[128 * 8];
+
+  snap_init(&s, UI_PAGE_OUTPUT_CAP);
+  s.output_cap_pct = 50U;
+  ui_render_draw(&s, 0U);
+  assert(fb_ink_in(0, 0, 127, 15) > 0);    /* 标题 输出上限（16px 居中） */
+  assert(fb_ink_in(0, 18, 127, 29) > 0);   /* 50%（6×12） */
+  assert(fb_ink_in(0, 34, 127, 45) > 0);   /* 原始比较值 MAX 8400 */
+  assert(fb_ink_in(0, 48, 127, 63) > 0);   /* 上下调整  L1返回 */
+  memcpy(f50, oled_gfx_buffer(), sizeof(f50));
+
+  /* 百分比变化 → 数字与原始比较值都变（帧不同） */
+  s.output_cap_pct = 30U;
+  ui_render_draw(&s, 0U);
+  assert(memcmp(oled_gfx_buffer(), f50, sizeof(f50)) != 0);
+
+  /* 10% 与 50% 帧不同（两端边界值都渲染） */
+  s.output_cap_pct = 10U;
+  ui_render_draw(&s, 0U);
+  assert(fb_ink_in(0, 18, 127, 29) > 0);
+}
+
 /* 其余页面与未知页面：无越界、清屏后不残留 */
 static void test_other_pages(void)
 {
@@ -607,6 +637,7 @@ int main(void)
   test_check_run();
   test_home();
   test_manual_cal();
+  test_output_cap();
   test_other_pages();
   puts("ui_render OK");
   return 0;

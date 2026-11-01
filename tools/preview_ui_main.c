@@ -19,7 +19,7 @@ int main(int argc, char **argv)
 
   if (argc != 2)
   {
-    fprintf(stderr, "usage: preview brand|confirm|submenu\n");
+    fprintf(stderr, "usage: preview brand|confirm|submenu|cap\n");
     return 2;
   }
   name = argv[1];
@@ -40,6 +40,11 @@ int main(int argc, char **argv)
     s.page = UI_PAGE_SUBMENU;
     s.sub_sel = 0U;
     s.sub_scroll = 0U;
+  }
+  else if (strcmp(name, "cap") == 0)
+  {
+    s.page = UI_PAGE_OUTPUT_CAP;
+    s.output_cap_pct = 50U; /* 默认档；目检其它档位改此值重跑 */
   }
   else
   {

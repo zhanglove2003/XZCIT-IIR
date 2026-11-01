@@ -436,6 +436,150 @@ static void ui_script(ps2_state_t *p)
   }
 }
 
+/* --- output cap scenario ('o') ------------------------------------------ */
+/* 子菜单第 5 条目"输出上限"页：进入时 50%（8400），摇杆下推到 40% 后
+ * 运行时上限落到 drive_ctrl_max_pulse=3360；R1 回子菜单原条目；再导航到
+ * 驾驶页武装推满：四轮 compare=3360（上限即时生效，无 8400 残留）。 */
+static int cap_test;
+static int ostage;
+static uint32_t capn;   /* 场景内 ps2_poll 帧计数 */
+static uint32_t omark;  /* 阶段 tick 锚点 */
+
+static void cap_script(ps2_state_t *p)
+{
+  ui_snapshot_t snap;
+
+  capn++;
+  p->buttons = 0xFFFFU;
+  p->lx = 128U; p->rx = 128U; p->ry = 128U; p->ly = 128U;
+  switch (ostage)
+  {
+  case 0: /* 冷启动回中性预热（自检前置已由 ps2_poll 前导跑完一轮全过） */
+    if (capn >= 40U) { ostage = 1; omark = tick; }
+    break;
+  case 1: /* R1：品牌页 → 主菜单 */
+    p->buttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MENU) { ostage = 2; omark = tick; }
+    break;
+  case 2: /* 释放 R1 ≥3 稳定帧 */
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 3; }
+    break;
+  case 3: /* 摇杆右移：选中"检查与标定" */
+    p->lx = 208U;
+    ui_snapshot_get(&snap);
+    if (snap.menu_sel == 1U) { ostage = 4; omark = tick; }
+    break;
+  case 4: /* 摇杆回中 */
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 5; }
+    break;
+  case 5: /* L1：主菜单 → 子菜单 */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_SUBMENU) { ostage = 6; omark = tick; }
+    break;
+  case 6: /* 释放 L1 */
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 7; }
+    break;
+  case 7: /* 摇杆按住下移：连移走到第 5 项（输出上限） */
+    p->ly = 208U;
+    ui_snapshot_get(&snap);
+    if (snap.sub_sel == 4U)
+    {
+      assert(snap.sub_scroll == 2U); /* 5 条目滚动窗口 */
+      ostage = 8; omark = tick;
+    }
+    break;
+  case 8: /* 摇杆回中 */
+    p->ly = 128U;
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 9; }
+    break;
+  case 9: /* L1：子菜单 → 输出上限页；进页当拍应用当前档 50%（=4200） */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_OUTPUT_CAP)
+    {
+      assert(snap.output_cap_pct == 50U);
+      assert(drive_ctrl_max_pulse == 50 * 84); /* 进页即生效，显示与实际一致 */
+      ostage = 10; omark = tick;
+    }
+    break;
+  case 10: /* 释放 L1 */
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 11; omark = tick; }
+    break;
+  case 11: /* 摇杆按住下推：-5% 连移到 40%，快照与运行时上限同步 */
+    p->ly = 208U;
+    ui_snapshot_get(&snap);
+    if (snap.output_cap_pct == 40U)
+    {
+      assert(drive_ctrl_max_pulse == 3360); /* 40% × 84 */
+      ostage = 12; omark = tick;
+    }
+    if ((uint32_t)(tick - omark) >= 2000U) { puts("cap not adjusted"); assert(0); }
+    break;
+  case 12: /* 摇杆回中 */
+    p->ly = 128U;
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 13; omark = tick; }
+    break;
+  case 13: /* R1：输出上限页 → 子菜单原条目（第 5 项） */
+    p->buttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_SUBMENU)
+    {
+      assert(snap.sub_sel == 4U);
+      assert(snap.output_cap_pct == 40U);
+      ostage = 14; omark = tick;
+    }
+    if ((uint32_t)(tick - omark) >= 2000U) { puts("cap page not left"); assert(0); }
+    break;
+  case 14: /* 释放 R1 */
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 15; omark = tick; }
+    break;
+  case 15: /* R1：子菜单 → 主菜单 */
+    p->buttons = 0xF7FFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_MENU) { ostage = 16; omark = tick; }
+    break;
+  case 16: /* 释放 R1 */
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 17; }
+    break;
+  case 17: /* 摇杆左移：选回"驾驶" */
+    p->lx = 48U;
+    ui_snapshot_get(&snap);
+    if (snap.menu_sel == 0U) { ostage = 18; omark = tick; }
+    break;
+  case 18: /* 摇杆回中 */
+    if ((uint32_t)(tick - omark) >= 30U) { ostage = 19; omark = tick; }
+    break;
+  case 19: /* L1：主菜单 → 驾驶页 */
+    p->buttons = 0xFBFFU;
+    ui_snapshot_get(&snap);
+    if (snap.page == UI_PAGE_DRIVE) { ostage = 20; omark = tick; }
+    break;
+  case 20: /* 释放 L1，等回中武装 ≥100 ms */
+    if ((uint32_t)(tick - omark) >= 150U) { ostage = 21; omark = tick; }
+    break;
+  case 21: /* 满前进：四轮 compare = 3360（新上限当拍生效） */
+    p->ly = 0U;
+    if ((uint32_t)(tick - omark) >= 30U)
+    {
+      int i;
+      ui_snapshot_get(&snap);
+      assert(snap.page == UI_PAGE_DRIVE);
+      assert(snap.drive_permitted == 1U);
+      assert(snap.output_cap_pct == 40U);
+      for (i = 0; i < 4; i++)
+      {
+        assert(htim8.compare[i] == 3360U);
+      }
+      longjmp(done, 1);
+    }
+    break;
+  default:
+    break;
+  }
+}
+
 /* --- menu selfcheck scenario ('c') -------------------------------------- */
 /* 菜单发起自检：RUNNING 期间服务独占 command（驾驶推杆不出力），
  * 推满摇杆触发越区取消；重跑全过后 5 s 结果窗口打开并超时回品牌页。 */
@@ -1562,6 +1706,7 @@ uint8_t ps2_poll(ps2_state_t *p){
   * 该预滚对所有冷启动场景生效（含 reconnect 的首段），避免推杆本身
   * 打断居中计时导致再武装永远无法完成。 */
  if(ui_test){ ui_script(p); tick+=3U; return PS2_FRAME_OK; }
+ if(cap_test){ cap_script(p); tick+=3U; return PS2_FRAME_OK; }
  if(selfcheck_test){
    selfcheck_script(p);
    p->buttons=cbuttons;p->lx=clx;p->ly=cly;p->rx=128U;p->ry=128U;
@@ -1671,6 +1816,13 @@ int main(int argc, char **argv){
    pm_set_vdd_ok(1U);
    if(!setjmp(done))StartCtrlTask(0);
    puts("ctrl menu selfcheck / service-owned output / 5s window OK");return 0;
+ }
+ if(argc>1 && argv[1][0]=='o'){
+   cap_test=1;tick=0U;capn=0U;ostage=0;
+   pm_set_vdd_ok(1U);
+   pre_reset();
+   if(!setjmp(done))StartCtrlTask(0);
+   puts("ctrl output cap settings page / runtime limit to compare OK");return 0;
  }
  if(argc>1 && argv[1][0]=='p'){
    power_gate_test=1;tick=0U;pn=0U;pstage=0;

@@ -8,6 +8,23 @@
 
 volatile uint8_t drive_calibration_mode = 0U;
 
+/* 运行时驾驶 PWM 输出上限：默认 50% = 8400。设置页经 set_max_pulse 调整，
+ * 只在本任务（Ctrl）读写，无跨任务竞争。 */
+int32_t drive_ctrl_max_pulse = (int32_t)DRIVE_CTRL_MAX_PULSE;
+
+void drive_ctrl_set_max_pulse(int32_t v)
+{
+  if (v < DRIVE_CTRL_MIN_PULSE)
+  {
+    v = DRIVE_CTRL_MIN_PULSE;
+  }
+  if (v > (int32_t)DRIVE_CTRL_MAX_PULSE)
+  {
+    v = (int32_t)DRIVE_CTRL_MAX_PULSE;
+  }
+  drive_ctrl_max_pulse = v;
+}
+
 int32_t drive_ctrl_map_axis(uint8_t raw, int32_t limit)
 {
   int32_t delta = (int32_t)raw - DRIVE_CTRL_CENTER;
@@ -41,13 +58,15 @@ int32_t drive_ctrl_map_axis(uint8_t raw, int32_t limit)
 
 int32_t drive_ctrl_map(uint8_t ly)
 {
-  return drive_ctrl_map_axis(ly, (int32_t)DRIVE_CTRL_MAX_PULSE);
+  return drive_ctrl_map_axis(ly, drive_ctrl_max_pulse);
 }
 
 void drive_ctrl_mix(uint8_t ly, uint8_t rx, int32_t out[4])
 {
-  int32_t v = drive_ctrl_map_axis(ly, (int32_t)DRIVE_CTRL_MAX_PULSE);
-  int32_t t = drive_ctrl_map_axis(rx, (int32_t)DRIVE_CTRL_TURN_MAX_PULSE);
+  /* 每拍重读运行时上限：上限变更瞬间正在输出的驾驶命令下一拍即按
+   * 新上限重映射（mix 每拍整体重算，无残留）。转向分量恒 = 上限/2。 */
+  int32_t v = drive_ctrl_map_axis(ly, drive_ctrl_max_pulse);
+  int32_t t = drive_ctrl_map_axis(rx, drive_ctrl_max_pulse / 2);
   int32_t wheel[2]; /* [0]=A/C 右侧 = v+t，[1]=B/D 左侧 = v-t */
   int32_t peak = 0;
   int i;
@@ -65,11 +84,11 @@ void drive_ctrl_mix(uint8_t ly, uint8_t rx, int32_t out[4])
     }
   }
 
-  if (peak > (int32_t)DRIVE_CTRL_MAX_PULSE)
+  if (peak > drive_ctrl_max_pulse)
   {
     /* 等比缩放回限幅：峰值 12600*8400 < 2^31 无溢出 */
-    out[0] = out[2] = wheel[0] * (int32_t)DRIVE_CTRL_MAX_PULSE / peak;
-    out[1] = out[3] = wheel[1] * (int32_t)DRIVE_CTRL_MAX_PULSE / peak;
+    out[0] = out[2] = wheel[0] * drive_ctrl_max_pulse / peak;
+    out[1] = out[3] = wheel[1] * drive_ctrl_max_pulse / peak;
   }
   else
   {

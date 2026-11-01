@@ -19,6 +19,7 @@ CN_SOURCES = {
     'items': 'CNZJ16x16_1.h',
     'extra': 'CNADD16x16.h',
     'extra2': 'CNADD2_16x16.h',
+    'extra3': 'CNADD3_16x16.h',
 }
 
 # Task 2 全界面中文化增补的 60 个字形（tools/font_add_glyphs.py 从 Noto Sans CJK SC 渲染）：
@@ -28,11 +29,16 @@ TASK2_CHARS = ('菜单即将转动四轮秒后按取消右移或立'
                '过欠压采样错误到位失败无参考重新'
                '对齐静止长已记录运故障')
 
-# (汉字, 来源, 序号)；88 个不重复字形
+# 输出上限设置页（font-weight plan Task 2）增补的 8 个字形：
+# 页面标题 输出上限 / 提示行 上下调整·返回（回 已在 extra2）
+OUTPUT_CAP_CHARS = '输出上限下调整返'
+
+# (汉字, 来源, 序号)；96 个不重复字形
 # - 始 只在 wait 中登记，start 里的 始 与它逐字节相同
 # - extra 为 Task 9b 视觉打磨增补（tools/font_add_glyphs.py 从 Noto Sans CJK SC 渲染）：
 #   请先自检 / 电池未配置 / 卡片名 驾驶·检查标定 / 子菜单标题 检查与标定
 # - extra2 为 Task 2 全界面中文化增补（同样由 font_add_glyphs.py 渲染）
+# - extra3 为输出上限设置页增补（2026-11-01，同样由 font_add_glyphs.py --auto 渲染）
 CN_GLYPHS_SPEC = [
     ('等', 'wait', 0), ('待', 'wait', 1), ('初', 'wait', 2), ('始', 'wait', 3), ('化', 'wait', 4),
     ('正', 'loading', 0), ('在', 'loading', 1), ('加', 'loading', 2), ('载', 'loading', 3),
@@ -42,7 +48,8 @@ CN_GLYPHS_SPEC = [
     ('请', 'extra', 0), ('先', 'extra', 1), ('查', 'extra', 2), ('与', 'extra', 3),
     ('标', 'extra', 4), ('定', 'extra', 5), ('未', 'extra', 6), ('配', 'extra', 7),
     ('置', 'extra', 8), ('驾', 'extra', 9), ('驶', 'extra', 10),
-] + [(ch, 'extra2', i) for i, ch in enumerate(TASK2_CHARS)]
+] + [(ch, 'extra2', i) for i, ch in enumerate(TASK2_CHARS)] \
+  + [(ch, 'extra3', i) for i, ch in enumerate(OUTPUT_CAP_CHARS)]
 
 
 def _parse_glyphs(path, width):

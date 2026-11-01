@@ -831,6 +831,18 @@ void StartCtrlTask(void *argument)
                                                    HAL_GetTick());
         }
       }
+
+      /* 输出上限落地（单发新值请求，同其余 req 的当拍消费口径）：
+       * 模型在 进页/页内步进实际改变百分比 的当拍置 output_cap_changed，
+       * 这里落到 drive_ctrl 运行时上限（pct×84 = pct% × 8400/100，
+       * set_max_pulse 幂等夹取）。单发口径让"从未进过设置页"的运行保持
+       * drive_ctrl 默认 8400；进页当拍即应用当前档（50%=4200），页面显示
+       * 的百分比/原始值与生效上限从第一拍起一致。同一任务内读写，无竞争；
+       * 变更当拍之后的驾驶混合（第 4 步）即按新上限重映射。 */
+      if (ureq.output_cap_changed != 0U)
+      {
+        drive_ctrl_set_max_pulse((int32_t)s_ui_model.output_cap_pct * 84);
+      }
     }
 
     /* 2c) 驾驶许可仲裁：驾驶页 + 自检通过 + 无故障 + 回中武装。
@@ -1083,13 +1095,15 @@ void StartCtrlTask(void *argument)
     {
       ui_snapshot_t snap;
       uint32_t now = HAL_GetTick();
-      int32_t v = drive_ctrl_map_axis(in.ly, (int32_t)DRIVE_CTRL_MAX_PULSE);
-      int32_t t = drive_ctrl_map_axis(in.rx, (int32_t)DRIVE_CTRL_TURN_MAX_PULSE);
+      /* 行驶状态分类跟随运行时上限（转向分量恒 = 上限/2）。 */
+      int32_t v = drive_ctrl_map_axis(in.ly, drive_ctrl_max_pulse);
+      int32_t t = drive_ctrl_map_axis(in.rx, drive_ctrl_max_pulse / 2);
 
       snap.page = s_ui_model.page;
       snap.menu_sel = s_ui_model.menu_sel;
       snap.sub_sel = s_ui_model.sub_sel;
       snap.sub_scroll = s_ui_model.sub_scroll;
+      snap.output_cap_pct = s_ui_model.output_cap_pct;
       snap.confirm_focus = s_ui_model.confirm_focus;
       snap.confirm_remain_ms = s_ui_model.confirm_remain_ms;
       snap.confirm_blocked = s_ui_model.confirm_blocked;

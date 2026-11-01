@@ -74,6 +74,7 @@ static void req_all_zero(const rig_t *r)
   assert(r->req.home_start == 0U);
   assert(r->req.record_ref == 0U);
   assert(r->req.cancel_motion == 0U);
+  assert(r->req.output_cap_changed == 0U);
 }
 
 /* BRAND -> SUBMENU，并把 sub_sel 移到 sel（前提：page==BRAND，menu_sel==0）。 */
@@ -945,6 +946,164 @@ int main(void)
       }
     }
     assert(fired == 1);
+  }
+
+  /* 21. 子菜单第 5 条目（输出上限）：4→5 条目的滚动窗口/焦点记忆回归。 */
+  {
+    rig_t r;
+    rig_init(&r, 1000U);
+    assert(UI_SUB_COUNT == 5U);
+    goto_submenu(&r, 3U);
+    /* 3 → 4：进入第 5 条目，窗口滚到 scroll=2 */
+    r.in.ly = 200U;
+    r_step(&r);
+    r.in.ly = 128U;
+    r_step(&r);
+    assert(r.m.sub_sel == 4U);
+    assert(r.m.sub_scroll == 2U);
+    /* R1 离开再回子菜单：焦点保留在第 5 条目 */
+    r_hold(&r, R1B, 3);
+    r_free(&r, R1B, 3);
+    assert(r.m.page == UI_PAGE_MENU);
+    r_hold(&r, L1B, 3);
+    r_free(&r, L1B, 3);
+    assert(r.m.page == UI_PAGE_SUBMENU);
+    assert(r.m.sub_sel == 4U);
+    /* 上移一格：窗口不再跟随（sel 3 仍在 [2,4] 内，scroll 保持 2） */
+    r.in.ly = 56U;
+    r_step(&r);
+    r.in.ly = 128U;
+    r_step(&r);
+    assert(r.m.sub_sel == 3U);
+    assert(r.m.sub_scroll == 2U);
+    /* 回到 4 再下移：已到末项不回绕 */
+    r.in.ly = 200U;
+    r_step(&r);
+    r.in.ly = 128U;
+    r_step(&r);
+    assert(r.m.sub_sel == 4U);
+    r.in.ly = 200U;
+    r_step(&r);
+    r.in.ly = 128U;
+    r_step(&r);
+    assert(r.m.sub_sel == 4U);
+    /* 顶部回绕防护不回归：一路推回第 0 项 */
+    while (r.m.sub_sel > 0U)
+    {
+      r.in.ly = 56U;
+      r_step(&r);
+      r.in.ly = 128U;
+      r_step(&r);
+    }
+    assert(r.m.sub_sel == 0U);
+    assert(r.m.sub_scroll == 0U);
+  }
+
+  /* 22. 输出上限页：进入/返回、±5% 步进、边界夹取不回绕、迟滞与连移节奏。 */
+  {
+    rig_t r;
+    int i;
+    rig_init(&r, 1000U);
+    assert(r.m.output_cap_pct == 50U); /* 默认 50%（=8400） */
+    goto_submenu(&r, 4U);
+    r_hold(&r, L1B, 3); /* 第 3 帧进页：当拍发新值请求（50% 档） */
+    assert(r.m.page == UI_PAGE_OUTPUT_CAP);
+    assert(r.m.back_page == UI_PAGE_SUBMENU);
+    assert(r.m.sub_sel == 4U);
+    assert(r.req.output_cap_changed == 1U);
+    r_free(&r, L1B, 3);
+    assert(r.m.page == UI_PAGE_OUTPUT_CAP);
+    req_all_zero(&r);
+
+    /* 50% 已是上限：上推夹取，连推也不回绕、不溢出（夹住不发新值请求） */
+    r.in.ly = 56U; /* 上推（offset -72） */
+    r_step(&r);
+    assert(r.m.output_cap_pct == 50U);
+    assert(r.req.output_cap_changed == 0U);
+    for (i = 0; i < 30; i++)
+    {
+      r_step(&r);
+      assert(r.m.output_cap_pct == 50U);
+      assert(r.req.output_cap_changed == 0U);
+    }
+
+    /* 下推 engage：当拍 -5% → 45 并发新值请求；400 ms 内不动 */
+    r.in.ly = 200U;
+    r_step(&r);
+    assert(r.m.output_cap_pct == 45U);
+    assert(r.req.output_cap_changed == 1U);
+    for (i = 0; i < 39; i++)
+    {
+      r_step(&r);
+      assert(r.m.output_cap_pct == 45U);
+      assert(r.req.output_cap_changed == 0U);
+    }
+    r_step(&r); /* t0+400：连移 -5% → 40 */
+    assert(r.m.output_cap_pct == 40U);
+    assert(r.req.output_cap_changed == 1U);
+    for (i = 0; i < 17; i++)
+    {
+      r_step(&r);
+      assert(r.m.output_cap_pct == 40U);
+      assert(r.req.output_cap_changed == 0U);
+    }
+    r_step(&r); /* t0+580：连移 -5% → 35 */
+    assert(r.m.output_cap_pct == 35U);
+    assert(r.req.output_cap_changed == 1U);
+
+    /* 反向一次跨中：改向 +5% → 40（重新起拍） */
+    r.in.ly = 56U;
+    r_step(&r);
+    assert(r.m.output_cap_pct == 40U);
+    /* 同向未回 24 以内：不复位也不再动 */
+    r.in.ly = 100U; /* offset -28 */
+    r_step(&r);
+    assert(r.m.output_cap_pct == 40U);
+    /* 回中复位后再次下推 */
+    r.in.ly = 128U;
+    r_step(&r);
+    r.in.ly = 200U;
+    r_step(&r);
+    assert(r.m.output_cap_pct == 35U);
+    r.in.ly = 128U;
+    r_step(&r);
+
+    /* 连续下推到下边界 10%：夹取不回绕 */
+    for (i = 0; i < 6; i++)
+    {
+      r.in.ly = 200U;
+      r_step(&r);
+      r.in.ly = 128U;
+      r_step(&r);
+    }
+    assert(r.m.output_cap_pct == 10U);
+    r.in.ly = 200U;
+    r_step(&r);
+    r.in.ly = 128U;
+    r_step(&r);
+    assert(r.m.output_cap_pct == 10U);
+
+    /* 坏帧：冻结不动 */
+    r.in.frame_valid = 0U;
+    r.in.ly = 56U;
+    for (i = 0; i < 5; i++)
+    {
+      r_step(&r);
+      assert(r.m.output_cap_pct == 10U);
+    }
+    r.in.frame_valid = 1U;
+    r.in.ly = 128U;
+    r_step(&r);
+
+    /* R1 回子菜单原条目；再进页面：调整值保留在模型里 */
+    r_hold(&r, R1B, 3);
+    r_free(&r, R1B, 3);
+    assert(r.m.page == UI_PAGE_SUBMENU);
+    assert(r.m.sub_sel == 4U);
+    r_hold(&r, L1B, 3);
+    r_free(&r, L1B, 3);
+    assert(r.m.page == UI_PAGE_OUTPUT_CAP);
+    assert(r.m.output_cap_pct == 10U);
   }
 
   puts("ui_model pages / debounce / nav / window / classify OK");

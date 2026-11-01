@@ -20,11 +20,13 @@ typedef enum
   UI_PAGE_CHECK_RUN,
   UI_PAGE_CHECK_RESULT,
   UI_PAGE_HOME,
-  UI_PAGE_MANUAL_CAL
+  UI_PAGE_MANUAL_CAL,
+  UI_PAGE_OUTPUT_CAP
 } ui_page_t;
 
 #define UI_MENU_COUNT 2U /* 0=驾驶 1=检查与标定 */
-#define UI_SUB_COUNT  4U /* 0=自检结果 1=重新自检 2=回到初始位 3=手动标定 */
+#define UI_SUB_COUNT  5U /* 0=自检结果 1=重新自检 2=回到初始位 3=手动标定 4=输出上限 */
+#define UI_SUB_OUTPUT_CAP 4U /* 第 5 条目：输出上限设置页 */
 
 #define UI_STICK_CENTER 128
 #define UI_STICK_ENGAGE 48  /* 偏移达到 48 才移动 */
@@ -51,6 +53,14 @@ typedef enum
 /* 行驶状态分类死区：|v|/|t| <= 该值视为 0（输入为映射后的脉宽）。 */
 #define UI_DRV_STATUS_DEADBAND 1
 
+/* 输出上限设置页（第 5 子菜单条目）：摇杆上下 ±5% 步进，范围 10%~50%，
+ * 边界夹取不回绕；50% = 8400（TIM8 ARR=16799 的硬件半桥上限）。
+ * 只改模型内 output_cap_pct，由 Ctrl 任务每拍落到 drive_ctrl 运行时上限
+ * （RAM 生效、断电回默认 50%，不写 Flash）。 */
+#define UI_CAP_MIN_PCT  10U
+#define UI_CAP_MAX_PCT  50U
+#define UI_CAP_STEP_PCT 5U
+
 /* 低有效原始键位；摇杆 0..255；user = USER 引脚电平(按下为 1) */
 typedef struct
 {
@@ -70,6 +80,11 @@ typedef struct
 typedef struct
 {
   uint8_t selfcheck_start, home_start, record_ref, cancel_motion;
+  /* 1=本拍产出新输出上限值（进入设置页或页内步进实际改变了百分比）：
+   * 值在 m->output_cap_pct，Ctrl 当拍落 drive_ctrl_set_max_pulse。
+   * 用单发新值而非每拍直读：未进过设置页时保持 drive_ctrl 默认 8400，
+   * 页面显示的 百分比/原始值 与生效上限从进页那一拍起就一致。 */
+  uint8_t output_cap_changed;
 } ui_model_req_t;
 
 /* 菜单摇杆轴状态：迟滞 engage/release + 400/180 ms 连移。 */
@@ -99,6 +114,8 @@ typedef struct
   ui_stick_axis_t axis_v;    /* 纵向：子菜单列表 / 确认页焦点（ly） */
   uint8_t run_seen_busy;     /* 动作页已见过 action_busy=1（防请求当拍误判完成） */
   uint8_t window_armed;      /* 自检运行进入结果页时 5 s 窗口是否开着 */
+  uint8_t output_cap_pct;    /* 驾驶 PWM 上限百分比 10..50（默认 50；Ctrl 每拍
+                              * 直读并落到 drive_ctrl_set_max_pulse，见 freertos） */
 } ui_model_t;
 
 void ui_model_init(ui_model_t *m, uint32_t now_ms);

@@ -8,6 +8,7 @@
 
 #include "oled_font.h"
 #include "oled_gfx.h"
+#include "drive_ctrl.h" /* DRIVE_CTRL_MAX_PULSE：原始比较值 = pct × MAX/100 */
 
 #define CARD_W        92
 #define CARD_H        32
@@ -443,7 +444,7 @@ static void draw_menu(const ui_snapshot_t *s, uint32_t now_ms)
 static void draw_submenu(const ui_snapshot_t *s)
 {
   static const char *const items[UI_SUB_COUNT] = {
-    "自检结果", "重新自检", "回到初始位", "手动标定"
+    "自检结果", "重新自检", "回到初始位", "手动标定", "输出上限"
   };
   uint8_t r;
   int16_t y;
@@ -708,6 +709,23 @@ static void draw_manual_cal(const ui_snapshot_t *s)
   }
 }
 
+/* 输出上限（第 5 子菜单条目）：16px 标题 + 大号 NN%（6×12）+
+ * 原始比较值行（pct×84 = 上限比较值）+ 底部中文提示（16px）。
+ * 百分比/比较值由快照直读（RAM 生效，无"保存"动作）。 */
+static void draw_output_cap(const ui_snapshot_t *s)
+{
+  char buf[12];
+
+  draw_centered_mixed16(0, "输出上限");
+  (void)snprintf(buf, sizeof(buf), "%u%%", (unsigned)s->output_cap_pct);
+  draw_centered_6x12(18, buf);
+  (void)snprintf(buf, sizeof(buf), "MAX %lu",
+                 (unsigned long)((uint32_t)s->output_cap_pct *
+                                 (DRIVE_CTRL_MAX_PULSE / 100U)));
+  draw_centered_6x12(34, buf);
+  draw_centered_mixed16(48, "上下调整  L1返回");
+}
+
 void ui_render_draw(const ui_snapshot_t *snap, uint32_t now_ms)
 {
   if (snap == NULL)
@@ -743,6 +761,9 @@ void ui_render_draw(const ui_snapshot_t *snap, uint32_t now_ms)
       break;
     case UI_PAGE_MANUAL_CAL:
       draw_manual_cal(snap);
+      break;
+    case UI_PAGE_OUTPUT_CAP:
+      draw_output_cap(snap);
       break;
     default:
       /* 未知页面：保持清屏，不越界写缓冲 */
