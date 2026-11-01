@@ -97,10 +97,28 @@ def _original_mu():
 
 
 def test_task2_ink_matches_original_set():
-    """60 个新增字形墨水密度：逐字落在 [0.85μ, 1.15μ]，且整体极差 ≤ 0.20μ。"""
+    """60 个 extra2 字形墨水密度：逐字落在 [0.85μ, 1.15μ]，且整体极差 ≤ 0.20μ。"""
     mu = _original_mu()
     ratios = [_ink_ratio(ch) for ch in TASK2_CHARS]
     bad = [(ch, r) for ch, r in zip(TASK2_CHARS, ratios)
+           if not 0.85 * mu <= r <= 1.15 * mu]
+    assert not bad, 'ink 超出 [0.85μ,1.15μ] (μ=%.4f): %s' % (
+        mu, ', '.join('%s=%.3f' % (c, r) for c, r in bad))
+    spread = max(ratios) - min(ratios)
+    assert spread <= 0.20 * mu, '极差 %.4f > 0.20μ=%.4f' % (spread, 0.20 * mu)
+
+
+# Task 9b 视觉打磨增补的 11 个 extra 字形（与 TASK2_CHARS 合计 77 个新增字形）
+EXTRA_CHARS = '请先查与标定未配置驾驶'
+
+
+def test_extra_ink_matches_original_set():
+    """11 个 extra 字形墨水密度：同带 [0.85μ, 1.15μ]；与 extra2 合计 71 个新增字形极差 ≤ 0.20μ。"""
+    mu = _original_mu()
+    all_added = EXTRA_CHARS + TASK2_CHARS
+    assert len(all_added) == 71
+    ratios = [_ink_ratio(ch) for ch in all_added]
+    bad = [(ch, r) for ch, r in zip(all_added, ratios)
            if not 0.85 * mu <= r <= 1.15 * mu]
     assert not bad, 'ink 超出 [0.85μ,1.15μ] (μ=%.4f): %s' % (
         mu, ', '.join('%s=%.3f' % (c, r) for c, r in bad))
@@ -117,6 +135,17 @@ def test_regen_cnadd2_idempotent():
                         'font_src', 'CNADD2_16x16.h')
     with open(path, encoding='utf-8') as f:
         assert f.read() == content, 'CNADD2_16x16.h 与生成器输出不一致（请重跑 font_add_glyphs.py）'
+
+
+def test_regen_cnadd_idempotent():
+    """font_add_glyphs auto 模式重新生成 CNADD16x16.h（Task 9b 11 字形）幂等。"""
+    import font_add_glyphs as fag
+    content = fag.build_content_named(EXTRA_CHARS, fag.auto_params(EXTRA_CHARS),
+                                      'CNADD16x16')
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        'font_src', 'CNADD16x16.h')
+    with open(path, encoding='utf-8') as f:
+        assert f.read() == content, 'CNADD16x16.h 与生成器输出不一致（请重跑 font_add_glyphs.py）'
 
 
 def test_regen_idempotent():
