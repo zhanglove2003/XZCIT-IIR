@@ -25,7 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "motor_drive.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -125,7 +125,13 @@ void MX_FREERTOS_Init(void) {
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
-  /* add threads, ... */
+  /* ROS 串口通信与电机控制任务 */
+  static const osThreadAttr_t rosLinkTask_attributes = {
+    .name = "rosLink",
+    .stack_size = 1024,
+    .priority = (osPriority_t) osPriorityNormal,
+  };
+  osThreadNew(RosLink_Task, NULL, &rosLinkTask_attributes);
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */

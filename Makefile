@@ -43,6 +43,7 @@ Core/Src/adc.c \
 Core/Src/i2c.c \
 Core/Src/tim.c \
 Core/Src/usart.c \
+Core/Src/motor_drive.c \
 Core/Src/stm32f4xx_it.c \
 Core/Src/stm32f4xx_hal_msp.c \
 Core/Src/stm32f4xx_hal_timebase_tim.c \

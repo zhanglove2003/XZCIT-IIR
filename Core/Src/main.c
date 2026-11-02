@@ -28,7 +28,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "motor_drive.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -104,7 +104,8 @@ int main(void)
   MX_TIM4_Init();
   MX_TIM5_Init();
   /* USER CODE BEGIN 2 */
-
+  MotorDrive_Init();  /* 启动 PWM 与编码器, 电机默认睡眠 */
+  RosLink_Init();     /* 启动 USART1 接收 */
   /* USER CODE END 2 */
 
   /* Init scheduler */
