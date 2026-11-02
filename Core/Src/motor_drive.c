@@ -36,6 +36,11 @@ static const wheel_hw_t wheel_hw[MOTOR_WHEEL_COUNT] = {
 /* 上一次读取时的计数值, 用于计算增量 */
 static uint16_t enc_last[MOTOR_WHEEL_COUNT];
 
+/* 已写入的 DIR 电平, 用于只在换向时执行"停输出 -> 翻 DIR -> 给占空比"的序列 */
+static GPIO_PinState wheel_dir[MOTOR_WHEEL_COUNT] = {
+  MOTOR_FORWARD_LEVEL, MOTOR_FORWARD_LEVEL, MOTOR_FORWARD_LEVEL, MOTOR_FORWARD_LEVEL
+};
+
 void MotorDrive_Init(void)
 {
   uint8_t i;
@@ -44,6 +49,10 @@ void MotorDrive_Init(void)
   {
     HAL_TIM_PWM_Start(&htim8, wheel_hw[i].pwm_channel);
     HAL_TIM_Encoder_Start(wheel_hw[i].enc_htim, TIM_CHANNEL_ALL);
+    /* 关闭 CCR 预装载: 比较值写入立即生效, 换向时才能真正先停输出 */
+    __HAL_TIM_DISABLE_OCxPRELOAD(&htim8, wheel_hw[i].pwm_channel);
+    HAL_GPIO_WritePin(wheel_hw[i].dir_port, wheel_hw[i].dir_pin, MOTOR_FORWARD_LEVEL);
+    wheel_dir[i] = MOTOR_FORWARD_LEVEL;
     enc_last[i] = (uint16_t)__HAL_TIM_GET_COUNTER(wheel_hw[i].enc_htim);
     MotorDrive_SetDuty(i, 0);
   }
@@ -98,7 +107,15 @@ void MotorDrive_SetDuty(uint8_t wheel, int16_t duty)
     dir = (MOTOR_FORWARD_LEVEL == GPIO_PIN_SET) ? GPIO_PIN_RESET : GPIO_PIN_SET;
   }
 
-  HAL_GPIO_WritePin(wheel_hw[wheel].dir_port, wheel_hw[wheel].dir_pin, dir);
+  if (dir != wheel_dir[wheel])
+  {
+    /* 换向: 预装载已关闭, 写 0 立即生效, 输出拉低后才翻 DIR,
+     * 避免旧的比较值以新方向输出一个脉冲 */
+    __HAL_TIM_SET_COMPARE(&htim8, wheel_hw[wheel].pwm_channel, 0U);
+    HAL_GPIO_WritePin(wheel_hw[wheel].dir_port, wheel_hw[wheel].dir_pin, dir);
+    wheel_dir[wheel] = dir;
+  }
+
   __HAL_TIM_SET_COMPARE(&htim8, wheel_hw[wheel].pwm_channel, pulse);
 }
 
@@ -132,6 +149,9 @@ int16_t MotorDrive_ReadEncoderDelta(uint8_t wheel)
 #define RL_MAX_PAYLOAD    16U
 #define RL_PERIOD_MS      20U   /* 控制与反馈周期, 50 Hz */
 #define RL_CMD_TIMEOUT_MS 500U  /* 超过该时间没有有效指令则停车并断电 */
+/* 超时只在每个周期检查一次, 阈值提前一个周期, 保证最后一帧有效指令之后
+ * 不超过 RL_CMD_TIMEOUT_MS 就拉低 SLP */
+#define RL_CMD_STALE_MS   (RL_CMD_TIMEOUT_MS - RL_PERIOD_MS)
 
 typedef enum
 {
@@ -331,20 +351,25 @@ void RosLink_Task(void *argument)
   uint8_t valid_copy;
   uint32_t now;
   uint32_t last_ms;
+  uint32_t next_wake;
   uint16_t dt_ms;
 
   (void)argument;
   last_ms = HAL_GetTick();
+  next_wake = osKernelGetTickCount();
 
   for (;;)
   {
-    osDelay(RL_PERIOD_MS);
+    /* 按绝对时刻唤醒, 固定 50 Hz; 反馈发送耗时不会再拉长周期 */
+    next_wake += RL_PERIOD_MS;
+    if (osDelayUntil(next_wake) != osOK)
+    {
+      /* 被拖慢超过一个周期时重新对齐, 避免连续补跑 */
+      next_wake = osKernelGetTickCount();
+    }
 
-    now = HAL_GetTick();
-    dt_ms = (uint16_t)(now - last_ms);
-    last_ms = now;
-
-    /* 临界区内复制指令, 防止读到串口中断写到一半的数据 */
+    /* 先复制时间戳再取 now: 中断只会把 cmd_tick 往后推,
+     * now - tick_copy 因此不会无符号回绕成"很久没收到指令" */
     taskENTER_CRITICAL();
     for (i = 0U; i < MOTOR_WHEEL_COUNT; i++)
     {
@@ -354,7 +379,11 @@ void RosLink_Task(void *argument)
     valid_copy = cmd_valid;
     taskEXIT_CRITICAL();
 
-    if ((valid_copy != 0U) && ((now - tick_copy) < RL_CMD_TIMEOUT_MS))
+    now = HAL_GetTick();
+    dt_ms = (uint16_t)(now - last_ms);
+    last_ms = now;
+
+    if ((valid_copy != 0U) && ((now - tick_copy) < RL_CMD_STALE_MS))
     {
       MotorDrive_SetEnable(1U);
       for (i = 0U; i < MOTOR_WHEEL_COUNT; i++)
