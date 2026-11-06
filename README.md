@@ -91,9 +91,9 @@ make -j8
 | `differential/develop` | 差分日常开发 | 否 |
 | `feat/mecanum` | 麦轮正式分支 | 是 |
 | `feat/differential` | 差分正式分支 | 是 |
-| `main` | 项目门面与发布 | 是 |
+| `main` | 项目门面与发布 | 是（只做文档检查） |
 
-`main` 只放文档、硬件定义与发布产物，不放日常业务代码。
+`main` 只放文档、硬件定义与发布产物，不放日常业务代码。`main` 的 CI 不编译、不跑测试。
 
 详细规则见 [docs/workflow.md](docs/workflow.md)。
 
