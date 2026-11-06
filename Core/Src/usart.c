@@ -140,7 +140,11 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /* USER CODE BEGIN UART4_MspInit 1 */
-
+  /* 日志输出用（第二路）：同样走中断发送，优先级最低。 */
+  {
+    HAL_NVIC_SetPriority(UART4_IRQn, 15U, 0U);
+    HAL_NVIC_EnableIRQ(UART4_IRQn);
+  }
   /* USER CODE END UART4_MspInit 1 */
   }
   else if(uartHandle->Instance==USART1)
@@ -164,7 +168,11 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN USART1_MspInit 1 */
-
+  /* 日志输出用：走中断发送，优先级最低，不抢占控制/手柄时序。 */
+  {
+    HAL_NVIC_SetPriority(USART1_IRQn, 15U, 0U);
+    HAL_NVIC_EnableIRQ(USART1_IRQn);
+  }
   /* USER CODE END USART1_MspInit 1 */
   }
   else if(uartHandle->Instance==USART3)
@@ -188,7 +196,12 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* USER CODE BEGIN USART3_MspInit 1 */
-
+  /* 日志输出用：HAL_UART_Transmit_IT 依赖发送完成中断。
+   * 优先级设最宽松（15），绝不能抢占控制循环里的电机/手柄时序。 */
+  {
+    HAL_NVIC_SetPriority(USART3_IRQn, 15U, 0U);
+    HAL_NVIC_EnableIRQ(USART3_IRQn);
+  }
   /* USER CODE END USART3_MspInit 1 */
   }
 }

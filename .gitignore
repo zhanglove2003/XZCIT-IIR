@@ -12,3 +12,11 @@ build/
 # editor / OS
 .vscode/
 .DS_Store
+
+# python
+__pycache__/
+.superpowers/
+.scratch/
+
+# pytest
+.pytest_cache/

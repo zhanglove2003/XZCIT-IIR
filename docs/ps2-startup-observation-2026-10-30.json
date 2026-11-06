@@ -1,0 +1,53 @@
+{
+  "user_feedback": "启动响应好多了",
+  "sample_count": 5435,
+  "capture_duration_s": 179.9977,
+  "first_powered_segments": [
+    {
+      "start_s": 48.5889,
+      "duration_s": 2.386,
+      "direction_pin": 0,
+      "net_encoder_counts": 465014
+    },
+    {
+      "start_s": 55.7115,
+      "duration_s": 1.755,
+      "direction_pin": 0,
+      "net_encoder_counts": 343943
+    },
+    {
+      "start_s": 59.2775,
+      "duration_s": 1.098,
+      "direction_pin": 0,
+      "net_encoder_counts": 215672
+    },
+    {
+      "start_s": 62.7666,
+      "duration_s": 2.169,
+      "direction_pin": 1,
+      "net_encoder_counts": -422628
+    },
+    {
+      "start_s": 67.2427,
+      "duration_s": 1.418,
+      "direction_pin": 1,
+      "net_encoder_counts": -275931
+    }
+  ],
+  "diagnostics": {
+    "polls": 47307,
+    "good": 47307,
+    "bad": 0,
+    "configs": 1,
+    "poll_us": 3266,
+    "max_poll_us": 3266,
+    "max_gap_ms": 14,
+    "mode": 115,
+    "marker": 90
+  },
+  "end_pwm": 0,
+  "notes": [
+    "B PC0 low produced positive encoder movement; PC0 high produced negative movement in sustained tests.",
+    "SWD reads are sequential and each row takes about 20-25 ms; these samples cannot establish exact end-to-end latency."
+  ]
+}

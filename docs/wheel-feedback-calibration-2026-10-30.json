@@ -1,0 +1,35 @@
+{
+  "RF": {
+    "start": -16017,
+    "one_turn_end": -231377,
+    "cpr": 215360,
+    "forward_sign": -1,
+    "half_verified": true,
+    "half_end": -342105,
+    "half_delta": -110728,
+    "half_ratio": 0.5141530460624071,
+    "verification_note": "manual half turn reads 0.51415 revolution; precision limited by marker alignment"
+  },
+  "LF": {
+    "start": -25366,
+    "one_turn_end": 180713,
+    "cpr": 206079,
+    "forward_sign": 1
+  },
+  "RR": {
+    "start": 0,
+    "one_turn_end": -202088,
+    "cpr": 202088,
+    "forward_sign": -1,
+    "timer": "TIM5",
+    "old_slot": "LR"
+  },
+  "LR": {
+    "start": -16689,
+    "timer": "TIM4",
+    "old_slot": "RR",
+    "one_turn_end": 186689,
+    "cpr": 203378,
+    "forward_sign": 1
+  }
+}
