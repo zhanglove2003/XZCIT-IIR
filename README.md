@@ -59,6 +59,7 @@
 XZCIT-IIR/
 ├── README.md                    本文件：项目介绍与立项
 ├── LICENSE                      MIT 许可
+├── THIRD_PARTY_NOTICES.md       第三方组件许可
 ├── .github/
 │   ├── workflows/ci.yml         CI 流水线
 │   └── pull_request_template.md PR 模板
