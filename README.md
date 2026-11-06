@@ -87,8 +87,8 @@ make -j8
 
 | 分支 | 角色 | 触发 CI |
 |---|---|---|
-| `develop/mecanum` | 麦轮日常开发 | 否 |
-| `develop/differential` | 差分日常开发 | 否 |
+| `mecanum/develop` | 麦轮日常开发 | 否 |
+| `differential/develop` | 差分日常开发 | 否 |
 | `feat/mecanum` | 麦轮正式分支 | 是 |
 | `feat/differential` | 差分正式分支 | 是 |
 | `main` | 项目门面与发布 | 是 |
