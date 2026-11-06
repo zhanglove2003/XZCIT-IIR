@@ -160,28 +160,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 检查测试是否存在
-        id: probe
-        run: |
-          if [ -f "tools/test_motion.sh" ] || [ -f "tools/test_font_convert.py" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::本分支尚无主机测试，跳过"
-          fi
-
       - name: 安装依赖
-        if: steps.probe.outputs.present == 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends gcc libc6-dev python3
 
       - name: 运行 ${{ matrix.suite }}
-        if: steps.probe.outputs.present == 'true'
+        env:
+          # 正式分支与 main 必须真正执行测试。测试脚本缺失即失败，
+          # 不允许用「跳过」冒充通过。
+          REQUIRE_TESTS: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/feat/') }}
         run: |
           set -euo pipefail
-          if [ ! -f "$(echo '${{ matrix.cmd }}' | awk '{print $NF}')" ]; then
-            echo "::notice::测试 ${{ matrix.suite }} 不存在，跳过"
+          script=$(echo '${{ matrix.cmd }}' | awk '{print $NF}')
+          if [ ! -f "$script" ]; then
+            if [ "$REQUIRE_TESTS" = "true" ]; then
+              echo "::error::正式分支缺少测试脚本 $script"
+              exit 1
+            fi
+            echo "::notice::开发分支无 $script，跳过"
             exit 0
           fi
           ${{ matrix.cmd }}
