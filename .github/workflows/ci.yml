@@ -181,7 +181,15 @@ jobs:
             echo "::notice::开发分支无 $script，跳过"
             exit 0
           fi
-          ${{ matrix.cmd }}
+          set +e
+          ${{ matrix.cmd }} 2>&1 | tee "$RUNNER_TEMP/test.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::${{ matrix.suite }} 退出码 $rc"
+            tail -40 "$RUNNER_TEMP/test.log"
+            exit "$rc"
+          fi
 
   # ── 静态分析：告警零容忍 ──────────────────────────────────
   static-analysis:
