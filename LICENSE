@@ -1,24 +1,31 @@
-Copyright (c) 2026 zhanglove2003. All rights reserved.
+MIT License
 
-本仓库及其全部内容（含源代码、硬件设计文档、引脚定义、界面资源、
-测试脚本与技术文档）的著作权归 zhanglove2003 所有。
+Copyright (c) 2026 zhanglove2003
 
-未经著作权人事先书面许可，任何人不得：
-  1. 复制、分发本仓库内容的全部或部分；
-  2. 修改、改编、翻译本仓库内容；
-  3. 将本仓库内容用于商业用途或产品；
-  4. 基于本仓库内容创作衍生作品；
-  5. 移除或修改本文件中的版权声明。
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-本仓库中引用的第三方组件保留其原有许可：
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+第三方组件说明
+
+本仓库引用的下列组件各自受其原有许可约束，不受本 MIT 协议覆盖：
+
   - STM32F4 HAL 与 CMSIS：ST 公司 BSD-3-Clause 许可
   - FreeRTOS：MIT 许可
   - STM32 USB Host Library：ST 公司 SLA0044 许可
-这些组件受各自许可约束，本文件不改变其条款。
-
-本软件按「现状」提供，不附带任何明示或默示担保，
-包括但不限于适销性、特定用途适用性与不侵权的担保。
-在任何情况下，著作权人均不对因使用本软件产生的
-任何索赔、损害或其他责任负责。
-
-如需商用授权，请联系著作权人。

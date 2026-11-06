@@ -58,7 +58,7 @@
 ```
 XZCIT-IIR/
 ├── README.md                    本文件：项目介绍与立项
-├── LICENSE                      版权声明（保留所有权利）
+├── LICENSE                      MIT 许可
 ├── .github/
 │   ├── workflows/ci.yml         CI 流水线
 │   └── pull_request_template.md PR 模板
@@ -113,6 +113,5 @@ make -j8
 
 ## 九、待办
 
-- 选择并添加 LICENSE。
 - 补齐差速底盘的操作手册。
 - 电池分压参数现场核对后启用欠压停机。
