@@ -58,7 +58,10 @@
 ```
 XZCIT-IIR/
 ├── README.md                    本文件：项目介绍与立项
-├── .github/workflows/ci.yml     CI 流水线
+├── LICENSE                      版权声明（保留所有权利）
+├── .github/
+│   ├── workflows/ci.yml         CI 流水线
+│   └── pull_request_template.md PR 模板
 ├── docs/
 │   ├── architecture.md          固件分层与任务模型
 │   ├── workflow.md              分支模型与 CI 触发规则
