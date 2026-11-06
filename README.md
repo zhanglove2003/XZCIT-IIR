@@ -58,28 +58,28 @@
 ```
 XZCIT-IIR/
 ├── README.md                    本文件：项目介绍与立项
+├── .github/workflows/ci.yml     CI 流水线
 ├── docs/
 │   ├── architecture.md          固件分层与任务模型
 │   ├── workflow.md              分支模型与 CI 触发规则
 │   └── roadmap.md               里程碑与待办
-├── knowledge/
-│   └── pinmap.md                引脚配置表（唯一硬件对照）
-├── Core/                        麦轮固件源码（设备层 + 业务层）
-├── Drivers/                     CMSIS + STM32F4 HAL
-├── Middlewares/                 FreeRTOS、USB Host 库
-├── USB_HOST/                    USB Host 应用与目标配置
-├── hal_f407_mecanum_4motor_src.ioc   CubeMX 工程（引脚唯一来源）
-└── Makefile                     arm-none-eabi-gcc 构建
+└── knowledge/
+    └── pinmap.md                引脚配置表（唯一硬件对照）
 ```
+
+**main 只放文档与硬件定义，不含源码、CubeMX 工程与构建文件。** 固件源码在各车型正式分支上。
 
 ## 六、构建
 
-需要 `arm-none-eabi-gcc`（本项目验证版本 14.3.1）与 `make`。
+main 不含构建文件。要编译固件，切到对应车型的正式分支：
 
 ```bash
+git switch feat/mecanum
 make -j8
 # 产物：build/hal_f407_mecanum_4motor_src.{elf,hex,bin}
 ```
+
+需要 `arm-none-eabi-gcc`（本项目验证版本 14.3.1）与 `make`。
 
 ## 七、分支与集成
 

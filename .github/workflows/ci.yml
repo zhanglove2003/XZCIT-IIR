@@ -23,7 +23,7 @@ permissions:
 concurrency:
   # 同一分支只保留最新一次运行。
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.base_ref != 'main' && github.ref_name != 'main' }}
 
 env:
   GCC_VERSION: '13.2.rel1'
@@ -51,15 +51,17 @@ jobs:
               - 'tools/**'
               - 'Makefile'
               - '*.ld'
-              - '*.ioc'
               - '.github/workflows/**'
       - name: 判断本分支是否需要编译与测试
         id: scope
+        env:
+          # push 事件看 ref_name，PR 事件看 base_ref（目标分支）。
+          TARGET: ${{ github.base_ref || github.ref_name }}
         run: |
           # main 只放项目门面文档，不编译也不跑测试。
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "$TARGET" = "main" ]; then
             echo "build=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::main 分支只做文档检查"
+            echo "::notice::目标分支为 main，只做文档检查"
           else
             echo "build=true" >> "$GITHUB_OUTPUT"
           fi
@@ -75,7 +77,10 @@ jobs:
       - name: 检查 .ioc 与引脚表是否存在
         run: |
           set -euo pipefail
-          test -f hal_f407_mecanum_4motor_src.ioc || { echo "::error::缺少 .ioc 工程文件"; exit 1; }
+          # main 只放文档，不含 CubeMX 工程；其余分支必须有 .ioc。
+          if [ "${{ github.base_ref || github.ref_name }}" != "main" ]; then
+            test -f hal_f407_mecanum_4motor_src.ioc || { echo "::error::缺少 .ioc 工程文件"; exit 1; }
+          fi
           test -f knowledge/pinmap.md || { echo "::warning::缺少 knowledge/pinmap.md"; }
       - name: 检查文档相对链接
         run: |
