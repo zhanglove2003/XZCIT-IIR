@@ -51,7 +51,6 @@ jobs:
               - 'tools/**'
               - 'Makefile'
               - '*.ld'
-              - '*.ioc'
               - '.github/workflows/**'
       - name: 判断本分支是否需要编译与测试
         id: scope
@@ -75,7 +74,10 @@ jobs:
       - name: 检查 .ioc 与引脚表是否存在
         run: |
           set -euo pipefail
-          test -f hal_f407_mecanum_4motor_src.ioc || { echo "::error::缺少 .ioc 工程文件"; exit 1; }
+          # main 只放文档，不含 CubeMX 工程；其余分支必须有 .ioc。
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            test -f hal_f407_mecanum_4motor_src.ioc || { echo "::error::缺少 .ioc 工程文件"; exit 1; }
+          fi
           test -f knowledge/pinmap.md || { echo "::warning::缺少 knowledge/pinmap.md"; }
       - name: 检查文档相对链接
         run: |
