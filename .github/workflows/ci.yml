@@ -1,8 +1,9 @@
 name: Firmware CI
 
 # 触发规则（见 docs/workflow.md）：
-#   main 与 feat/<车型>  → 完整流水线
-#   <车型>/develop       → 只跑轻量检查
+#   feat/<车型>    → 完整流水线（编译 + 主机测试 + 静态分析）
+#   main           → 只跑文档检查（main 只放项目门面，无业务代码）
+#   <车型>/develop → 只跑轻量检查
 # 其他分支不触发。
 
 on:
@@ -20,8 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  # main 是发布分支，每个提交都要完整跑一遍，不能取消。
-  # 其余分支只保留最新一次运行。
+  # 同一分支只保留最新一次运行。
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
@@ -35,6 +35,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      build: ${{ steps.scope.outputs.build }}
     steps:
       - uses: actions/checkout@v4
       - name: 判断是否涉及代码
@@ -52,6 +53,16 @@ jobs:
               - '*.ld'
               - '*.ioc'
               - '.github/workflows/**'
+      - name: 判断本分支是否需要编译与测试
+        id: scope
+        run: |
+          # main 只放项目门面文档，不编译也不跑测试。
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::main 分支只做文档检查"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
 
   # ── 轻量检查：日常分支只跑这个 ────────────────────────────
   lint:
@@ -93,7 +104,7 @@ jobs:
   build:
     name: firmware-build
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -145,7 +156,7 @@ jobs:
   host-tests:
     name: host-tests
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -167,9 +178,9 @@ jobs:
 
       - name: 运行 ${{ matrix.suite }}
         env:
-          # 正式分支与 main 必须真正执行测试。测试脚本缺失即失败，
-          # 不允许用「跳过」冒充通过。
-          REQUIRE_TESTS: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/feat/') }}
+          # 车型正式分支必须真正执行测试。测试脚本缺失即失败，
+          # 不允许用「跳过」冒充通过。main 不会进入本作业。
+          REQUIRE_TESTS: ${{ startsWith(github.ref, 'refs/heads/feat/') }}
         run: |
           set -euo pipefail
           script=$(echo '${{ matrix.cmd }}' | awk '{print $NF}')
@@ -187,7 +198,7 @@ jobs:
   static-analysis:
     name: static-analysis
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
