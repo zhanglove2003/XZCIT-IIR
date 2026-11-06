@@ -1,0 +1,231 @@
+name: Firmware CI
+
+# 触发规则（见 docs/workflow.md）：
+#   main 与 feat/<车型>  → 完整流水线
+#   <车型>/develop       → 只跑轻量检查
+# 其他分支不触发。
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+      - '**/develop'
+  pull_request:
+    branches:
+      - main
+      - 'feat/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  # main 是发布分支，每个提交都要完整跑一遍，不能取消。
+  # 其余分支只保留最新一次运行。
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  GCC_VERSION: '13.2.rel1'
+
+jobs:
+  # ── 门控：判断本次提交是否只改了文档 ──────────────────────
+  changes:
+    name: detect-changes
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 判断是否涉及代码
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            code:
+              - 'Core/**'
+              - 'Drivers/**'
+              - 'Middlewares/**'
+              - 'USB_HOST/**'
+              - 'tools/**'
+              - 'Makefile'
+              - '*.ld'
+              - '*.ioc'
+              - '.github/workflows/**'
+
+  # ── 轻量检查：日常分支只跑这个 ────────────────────────────
+  lint:
+    name: quick-lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 检查 .ioc 与引脚表是否存在
+        run: |
+          set -euo pipefail
+          test -f hal_f407_mecanum_4motor_src.ioc || { echo "::error::缺少 .ioc 工程文件"; exit 1; }
+          test -f knowledge/pinmap.md || { echo "::warning::缺少 knowledge/pinmap.md"; }
+      - name: 检查文档相对链接
+        run: |
+          set -euo pipefail
+          python3 - <<'EOF'
+          import pathlib, re, sys
+          root = pathlib.Path('.')
+          bad = []
+          for md in root.rglob('*.md'):
+              if '.git' in md.parts:
+                  continue
+              text = md.read_text(encoding='utf-8', errors='ignore')
+              for m in re.finditer(r'\[[^\]]*\]\(([^)#]+)', text):
+                  target = m.group(1).strip()
+                  if target.startswith(('http://', 'https://', 'mailto:')):
+                      continue
+                  if not (md.parent / target).exists():
+                      bad.append(f'{md}: {target}')
+          if bad:
+              print('\n'.join(bad))
+              sys.exit(1)
+          print('链接检查通过')
+          EOF
+
+  # ── 构建：交叉编译固件 ────────────────────────────────────
+  build:
+    name: firmware-build
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 ARM GCC 工具链
+        run: |
+          set -euo pipefail
+          URL="https://developer.arm.com/-/media/Files/downloads/gnu/${GCC_VERSION}/binrel/arm-gnu-toolchain-${GCC_VERSION}-x86_64-arm-none-eabi.tar.xz"
+          curl -fsSL "$URL" -o /tmp/tc.tar.xz
+          mkdir -p "$HOME/toolchain"
+          tar -xJf /tmp/tc.tar.xz -C "$HOME/toolchain" --strip-components=1
+          echo "$HOME/toolchain/bin" >> "$GITHUB_PATH"
+
+      - name: 工具链版本
+        run: arm-none-eabi-gcc --version | head -1
+
+      - name: 交叉编译
+        run: |
+          set -euo pipefail
+          make -j"$(nproc)" 2>&1 | tee build.log
+          test -f build/*.elf
+          test -f build/*.bin
+
+      - name: 检查编译告警
+        run: |
+          set -euo pipefail
+          if grep -qE 'warning:' build.log; then
+            echo "::error::编译产生告警"
+            grep -E 'warning:' build.log
+            exit 1
+          fi
+          echo "零告警"
+
+      - name: 输出固件体积
+        run: arm-none-eabi-size build/*.elf | tee size.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: |
+            build/*.elf
+            build/*.bin
+            build/*.hex
+            size.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  # ── 主机测试：在 x86 上跑纯逻辑单元测试 ──────────────────
+  host-tests:
+    name: host-tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: motion
+            cmd: bash tools/test_motion.sh
+          - suite: boot-integration
+            cmd: bash tools/test_boot_ctrl_integration.sh
+          - suite: font
+            cmd: python3 tools/test_font_convert.py
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc libc6-dev python3
+
+      - name: 运行 ${{ matrix.suite }}
+        env:
+          # 正式分支与 main 必须真正执行测试。测试脚本缺失即失败，
+          # 不允许用「跳过」冒充通过。
+          REQUIRE_TESTS: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/feat/') }}
+        run: |
+          set -euo pipefail
+          script=$(echo '${{ matrix.cmd }}' | awk '{print $NF}')
+          if [ ! -f "$script" ]; then
+            if [ "$REQUIRE_TESTS" = "true" ]; then
+              echo "::error::正式分支缺少测试脚本 $script"
+              exit 1
+            fi
+            echo "::notice::开发分支无 $script，跳过"
+            exit 0
+          fi
+          ${{ matrix.cmd }}
+
+  # ── 静态分析：告警零容忍 ──────────────────────────────────
+  static-analysis:
+    name: static-analysis
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 cppcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends cppcheck
+
+      - name: 运行 cppcheck
+        run: |
+          set -euo pipefail
+          cppcheck --version
+          cppcheck \
+            --enable=warning,performance,portability \
+            --inline-suppr \
+            --error-exitcode=1 \
+            --suppress=missingIncludeSystem \
+            -I Core/Inc \
+            Core/Src 2>&1 | tee cppcheck.log
+
+  # ── 汇总：给分支保护提供单一必需检查 ──────────────────────
+  ci-summary:
+    name: ci-success
+    runs-on: ubuntu-24.04
+    needs: [changes, lint, build, host-tests, static-analysis]
+    if: always()
+    steps:
+      - name: 判定总体结果
+        run: |
+          echo "changes:         ${{ needs.changes.result }}"
+          echo "lint:            ${{ needs.lint.result }}"
+          echo "build:           ${{ needs.build.result }}"
+          echo "host-tests:      ${{ needs.host-tests.result }}"
+          echo "static-analysis: ${{ needs.static-analysis.result }}"
+          if [ "${{ contains(needs.*.result, 'failure') }}" = "true" ] || \
+             [ "${{ contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "::error::CI 未通过"
+            exit 1
+          fi
+          echo "CI 通过"
