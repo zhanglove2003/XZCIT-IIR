@@ -1,6 +1,6 @@
 #include "imu_task.h"
 
-//imuÊı¾İ½á¹¹Ìå
+//imuæ•°æ®ç»“æ„ä½“
 IMU_DATA_t imu;
 
 void imu_zero_sample(void);
@@ -11,11 +11,11 @@ void MPU6050_task(void *pvParameters)
     while(1)
     {
         //This task runs at 100Hz
-        //´ËÈÎÎñÒÔ100HzµÄÆµÂÊÔËĞĞ
+        //æ­¤ä»»åŠ¡ä»¥100Hzçš„é¢‘ç‡è¿è¡Œ
         vTaskDelayUntil(&lastWakeTime, F2T(IMU_TASK_RATE));
 
         //Read the gyroscope zero before starting
-        //¿ª»úÇ°£¬¶ÁÈ¡ÍÓÂİÒÇÁãµã
+        //å¼€æœºå‰ï¼Œè¯»å–é™€èºä»ªé›¶ç‚¹
         if(SysVal.Time_count<CONTROL_DELAY)
         {	
             imu_zero_sample();
@@ -24,58 +24,23 @@ void MPU6050_task(void *pvParameters)
         MPU6050_Get_Accelscope();
 
         //Get gyroscope data
-        MPU6050_Get_Gyroscope(); //µÃµ½ÍÓÂİÒÇÊı¾İ
+        MPU6050_Get_Gyroscope(); //å¾—åˆ°é™€èºä»ªæ•°æ®
 
-    }
-}
-
-void ICM20948_task(void *pvParameters)
-{
-    u32 lastWakeTime = getSysTickCnt();
-    while(1)
-    {
-        //This task runs at 100Hz
-        //´ËÈÎÎñÒÔ100HzµÄÆµÂÊÔËĞĞ
-        vTaskDelayUntil(&lastWakeTime, F2T(IMU_TASK_RATE));
-
-        //Read the gyroscope zero before starting
-        //¿ª»úÇ°£¬¶ÁÈ¡ÍÓÂİÒÇÁãµã
-        if(SysVal.Time_count<CONTROL_DELAY)
-        {
-            imu_zero_sample();
-        }
-
-        //Get acceleration sensor data
-        ICM20948_Get_Accel(); //µÃµ½¼ÓËÙ¶È´«¸ĞÆ÷Êı¾İ
-
-        //Get gyroscope data
-        ICM20948_Get_Gyroscope(); //µÃµ½ÍÓÂİÒÇÊı¾İ
-
-#if 0 // Î´Ê¹ÓÃ´ÅÁ¦¼ÆÊı¾İ,²»¿ªÆô²É¼¯
-        static u8 mag_count=0;
-        //Get magnetometer data
-        mag_count++;
-        if(mag_count>=13)	 //´ÅÁ¦¼Æ×î´ó²ÉÑùËÙÂÊÎª8hz£¬Òò´ËÃ¿½øÈëÕâ¸öº¯Êı13´Î²Å²ÉÑùÒ»´Î´ÅÁ¦¼ÆĞÅÏ¢
-        {
-            invMSMagRead(&magnet[0], &magnet[1], &magnet[2]); //µÃµ½´ÅÁ¦¼ÆÊı¾İ
-            mag_count=0;
-        }
-#endif
     }
 }
 
 
 /**************************************************************************
-º¯Êı¹¦ÄÜ£º¸´ÖÆimuµÄÊıÖµ
-Èë¿Ú²ÎÊı£ºĞèÒª¸³ÖµµÄ½á¹¹Ìå±äÁ¿£¬±»¸´ÖÆµÄ½á¹¹Ìå±äÁ¿
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šå¤åˆ¶imuçš„æ•°å€¼
+å…¥å£å‚æ•°ï¼šéœ€è¦èµ‹å€¼çš„ç»“æ„ä½“å˜é‡ï¼Œè¢«å¤åˆ¶çš„ç»“æ„ä½“å˜é‡
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
-/* [C50C] ÍÓÂİÒÇ/¼ÓËÙ¶ÈÁãµãÀÛ¼ÓÆ½¾ù.
-   MPU6050 Óë ICM20948 Á½¸öÈÎÎñ¶¼ÔÚ Time_count<CONTROL_DELAY ´°¿ÚÄÚµ÷ÓÃ.
-   Ô­´úÂëÃ¿ÅÄÓÃµ±Ç°¶ÁÊı¸²¸ÇÁãµã, Ö»±£Áô×îºóÒ»ÅÄ, ÄÇÒ»ÅÄ²»¾²Ö¹Áãµã¾Í´í.
-   ÏÖÔÚ°´ÕæÊµ²ÉÑù´ÎÊıÀÛ¼ÓÇóÆ½¾ù, ³éÑùÂú IMU_ZERO_SAMPLES ¾ÍÍ£Ö¹,
-   Áãµã±£³ÖÒÑÓĞµÄÆ½¾ùÖµ. */
+/* [C50C] é™€èºä»ª/åŠ é€Ÿåº¦é›¶ç‚¹ç´¯åŠ å¹³å‡.
+   MPU6050 ä»»åŠ¡åœ¨ Time_count<CONTROL_DELAY çª—å£å†…è°ƒç”¨.
+   åŸä»£ç æ¯æ‹ç”¨å½“å‰è¯»æ•°è¦†ç›–é›¶ç‚¹, åªä¿ç•™æœ€åä¸€æ‹, é‚£ä¸€æ‹ä¸é™æ­¢é›¶ç‚¹å°±é”™.
+   ç°åœ¨æŒ‰çœŸå®é‡‡æ ·æ¬¡æ•°ç´¯åŠ æ±‚å¹³å‡, æŠ½æ ·æ»¡ IMU_ZERO_SAMPLES å°±åœæ­¢,
+   é›¶ç‚¹ä¿æŒå·²æœ‰çš„å¹³å‡å€¼. */
 #define IMU_ZERO_SAMPLES  200
 
 static int32_t  imu_sum_gyro[3];

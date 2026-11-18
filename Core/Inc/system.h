@@ -1,14 +1,14 @@
 #ifndef __SYSTEM_H
 #define __SYSTEM_H
 
-//ÉèÖÃ³ÌĞòÆğÊ¼Æ«ÒÆµØÖ·. ³ÌĞòÆğÊ¼µØÖ· = 0x8000000 + VECT_TAB_OFFSET
+//è®¾ç½®ç¨‹åºèµ·å§‹åç§»åœ°å€. ç¨‹åºèµ·å§‹åœ°å€ = 0x8000000 + VECT_TAB_OFFSET
 #define VECT_TAB_OFFSET  0x00000
 
-//Ğ¾Æ¬Í·ÎÄ¼ş
+//èŠ¯ç‰‡å¤´æ–‡ä»¶
 #include "stm32f4xx.h"
 
 //C library function related header file
-//C¿âº¯ÊıµÄÏà¹ØÍ·ÎÄ¼ş
+//Cåº“å‡½æ•°çš„ç›¸å…³å¤´æ–‡ä»¶
 #include <stdio.h> 
 #include <stdint.h>
 #include <stdlib.h>
@@ -17,7 +17,7 @@
 #include "stdarg.h"
 
 //FreeRTOS related header files
-// FreeRTOSÏà¹ØÍ·ÎÄ¼ş
+// FreeRTOSç›¸å…³å¤´æ–‡ä»¶
 #include "FreeRTOSConfig.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -26,35 +26,29 @@
 #include "semphr.h"
 
 //Board level support package related header files
-//°å¼¶Ö§³Ö°ü(Ó²¼ş)Ïà¹ØÍ·ÎÄ¼ş
+//æ¿çº§æ”¯æŒåŒ…(ç¡¬ä»¶)ç›¸å…³å¤´æ–‡ä»¶
 #include "delay.h"
 #include "sys.h"
 #include "usart.h"
 #include "adc.h"
-#include "can.h"
 #include "encoder.h"
 #include "key.h"
-#include "LED.h"
+#include "led.h"
 #include "motor.h"
 #include "oled.h"
 #include "pstwo.h"
 #include "stmflash.h"
-#include "auto_recharge.h"
 #include "buzzer.h"
 #include "enable_key.h"
 #include "uartx.h"
-#include "driver_d50a.h"
 #include "I2C.h"
 #include "MPU6050.h"
-#include "ICM20948.h"
-#include "remote.h"
-#include "usb_host.h"
 
-//»úÆ÷ÈË±¾Ìå²ÎÊıÏà¹ØÍ·ÎÄ¼ş
+//æœºå™¨äººæœ¬ä½“å‚æ•°ç›¸å…³å¤´æ–‡ä»¶
 #include "robot_init.h"
 
 //Main logic code related header files
-//Ö÷Âß¼­Ïà¹ØÍ·ÎÄ¼ş
+//ä¸»é€»è¾‘ç›¸å…³å¤´æ–‡ä»¶
 #include "balance_task.h"
 #include "imu_task.h"
 #include "show_task.h"
@@ -64,25 +58,25 @@
 #include "uartx_callback.h"
 
 //Check the multiple vehicle model definitions and ensure that only one model is allowed to exist at a time.
-//¶Ô¶àÖØ³µĞÍ¶¨Òå¼ì²é,²»ÔÊĞí¶à¸ö³µĞÍÍ¬Ê±´æÔÚ.
+//å¯¹å¤šé‡è½¦å‹å®šä¹‰æ£€æŸ¥,ä¸å…è®¸å¤šä¸ªè½¦å‹åŒæ—¶å­˜åœ¨.
 #if defined AKM_CAR + defined DIFF_CAR + defined MEC_CAR + defined _4WD_CAR + defined OMNI_CAR > 1
 	#error "ERROR: multiple vehicle model definitions."
 #endif
 
-//¶ÔÍâ½Ó¿Ú
+//å¯¹å¤–æ¥å£
 void systemInit(void);
 
-//µ÷ÊÔÈÎÎñ¾ä±ú
+//è°ƒè¯•ä»»åŠ¡å¥æŸ„
 extern TaskHandle_t g_reportErrTaskHandle;
 
-/***Macros define***/ /***ºê¶¨Òå***/
+/***Macros define***/ /***å®å®šä¹‰***/
 //After starting the car (1000/100Hz =10) for seconds, it is allowed to control the car to move
-//¿ª»ú(1000/100hz=10)Ãëºó²ÅÔÊĞí¿ØÖÆĞ¡³µ½øĞĞÔË¶¯
+//å¼€æœº(1000/100hz=10)ç§’åæ‰å…è®¸æ§åˆ¶å°è½¦è¿›è¡Œè¿åŠ¨
 
-//TODO:»Ö¸´³É1000
+//TODO:æ¢å¤æˆ1000
 #define CONTROL_DELAY		1000
 
-//RTOSÈÎÎñÆµÂÊ
+//RTOSä»»åŠ¡é¢‘ç‡
 #define RATE_1_HZ		  1
 #define RATE_5_HZ		  5
 #define RATE_10_HZ		10

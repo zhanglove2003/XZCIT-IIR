@@ -7,77 +7,76 @@
 #include "steer_debug.h"   /* g_ros_drive_max_duty, ROS_DRIVE_MAX_DUTY_HARD */
 #endif
 
-//ÓÃÓÚ½ÓÊÕÊı¾İµÄ½á¹¹Ìå
+//ç”¨äºæ¥æ”¶æ•°æ®çš„ç»“æ„ä½“
 RECEIVE_DATA Receive_Data;
 
 
-// ¶ÔÍâIPµØÖ·´æ´¢Çø
-u8 Received_IP[4] = {0, 0, 0, 0};          // ´æ´¢×îÖÕÈ·ÈÏµÄIPµØÖ·
-// IP»ñÈ¡¹¦ÄÜÏà¹Ø±äÁ¿
-u8 Last_IP[4] = {0, 0, 0, 0};              // ´æ´¢ÉÏÒ»´Î½ÓÊÕµÄIP£¨ÓÃÓÚÁ¬ĞøĞÔĞ£Ñé£©
-u8 IP_Frame_Valid = 0;                     // IPÖ¡ÓĞĞ§±êÖ¾
-u16 IP_Valid_Count = 0;                    // Á¬ĞøÏàÍ¬IP¼ÆÊıÆ÷
+// å¯¹å¤–IPåœ°å€å­˜å‚¨åŒº
+u8 Received_IP[4] = {0, 0, 0, 0};          // å­˜å‚¨æœ€ç»ˆç¡®è®¤çš„IPåœ°å€
+// IPè·å–åŠŸèƒ½ç›¸å…³å˜é‡
+u8 Last_IP[4] = {0, 0, 0, 0};              // å­˜å‚¨ä¸Šä¸€æ¬¡æ¥æ”¶çš„IPï¼ˆç”¨äºè¿ç»­æ€§æ ¡éªŒï¼‰
+u8 IP_Frame_Valid = 0;                     // IPå¸§æœ‰æ•ˆæ ‡å¿—
+u16 IP_Valid_Count = 0;                    // è¿ç»­ç›¸åŒIPè®¡æ•°å™¨
 u8 Debug_Flag=0;
-/**************************************************************************¡¢
+/**************************************************************************ã€
 Functionality: This function receives serial commands to control the movement of a robot.
 Input Parameters:
 Which serial port (e.g.,USART1,USART3,etc.)
 The received data from the serial port
 Return Value: None
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º½ÓÊÕ´®¿ÚÃüÁîÓÃÓÚ¿ØÖÆ»úÆ÷ÈËÔË¶¯
-Èë¿Ú²ÎÊı£ºÄÄÒ»¸ö´®¿Ú£¬½ÓÊÕµ½µÄÊı¾İ
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šæ¥æ”¶ä¸²å£å‘½ä»¤ç”¨äºæ§åˆ¶æœºå™¨äººè¿åŠ¨
+å…¥å£å‚æ•°ï¼šå“ªä¸€ä¸ªä¸²å£ï¼Œæ¥æ”¶åˆ°çš„æ•°æ®
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 static void UartxControll_Callback(USART_TypeDef* USARTx,uint8_t Usart_Receive)
 {
 	static uint16_t Count = 0;
 	static USART_TypeDef* Last_Uartx;
-	//½ûÖ¹¶à´®¿ÚÍ¬Ê±¹²ÓÃº¯Êı,Ò»¸öÊ±¼äÖ»ÄÜÓĞÒ»¸ö½Ó¿Ú¶Ô»úÆ÷ÈË½øĞĞ¿ØÖÆ.
+	//ç¦æ­¢å¤šä¸²å£åŒæ—¶å…±ç”¨å‡½æ•°,ä¸€ä¸ªæ—¶é—´åªèƒ½æœ‰ä¸€ä¸ªæ¥å£å¯¹æœºå™¨äººè¿›è¡Œæ§åˆ¶.
 	if( USARTx != Last_Uartx && Count!=0 )
 	{
 		Count = 0;
 	}
 	Last_Uartx = USARTx;
 	//Fill the array with serial data
-	//´®¿ÚÊı¾İÌîÈëÊı×é
+	//ä¸²å£æ•°æ®å¡«å…¥æ•°ç»„
 	Receive_Data.buffer[Count]=Usart_Receive;
 
 	// Ensure that the first data in the array is FRAME_HEADER
-	//È·±£Êı×éµÚÒ»¸öÊı¾İÎªFRAME_HEADER
+	//ç¡®ä¿æ•°ç»„ç¬¬ä¸€ä¸ªæ•°æ®ä¸ºFRAME_HEADER
 	if(Usart_Receive == FRAME_HEADER||Count>0)
 		Count++;
 	else
 		Count=0;
 
-	if (Count == 11) //Verify the length of the packet //ÑéÖ¤Êı¾İ°üµÄ³¤¶È
+	if (Count == 11) //Verify the length of the packet //éªŒè¯æ•°æ®åŒ…çš„é•¿åº¦
 	{
-		Count=0; //Prepare for the serial port data to be refill into the array //Îª´®¿ÚÊı¾İÖØĞÂÌîÈëÊı×é×ö×¼±¸
-		if(Receive_Data.buffer[10] == FRAME_TAIL) //Verify the frame tail of the packet //ÑéÖ¤Êı¾İ°üµÄÖ¡Î²
+		Count=0; //Prepare for the serial port data to be refill into the array //ä¸ºä¸²å£æ•°æ®é‡æ–°å¡«å…¥æ•°ç»„åšå‡†å¤‡
+		if(Receive_Data.buffer[10] == FRAME_TAIL) //Verify the frame tail of the packet //éªŒè¯æ•°æ®åŒ…çš„å¸§å°¾
 		{
 			//Data exclusionary or bit check calculation, mode 0 is sent data check
-			//Êı¾İÒì»òÎ»Ğ£Ñé¼ÆËã£¬Ä£Ê½0ÊÇ·¢ËÍÊı¾İĞ£Ñé
+			//æ•°æ®å¼‚æˆ–ä½æ ¡éªŒè®¡ç®—ï¼Œæ¨¡å¼0æ˜¯å‘é€æ•°æ®æ ¡éªŒ
 			if(Receive_Data.buffer[9] ==Check_BCC(Receive_Data.buffer,9))
 			{	
 #ifdef CHASSIS_PWM_TEST
-				/* ¼Ü¿Õ²âÊÔÃüÁî: Ö»½ÓÊÜ USART3, Ğ£ÑéÍ¨¹ıºó²»ÂäËÙ¶ÈÂ·¾¶. */
+				/* æ¶ç©ºæµ‹è¯•å‘½ä»¤: åªæ¥å— USART3, æ ¡éªŒé€šè¿‡åä¸è½é€Ÿåº¦è·¯å¾„. */
 				if( Receive_Data.buffer[1]==PWM_TEST_TYPE && USARTx==USART3 )
 				{
-					/* ²ÎÊıÔ½½ç»òÖ¡²»ºÏ¸ñ: ¶ªÆú¸ÃÖ¡, ²»Ğ´µç»ú, ²»¸Ä¼ÈÓĞÊä³ö. */
+					/* å‚æ•°è¶Šç•Œæˆ–å¸§ä¸åˆæ ¼: ä¸¢å¼ƒè¯¥å¸§, ä¸å†™ç”µæœº, ä¸æ”¹æ—¢æœ‰è¾“å‡º. */
 					if( Pwm_Test_Parse(Receive_Data.buffer, 11) == PWM_TEST_RX_ACCEPT )
 					{
 						uint16_t permille = (uint16_t)(((uint16_t)Receive_Data.buffer[4] << 8)
 						                             |  (uint16_t)Receive_Data.buffer[5]);
 						uint16_t ms       = (uint16_t)(((uint16_t)Receive_Data.buffer[7] << 8)
 						                             |  (uint16_t)Receive_Data.buffer[8]);
-						/* ÇĞµ½ ROS Ä£Ê½: PS2/APP/º½Ä£Ä£Ê½µÄÃüÁîÔÚÕâÀï±»½Ó¹Ü. */
+						/* åˆ‡åˆ° ROS æ¨¡å¼: PS2/APP/èˆªæ¨¡æ¨¡å¼çš„å‘½ä»¤åœ¨è¿™é‡Œè¢«æ¥ç®¡. */
 						Set_Control_Mode(_ROS_Control);
-						charger.AllowRecharge = 0;
 						robot_control.command_lostcount = 0;
-						/* °²È«Ô¼Êø: ÖĞ¶ÏÀïÖ»×°ÔØ²ÎÊıÓëÇĞÄ£Ê½, ²»µ÷ÓÃÈÎºÎĞ´ PWM µÄ
-						 * º¯Êı. Êä³öÓÉ Balance_task ÔÚ FlagStop/DeepCheck µÈÅĞ¶Ï
-						 * Í¨¹ıºó²ÅĞ´. */
+						/* å®‰å…¨çº¦æŸ: ä¸­æ–­é‡Œåªè£…è½½å‚æ•°ä¸åˆ‡æ¨¡å¼, ä¸è°ƒç”¨ä»»ä½•å†™ PWM çš„
+						 * å‡½æ•°. è¾“å‡ºç”± Balance_task åœ¨ FlagStop/DeepCheck ç­‰åˆ¤æ–­
+						 * é€šè¿‡åæ‰å†™. */
 						Pwm_Test_Arm(Receive_Data.buffer[3], permille,
 						             Receive_Data.buffer[6], ms,
 						             (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS);
@@ -85,19 +84,18 @@ static void UartxControll_Callback(USART_TypeDef* USARTx,uint8_t Usart_Receive)
 					return;
 				}
 #endif
-				//´®¿Ú¡¢CAN¿ØÖÆÃüÁî¶ªÊ§¼ÆÊıÇåÁã
+				//ä¸²å£ã€CANæ§åˆ¶å‘½ä»¤ä¸¢å¤±è®¡æ•°æ¸…é›¶
 				robot_control.command_lostcount = 0;
 
 				if(Receive_Data.buffer[1]==0)
 				{
-					//¸ù¾İ´®¿ÚµÄ²»Í¬À´È·¶¨ÊÇÊ²Ã´¿ØÖÆ·½Ê½
+					//æ ¹æ®ä¸²å£çš„ä¸åŒæ¥ç¡®å®šæ˜¯ä»€ä¹ˆæ§åˆ¶æ–¹å¼
 					       if(USARTx==USART1) Set_Control_Mode(_USART_Control);
 					else if( USARTx==USART3 ) Set_Control_Mode(_ROS_Control);
-					
-					charger.AllowRecharge = 0;
+
 					//Calculate the target speed of three axis from serial data, unit m/s
-					//[C50C] ¿ª»ú´°¿ÚÄÚÖ»ÈÏÉè±¸ÀàĞÍºÍ¿ØÖÆÄ£Ê½£¬²»Ğ´Ä¿±êËÙ¶È¡£
-					//Ô­´úÂëÔÚÖ¡½âÎöÇ°¶ª×Ö½Ú£¬Ö¡¿ç±ß½çÊ±»áÊ§²½£¬ËùÒÔ¸ÄÔÚÕâÀïÀ¹¡£
+					//[C50C] å¼€æœºçª—å£å†…åªè®¤è®¾å¤‡ç±»å‹å’Œæ§åˆ¶æ¨¡å¼ï¼Œä¸å†™ç›®æ ‡é€Ÿåº¦ã€‚
+					//åŸä»£ç åœ¨å¸§è§£æå‰ä¸¢å­—èŠ‚ï¼Œå¸§è·¨è¾¹ç•Œæ—¶ä¼šå¤±æ­¥ï¼Œæ‰€ä»¥æ”¹åœ¨è¿™é‡Œæ‹¦ã€‚
 					if( SysVal.Time_count < CONTROL_DELAY ) return;
 					robot_control.Vx = XYZ_Target_Speed_transition(Receive_Data.buffer[3],Receive_Data.buffer[4]);
 					robot_control.Vy = XYZ_Target_Speed_transition(Receive_Data.buffer[5],Receive_Data.buffer[6]);
@@ -107,51 +105,17 @@ static void UartxControll_Callback(USART_TypeDef* USARTx,uint8_t Usart_Receive)
 					 * can drop four wheel output when frames stop arriving. */
 					robot_control.ros_cmd_tick = (uint32_t)xTaskGetTickCount();
 #endif
-					
-					#if defined AKM_CAR 
-					//Convert the Z-axis speed to the Ackerman left front wheel steering angle \
-					for an Ackerman-type vehicle, and then input the calculated angle into the \
-					inverse kinematics to control the vehicle.	
-					//°¢¿ËÂü³µĞÍ½«ZÖáËÙ¶È×ª»»Îª°¢¿ËÂü×óÇ°ÂÖ×ª½Ç,×îÖÕÔÙÊäÈëµ½ÔË¶¯Ñ§Äæ½âÖĞ¿ØÖÆĞ¡³µ.
-					robot_control.Vz = Akm_Vz_to_Angle( robot_control.Vx , robot_control.Vz );
-					#endif
 				}
 				else if( Receive_Data.buffer[1]==1 || Receive_Data.buffer[1]==2 )
 				{
-					//¿ªÆô×Ô¶¯»Ø³ä
-					charger.AllowRecharge = 1;
-					
-					//°¢¿ËÂü»úÆ÷ÈËÍ¨¹ı±êÖ¾Î»ÅĞ¶Ïµ¼º½¿ØÖÆ
-					#if defined AKM_CAR
-						if(Receive_Data.buffer[1]==2) charger.NavWalk=1; 
-						else charger.NavWalk=0;
-					
-					//ÆäËû»úÆ÷ÈËÍ¨¹ıºìÍâÅĞ¶ÏÊÇ·ñÊ¹ÓÃµ¼º½¿ØÖÆ
-					#else
-						if(Receive_Data.buffer[1]==1 && charger.RED_STATE==0) charger.NavWalk = 1; 
-					#endif
-					
-					//Calculate the target speed of three axis from serial data, unit m/s
-					//´Ó´®¿ÚÊı¾İÇóÈıÖáÄ¿±êËÙ¶È£¬µ¥Î»m/s
-					charger.Up_MoveX = XYZ_Target_Speed_transition(Receive_Data.buffer[3],Receive_Data.buffer[4]);
-					charger.Up_MoveY = XYZ_Target_Speed_transition(Receive_Data.buffer[5],Receive_Data.buffer[6]);
-					charger.Up_MoveZ = XYZ_Target_Speed_transition(Receive_Data.buffer[7],Receive_Data.buffer[8]);
-					
-					#if defined AKM_CAR 
-					//Convert the Z-axis speed to the Ackerman letf front wheel steering angle \
-					for an Ackerman-type vehicle, and then input the calculated angle into the \
-					inverse kinematics to control the vehicle.	
-					//°¢¿ËÂü³µĞÍ½«ZÖáËÙ¶È×ª»»Îª°¢¿ËÂü×óÇ°ÂÖ×ª½Ç,×îÖÕÔÙÊäÈëµ½ÔË¶¯Ñ§Äæ½âÖĞ¿ØÖÆĞ¡³µ.
-					charger.Up_MoveZ = Akm_Vz_to_Angle( charger.Up_MoveX , charger.Up_MoveZ );
-					#endif
-
+					//è‡ªåŠ¨å›å……åŠŸèƒ½å·²ç§»é™¤, ä¿ç•™å¸§ç±»å‹ä»¥å…¼å®¹ä¸Šä½æœºåè®®, ä¸å†æ‰§è¡Œä»»ä½•åŠ¨ä½œ.
 				}
 #if defined(ROS_STRAIGHT_DRIVE)
 				else if( Receive_Data.buffer[1]==ROS_CMD_PWM_LIMIT && USARTx==USART3 )
 				{
 					/* Runtime ROS PWM limit. Only USART3 may change it.
-					 * This branch must not touch the control mode and must not clear
-					 * charger.AllowRecharge: a limit command is not a drive command.
+					 * This branch must not touch the control mode: a limit command
+					 * is not a drive command.
 					 * Value in buffer[3..4], big endian, PWM counts, 1..8400.
 					 * Out of range values are dropped and the old limit is kept, so
 					 * the host never sees a false success. No clamp, no rounding. */
@@ -163,47 +127,43 @@ static void UartxControll_Callback(USART_TypeDef* USARTx,uint8_t Usart_Receive)
 #endif
 				else if( Receive_Data.buffer[1]==3 )
 				{
-					//Set the speed of the infrared interconnection, unit m/s
-					//ÉèÖÃºìÍâ¶Ô½ÓµÄËÙ¶È´óĞ¡£¬µ¥Î»m/s
-					charger.Dock_MoveX = XYZ_Target_Speed_transition(Receive_Data.buffer[3],Receive_Data.buffer[4]);
-					charger.Dock_MoveY = XYZ_Target_Speed_transition(Receive_Data.buffer[5],Receive_Data.buffer[6]);
-					charger.Dock_MoveZ = XYZ_Target_Speed_transition(Receive_Data.buffer[7],Receive_Data.buffer[8]);
+					//çº¢å¤–å¯¹æ¥é€Ÿåº¦å¸§å·²éšè‡ªåŠ¨å›å……åŠŸèƒ½ä¸€å¹¶ç§»é™¤, ä¿ç•™å¸§ç±»å‹é¿å…ä¸Šä½æœºåè®®æ­§ä¹‰.
 				}
-				 // ================== IPÖ¡´¦Àí£¨ĞÂÔö£© ================== //
-                else if(Receive_Data.buffer[1] == 0xFF)  // IPÖ¡±êÊ¶
+				 // ================== IPå¸§å¤„ç†ï¼ˆæ–°å¢ï¼‰ ================== //
+                else if(Receive_Data.buffer[1] == 0xFF)  // IPå¸§æ ‡è¯†
                 {
                     uint8_t temp_ip[4];
                     
-                    // ÌáÈ¡½ÓÊÕµ½µÄIP£¨Ë÷Òı3-6£©
+                    // æå–æ¥æ”¶åˆ°çš„IPï¼ˆç´¢å¼•3-6ï¼‰
                     temp_ip[0] = Receive_Data.buffer[3];
                     temp_ip[1] = Receive_Data.buffer[4];
                     temp_ip[2] = Receive_Data.buffer[5];
                     temp_ip[3] = Receive_Data.buffer[6];
                     
-                    // ¼ì²é±¾´ÎIPÊÇ·ñÓëÉÏÒ»´ÎÏàÍ¬
+                    // æ£€æŸ¥æœ¬æ¬¡IPæ˜¯å¦ä¸ä¸Šä¸€æ¬¡ç›¸åŒ
                     if(temp_ip[0] == Last_IP[0] &&
                        temp_ip[1] == Last_IP[1] &&
                        temp_ip[2] == Last_IP[2] &&
                        temp_ip[3] == Last_IP[3])
                     {
-                        // IPÁ¬ĞøÏàÍ¬£¬¼ÆÊıµİÔö
+                        // IPè¿ç»­ç›¸åŒï¼Œè®¡æ•°é€’å¢
                         IP_Valid_Count++;
                         
-                        // ÊÕµ½×ã¹»¶à´ÎÁ¬ĞøÏàÍ¬µÄIP£¬È·ÈÏÎŞÎó
+                        // æ”¶åˆ°è¶³å¤Ÿå¤šæ¬¡è¿ç»­ç›¸åŒçš„IPï¼Œç¡®è®¤æ— è¯¯
                         if(IP_Valid_Count >= IP_CONFIRM_COUNT)
                         {
-                            // ½«È·ÈÏµÄIPĞ´Èë×îÖÕ½á¹û
+                            // å°†ç¡®è®¤çš„IPå†™å…¥æœ€ç»ˆç»“æœ
                             Received_IP[0] = temp_ip[0];
                             Received_IP[1] = temp_ip[1];
                             Received_IP[2] = temp_ip[2];
                             Received_IP[3] = temp_ip[3];
-                            IP_Frame_Valid = 1;          // ±ê¼ÇIPÓĞĞ§
+                            IP_Frame_Valid = 1;          // æ ‡è®°IPæœ‰æ•ˆ
                         }
                     }
                     else
                     {
-                        // IP±ä»¯ÁË£¬ÖØÖÃ¼ÆÊıÆ÷£¬±£´æĞÂµÄIPµ½Last_IP
-                        IP_Valid_Count = 1;  // ´Ó1¿ªÊ¼¼ÆÊı
+                        // IPå˜åŒ–äº†ï¼Œé‡ç½®è®¡æ•°å™¨ï¼Œä¿å­˜æ–°çš„IPåˆ°Last_IP
+                        IP_Valid_Count = 1;  // ä»1å¼€å§‹è®¡æ•°
                         Last_IP[0] = temp_ip[0];
                         Last_IP[1] = temp_ip[1];
                         Last_IP[2] = temp_ip[2];
@@ -221,19 +181,19 @@ static void UartxControll_Callback(USART_TypeDef* USARTx,uint8_t Usart_Receive)
 Function: Serial port 1 receives interrupted
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£º´®¿Ú1½ÓÊÕÖĞ¶Ï
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ »Ø Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šä¸²å£1æ¥æ”¶ä¸­æ–­
+å…¥å£å‚æ•°ï¼šæ— 
+è¿” å› å€¼ï¼šæ— 
 **************************************************************************/
 int USART1_IRQHandler(void)
 {
     u8 Usart_Receive;
 
-    if(USART_GetITStatus(USART1, USART_IT_RXNE) != RESET) //Check if data is received //ÅĞ¶ÏÊÇ·ñ½ÓÊÕµ½Êı¾İ
+    if(USART_GetITStatus(USART1, USART_IT_RXNE) != RESET) //Check if data is received //åˆ¤æ–­æ˜¯å¦æ¥æ”¶åˆ°æ•°æ®
     {
-        Usart_Receive = USART_ReceiveData(USART1);//Read the data //¶ÁÈ¡Êı¾İ
+        Usart_Receive = USART_ReceiveData(USART1);//Read the data //è¯»å–æ•°æ®
 
-		/* [C50C] ¼û USART3 ×¢ÊÍ£ºÖ¡½âÎö²»ÄÜ±»Ê±¼äÃÅ½Ø¶Ï¡£ */
+		/* [C50C] è§ USART3 æ³¨é‡Šï¼šå¸§è§£æä¸èƒ½è¢«æ—¶é—´é—¨æˆªæ–­ã€‚ */
         UartxControll_Callback(USART1,Usart_Receive);
     }
     return 0;
@@ -243,42 +203,42 @@ int USART1_IRQHandler(void)
 Function: Refresh the OLED screen
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£º´®¿Ú4½ÓÊÕÖĞ¶Ï
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šä¸²å£4æ¥æ”¶ä¸­æ–­
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 int UART4_IRQHandler(void)
 {
     int Usart_Receive;
-    if(USART_GetITStatus(UART4, USART_IT_RXNE) != RESET) //Check if data is received //ÅĞ¶ÏÊÇ·ñ½ÓÊÕµ½Êı¾İ
+    if(USART_GetITStatus(UART4, USART_IT_RXNE) != RESET) //Check if data is received //åˆ¤æ–­æ˜¯å¦æ¥æ”¶åˆ°æ•°æ®
     {
         static u8 Flag_PID,i,j,Receive[50],Last_Usart_Receive;
         static float Data;
 
-        Usart_Receive=UART4->DR; //Read the data //¶ÁÈ¡Êı¾İ
+        Usart_Receive=UART4->DR; //Read the data //è¯»å–æ•°æ®
 		
-		//ÔÊĞíÀ¶ÑÀ¸´Î»ÏµÍ³,½øÈëBootLoaderÉÕÂ¼³ÌĞò
+		//å…è®¸è“ç‰™å¤ä½ç³»ç»Ÿ,è¿›å…¥BootLoaderçƒ§å½•ç¨‹åº
         _System_Reset_(Usart_Receive);
 		
 		// Data is not processed until 10 seconds after startup
-		//¿ª»ú10ÃëÇ°²»´¦ÀíÊı¾İ
+		//å¼€æœº10ç§’å‰ä¸å¤„ç†æ•°æ®
         if(SysVal.Time_count<CONTROL_DELAY)
             return 0;
-		//µ÷ÊÔÄ£Ê½
+		//è°ƒè¯•æ¨¡å¼
 		RobotControl_SetDebugLevel(Usart_Receive);
-		//²¶»ñAPPÁ¬½ÓºÍ¶Ï¿ªÊ±µÄATÖ¸Áî,·ÀÖ¹¸ÉÈÅ
+		//æ•è·APPè¿æ¥å’Œæ–­å¼€æ—¶çš„ATæŒ‡ä»¤,é˜²æ­¢å¹²æ‰°
         if(AT_Command_Capture(Usart_Receive)) return 1;
 		
 		//10 seconds after startup, press the forward button of APP to enter APP control mode
 		//The APP controls the flag position 1 and the other flag position 0
-		//¿ª»ú10ÃëÖ®ºó£¬°´ÏÂAPPµÄÇ°½ø¼ü½øÈëAPP¿ØÖÆÄ£Ê½
+		//å¼€æœº10ç§’ä¹‹åï¼ŒæŒ‰ä¸‹APPçš„å‰è¿›é”®è¿›å…¥APPæ§åˆ¶æ¨¡å¼
         if(Usart_Receive==0x41&&Last_Usart_Receive==0x41&&(Get_Control_Mode(_APP_Control))==0)
             Set_Control_Mode(_APP_Control);
 
         Last_Usart_Receive=Usart_Receive;
 
         //Enter the APP steering control interface
-        //½øÈëAPP×ªÏò¿ØÖÆ½çÃæ
+        //è¿›å…¥APPè½¬å‘æ§åˆ¶ç•Œé¢
         if(Usart_Receive==0x4B)
             appkey.TurnPage = 1;
         else if(Usart_Receive==0x49||Usart_Receive==0x4A)
@@ -287,7 +247,7 @@ int UART4_IRQHandler(void)
         if( 0 == appkey.TurnPage )
         {
             //App rocker control interface command
-            //APPÒ¡¸Ë¿ØÖÆ½çÃæÃüÁî
+            //APPæ‘‡æ†æ§åˆ¶ç•Œé¢å‘½ä»¤
             if(Usart_Receive>=0x41&&Usart_Receive<=0x48)
             {
                 appkey.DirectionFlag=Usart_Receive-0x40;
@@ -301,39 +261,38 @@ int UART4_IRQHandler(void)
         else if( 1 == appkey.TurnPage )
         {
             //APP steering control interface command
-            //APP×ªÏò¿ØÖÆ½çÃæÃüÁî
-            if     (Usart_Receive==0x43) appkey.TurnFlag = 2; //Right rotation //ÓÒ×Ô×ª
-            else if(Usart_Receive==0x47) appkey.TurnFlag = 1; //Left rotation  //×ó×Ô×ª
+            //APPè½¬å‘æ§åˆ¶ç•Œé¢å‘½ä»¤
+            if     (Usart_Receive==0x43) appkey.TurnFlag = 2; //Right rotation //å³è‡ªè½¬
+            else if(Usart_Receive==0x47) appkey.TurnFlag = 1; //Left rotation  //å·¦è‡ªè½¬
             else                         appkey.TurnFlag = 0;
 
             if     (Usart_Receive==0x41||Usart_Receive==0x45) appkey.DirectionFlag=Usart_Receive-0x40;
             else  appkey.DirectionFlag=0;
         }
 
-        if(Usart_Receive==0x58)  robot_control.rc_speed+=100; //Accelerate the keys, +100mm/s //¼ÓËÙ°´¼ü£¬+100mm/s
-        if(Usart_Receive==0x59)  robot_control.rc_speed-=100; //Slow down buttons,   -100mm/s //¼õËÙ°´¼ü£¬-100mm/s
+        if(Usart_Receive==0x58)  robot_control.rc_speed+=100; //Accelerate the keys, +100mm/s //åŠ é€ŸæŒ‰é”®ï¼Œ+100mm/s
+        if(Usart_Receive==0x59)  robot_control.rc_speed-=100; //Slow down buttons,   -100mm/s //å‡é€ŸæŒ‰é”®ï¼Œ-100mm/s
 
         // The following is the communication with the APP debugging interface
-        //ÒÔÏÂÊÇÓëAPPµ÷ÊÔ½çÃæÍ¨Ñ¶
-        if(Usart_Receive==0x7B) Flag_PID=1;   //The start bit of the APP parameter instruction //APP²ÎÊıÖ¸ÁîÆğÊ¼Î»
-        if(Usart_Receive==0x7D) Flag_PID=2;   //The APP parameter instruction stops the bit    //APP²ÎÊıÖ¸ÁîÍ£Ö¹Î»
+        //ä»¥ä¸‹æ˜¯ä¸APPè°ƒè¯•ç•Œé¢é€šè®¯
+        if(Usart_Receive==0x7B) Flag_PID=1;   //The start bit of the APP parameter instruction //APPå‚æ•°æŒ‡ä»¤èµ·å§‹ä½
+        if(Usart_Receive==0x7D) Flag_PID=2;   //The APP parameter instruction stops the bit    //APPå‚æ•°æŒ‡ä»¤åœæ­¢ä½
 		
-        if( Usart_Receive=='b' ) charger.AllowRecharge = !charger.AllowRecharge;
-        else if(Usart_Receive=='m'  )
+        if(Usart_Receive=='m'  )
         {
             oled.page++;
             if(oled.page>oled.MAX_PAGE) oled.page=1;
         }
 
-        if(Flag_PID==1) //Collect data //²É¼¯Êı¾İ
+        if(Flag_PID==1) //Collect data //é‡‡é›†æ•°æ®
         {
             Receive[i]=Usart_Receive;
             i++;
         }
-        if(Flag_PID==2) //Analyze the data //·ÖÎöÊı¾İ
+        if(Flag_PID==2) //Analyze the data //åˆ†ææ•°æ®
         {
-            if(Receive[3]==0x50) 	 appkey.ParamSendflag = 1; //·¢ËÍÊı¾İµ½appÏÔÊ¾
-            else if( Receive[3]==0x57 ) appkey.ParamSaveFlag = 1; //±£´æ²ÎÊıµ½stm32 flash
+            if(Receive[3]==0x50) 	 appkey.ParamSendflag = 1; //å‘é€æ•°æ®åˆ°appæ˜¾ç¤º
+            else if( Receive[3]==0x57 ) appkey.ParamSaveFlag = 1; //ä¿å­˜å‚æ•°åˆ°stm32 flash
             else  if(Receive[1]!=0x23)
             {
                 for(j=i; j>=4; j--)
@@ -342,13 +301,13 @@ int UART4_IRQHandler(void)
                 }
                 switch(Receive[1])
                 {
-					case 0x30: robot_control.rc_speed = Data ; break; //ĞŞ¸Ä»úÆ÷ÈËµÄÒ£¿ØËÙ¶È
-					//PID²ÎÊıÉèÖÃ
+					case 0x30: robot_control.rc_speed = Data ; break; //ä¿®æ”¹æœºå™¨äººçš„é¥æ§é€Ÿåº¦
+					//PIDå‚æ•°è®¾ç½®
 					case 0x31:
-						Set_Robot_PI_Param(Data,-1);/* Ê¹ÓÃ-1´ú±íÏàÓ¦µÄ²ÎÊı²»ÉèÖÃ */
+						Set_Robot_PI_Param(Data,-1);/* ä½¿ç”¨-1ä»£è¡¨ç›¸åº”çš„å‚æ•°ä¸è®¾ç½® */
 						break;
 					case 0x32:
-						Set_Robot_PI_Param(-1,Data);/* Ê¹ÓÃ-1´ú±íÏàÓ¦µÄ²ÎÊı²»ÉèÖÃ */
+						Set_Robot_PI_Param(-1,Data);/* ä½¿ç”¨-1ä»£è¡¨ç›¸åº”çš„å‚æ•°ä¸è®¾ç½® */
 						break;
 					
 					case 0x33: robot_control.smooth_MotorStep = Data/1000 ; break; 
@@ -359,15 +318,15 @@ int UART4_IRQHandler(void)
 					case 0x38: robot_control.LineDiffParam = Data; break;       
                 }
             }
-            else if( Receive[1]==0x23 ) //APPÉÏµã»÷¡°·¢ËÍËùÓĞÊı¾İ¡±´¦Àí·½·¨
+            else if( Receive[1]==0x23 ) //APPä¸Šç‚¹å‡»â€œå‘é€æ‰€æœ‰æ•°æ®â€å¤„ç†æ–¹æ³•
             {
                 float num;
                 u8 dataIndex=0;
                 float dataArray[9];
 
-                if( i<=50 ) //Êı¾İÔÚ¿É½ÓÊÜ·¶Î§
+                if( i<=50 ) //æ•°æ®åœ¨å¯æ¥å—èŒƒå›´
                 {
-                    Receive[i]='}'; //²¹³äÖ¡Î²
+                    Receive[i]='}'; //è¡¥å……å¸§å°¾
 
                     for(u8 kk=0; Receive[kk]!='}'; kk++)
                     {
@@ -382,45 +341,45 @@ int UART4_IRQHandler(void)
                         }
 
                     }
-                    //´¦Àí×îºóÒ»¸öÊı¾İ
+                    //å¤„ç†æœ€åä¸€ä¸ªæ•°æ®
                     dataArray[dataIndex] = num;
 
-                    //Êı¾İ¸³Öµ
+                    //æ•°æ®èµ‹å€¼
                     robot_control.rc_speed = dataArray[0];
 
-                    //kp¡¢ki
+                    //kpã€ki
                     Set_Robot_PI_Param(dataArray[1],dataArray[2]);
 					
-                    //ËÙ¶ÈÆ½»¬ÏµÊı
+                    //é€Ÿåº¦å¹³æ»‘ç³»æ•°
                     robot_control.smooth_MotorStep = dataArray[3]/1000;
                     robot_control.smooth_ServoStep = dataArray[4];
 
-                    //°¢¿ËÂü×ªÏòÊı¾İ
+                    //é˜¿å…‹æ›¼è½¬å‘æ•°æ®
                     Akm_Servo.Max = dataArray[5];
                     Akm_Servo.Min = dataArray[6];
                     Akm_Servo.Mid = dataArray[7];
 					
-					//¾ÀÆ«ÏµÊı
+					//çº åç³»æ•°
 					robot_control.LineDiffParam = dataArray[8];
 					
-                    //Ö÷¶¯·¢ËÍÒÑĞŞ¸ÄµÄÊı¾İµ½appÏÔÊ¾
+                    //ä¸»åŠ¨å‘é€å·²ä¿®æ”¹çš„æ•°æ®åˆ°appæ˜¾ç¤º
                     appkey.ParamSendflag=1;
                 }
             }
 
             //Relevant flag position is cleared
-            //Ïà¹Ø±êÖ¾Î»ÇåÁã
+            //ç›¸å…³æ ‡å¿—ä½æ¸…é›¶
             Flag_PID=0;
             i=0;
             j=0;
             Data=0;
-            memset(Receive, 0, sizeof(u8)*50); //Clear the array to zero//Êı×éÇåÁã
+            memset(Receive, 0, sizeof(u8)*50); //Clear the array to zero//æ•°ç»„æ¸…é›¶
         }
 		
-		//¶ÔÒ£¿ØµÄËÙ¶È×ö×î´óÖµ¡¢×îĞ¡ÖµÏŞÖÆ
+		//å¯¹é¥æ§çš„é€Ÿåº¦åšæœ€å¤§å€¼ã€æœ€å°å€¼é™åˆ¶
 		robot_control.rc_speed = target_limit_float(robot_control.rc_speed,0,robot_control.limt_max_speed*1000);
 		
-		//ÏŞÖÆ¾ÀÆ«²ÎÊı·¶Î§ÔÚ0~100
+		//é™åˆ¶çº åå‚æ•°èŒƒå›´åœ¨0~100
 		robot_control.LineDiffParam = robot_control.LineDiffParam > 100 ? 100 : robot_control.LineDiffParam;
     }
     return 0;
@@ -429,47 +388,25 @@ int UART4_IRQHandler(void)
 Function: Serial port 3 receives interrupted
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£º´®¿Ú3½ÓÊÕÖĞ¶Ï
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šä¸²å£3æ¥æ”¶ä¸­æ–­
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 int USART3_IRQHandler(void)
 {
     u8 Usart_Receive;
 
-    if(USART_GetITStatus(USART3, USART_IT_RXNE) != RESET) //Check if data is received //ÅĞ¶ÏÊÇ·ñ½ÓÊÕµ½Êı¾İ
+    if(USART_GetITStatus(USART3, USART_IT_RXNE) != RESET) //Check if data is received //åˆ¤æ–­æ˜¯å¦æ¥æ”¶åˆ°æ•°æ®
     {
-        Usart_Receive = USART_ReceiveData(USART3);//Read the data //¶ÁÈ¡Êı¾İ
+        Usart_Receive = USART_ReceiveData(USART3);//Read the data //è¯»å–æ•°æ®
 		
 		// Data is not processed until 10 seconds after startup
-		//¿ª»ú10ÃëÇ°²»´¦ÀíÊı¾İ
+		//å¼€æœº10ç§’å‰ä¸å¤„ç†æ•°æ®
         if(SysVal.Time_count<CONTROL_DELAY)
             return 0;
 
-		//´¦Àí»úÆ÷ÈË´®¿Ú¿ØÖÆÊı¾İ
+		//å¤„ç†æœºå™¨äººä¸²å£æ§åˆ¶æ•°æ®
         UartxControll_Callback(USART3,Usart_Receive);
-    }
-    return 0;
-}
-
-/**************************************************************************
-Function: Serial port 3 receives interrupted
-Input   : none
-Output  : none
-º¯Êı¹¦ÄÜ£º´®¿Ú3½ÓÊÕÖĞ¶Ï
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
-**************************************************************************/
-int USART2_IRQHandler(void)
-{
-    u8 Usart_Receive;
-
-    if(USART_GetITStatus(USART2, USART_IT_RXNE) != RESET) //Check if data is received //ÅĞ¶ÏÊÇ·ñ½ÓÊÕµ½Êı¾İ
-    {
-        Usart_Receive = USART_ReceiveData(USART2);//Read the data //¶ÁÈ¡Êı¾İ	
-		
-		D50A_RxByte(Usart_Receive);
-
     }
     return 0;
 }
@@ -478,99 +415,99 @@ int USART2_IRQHandler(void)
 Function: After the top 8 and low 8 figures are integrated into a short type data, the unit reduction is converted
 Input   : 8 bits high, 8 bits low
 Output  : The target velocity of the robot on the X/Y/Z axis
-º¯Êı¹¦ÄÜ£º½«ÉÏÎ»»ú·¢¹ıÀ´µÄ¸ß8Î»ºÍµÍ8Î»Êı¾İÕûºÏ³ÉÒ»¸öshortĞÍÊı¾İºó£¬ÔÙ×öµ¥Î»»¹Ô­»»Ëã
-Èë¿Ú²ÎÊı£º¸ß8Î»£¬µÍ8Î»
-·µ»Ø  Öµ£º»úÆ÷ÈËX/Y/ZÖáµÄÄ¿±êËÙ¶È
+å‡½æ•°åŠŸèƒ½ï¼šå°†ä¸Šä½æœºå‘è¿‡æ¥çš„é«˜8ä½å’Œä½8ä½æ•°æ®æ•´åˆæˆä¸€ä¸ªshortå‹æ•°æ®åï¼Œå†åšå•ä½è¿˜åŸæ¢ç®—
+å…¥å£å‚æ•°ï¼šé«˜8ä½ï¼Œä½8ä½
+è¿”å›  å€¼ï¼šæœºå™¨äººX/Y/Zè½´çš„ç›®æ ‡é€Ÿåº¦
 **************************************************************************/
 static float XYZ_Target_Speed_transition(u8 High,u8 Low)
 {
     //Data conversion intermediate variable
-    //Êı¾İ×ª»»µÄÖĞ¼ä±äÁ¿
+    //æ•°æ®è½¬æ¢çš„ä¸­é—´å˜é‡
     short transition;
 
-    //½«¸ß8Î»ºÍµÍ8Î»ÕûºÏ³ÉÒ»¸ö16Î»µÄshortĞÍÊı¾İ
+    //å°†é«˜8ä½å’Œä½8ä½æ•´åˆæˆä¸€ä¸ª16ä½çš„shortå‹æ•°æ®
     //The high 8 and low 8 bits are integrated into a 16-bit short data
     transition=((High<<8)+Low);
     return
-        transition/1000+(transition%1000)*0.001; //Unit conversion, mm/s->m/s //µ¥Î»×ª»», mm/s->m/s
+        transition/1000+(transition%1000)*0.001; //Unit conversion, mm/s->m/s //å•ä½è½¬æ¢, mm/s->m/s
 }
 
 
-//À¶ÑÀATÖ¸Áî×¥°ü£¬·ÀÖ¹Ö¸Áî¸ÉÈÅµ½»úÆ÷ÈËÕı³£µÄÀ¶ÑÀÍ¨ĞÅ
+//è“ç‰™ATæŒ‡ä»¤æŠ“åŒ…ï¼Œé˜²æ­¢æŒ‡ä»¤å¹²æ‰°åˆ°æœºå™¨äººæ­£å¸¸çš„è“ç‰™é€šä¿¡
 static u8 AT_Command_Capture(u8 uart_recv)
 {
     /*
-    À¶ÑÀÁ´½ÓÊ±·¢ËÍµÄ×Ö·û£¬00:11:22:33:44:55ÎªÀ¶ÑÀµÄMACµØÖ·
+    è“ç‰™é“¾æ¥æ—¶å‘é€çš„å­—ç¬¦ï¼Œ00:11:22:33:44:55ä¸ºè“ç‰™çš„MACåœ°å€
     +CONNECTING<<00:11:22:33:44:55\r\n
     +CONNECTED\r\n
-    ¹²44¸ö×Ö·û
+    å…±44ä¸ªå­—ç¬¦
 
-    À¶ÑÀ¶Ï¿ªÊ±·¢ËÍµÄ×Ö·û
+    è“ç‰™æ–­å¼€æ—¶å‘é€çš„å­—ç¬¦
     +DISC:SUCCESS\r\n
     +READY\r\n
     +PAIRABLE\r\n
-    ¹²34¸ö×Ö·û
+    å…±34ä¸ªå­—ç¬¦
     \r -> 0x0D
     \n -> 0x0A
     */
 
-    static u8 pointer = 0; //À¶ÑÀ½ÓÊÜÊ±Ö¸Õë¼ÇÂ¼Æ÷
-    static u8 bt_line = 0; //±íÊ¾ÏÖÔÚÔÚµÚ¼¸ĞĞ
+    static u8 pointer = 0; //è“ç‰™æ¥å—æ—¶æŒ‡é’ˆè®°å½•å™¨
+    static u8 bt_line = 0; //è¡¨ç¤ºç°åœ¨åœ¨ç¬¬å‡ è¡Œ
     static u8 disconnect = 0;
     static u8 connect = 0;
 
-    //¶Ï¿ªÁ¬½Ó
+    //æ–­å¼€è¿æ¥
     static char* BlueTooth_Disconnect[3]= {"+DISC:SUCCESS\r\n","+READY\r\n","+PAIRABLE\r\n"};
 
-    //¿ªÊ¼Á¬½Ó
+    //å¼€å§‹è¿æ¥
     static char* BlueTooth_Connect[2]= {"+CONNECTING<<00:00:00:00:00:00\r\n","+CONNECTED\r\n"};
 
 
-    //ÌØÊâ±êÊ¶·û£¬¿ªÊ¼¾¯Ìè(Ê¹ÓÃÊ±Òª-1)
+    //ç‰¹æ®Šæ ‡è¯†ç¬¦ï¼Œå¼€å§‹è­¦æƒ•(ä½¿ç”¨æ—¶è¦-1)
     if(uart_recv=='+')
     {
-        bt_line++,pointer=0; //ÊÕµ½¡®+¡¯£¬±íÊ¾ÇĞ»»ÁËĞĞÊı
+        bt_line++,pointer=0; //æ”¶åˆ°â€˜+â€™ï¼Œè¡¨ç¤ºåˆ‡æ¢äº†è¡Œæ•°
         disconnect++,connect++;
-        return 1;//×¥°ü£¬½ûÖ¹¿ØÖÆ
+        return 1;//æŠ“åŒ…ï¼Œç¦æ­¢æ§åˆ¶
     }
 
     if(bt_line!=0)
     {
         pointer++;
 
-        //¿ªÊ¼×·×ÙÊı¾İÊÇ·ñ·ûºÏ¶Ï¿ªµÄÌØÕ÷£¬·ûºÏÊ±È«²¿ÆÁ±Î£¬²»·ûºÏÊ±È¡ÏûÆÁ±Î
+        //å¼€å§‹è¿½è¸ªæ•°æ®æ˜¯å¦ç¬¦åˆæ–­å¼€çš„ç‰¹å¾ï¼Œç¬¦åˆæ—¶å…¨éƒ¨å±è”½ï¼Œä¸ç¬¦åˆæ—¶å–æ¶ˆå±è”½
         if(uart_recv == BlueTooth_Disconnect[bt_line-1][pointer])
         {
             disconnect++;
             if(disconnect==34) disconnect=0,connect=0,bt_line=0,pointer=0;
-            return 1;//×¥°ü£¬½ûÖ¹¿ØÖÆ
+            return 1;//æŠ“åŒ…ï¼Œç¦æ­¢æ§åˆ¶
         }
 
-        //×·×ÙÁ¬½ÓÌØÕ÷ (bt_line==1&&connect>=13)Çø¶ÎÊÇÀ¶ÑÀMACµØÖ·£¬Ã¿Ò»¸öÀ¶ÑÀMACµØÖ·¶¼²»ÏàÍ¬£¬ËùÒÔÖ±½ÓÆÁ±Î¹ıÈ¥
+        //è¿½è¸ªè¿æ¥ç‰¹å¾ (bt_line==1&&connect>=13)åŒºæ®µæ˜¯è“ç‰™MACåœ°å€ï¼Œæ¯ä¸€ä¸ªè“ç‰™MACåœ°å€éƒ½ä¸ç›¸åŒï¼Œæ‰€ä»¥ç›´æ¥å±è”½è¿‡å»
         else if(uart_recv == BlueTooth_Connect[bt_line-1][pointer] || (bt_line==1&&connect>=13) )
         {
             connect++;
             if(connect==44) connect=0,disconnect=0,bt_line=0,pointer=0;
-            return 1;//×¥°ü£¬½ûÖ¹¿ØÖÆ
+            return 1;//æŠ“åŒ…ï¼Œç¦æ­¢æ§åˆ¶
         }
 
-        //ÔÚ×¥°üÆÚ¼äÊÕµ½ÆäËûÃüÁî£¬Í£Ö¹×¥°ü
+        //åœ¨æŠ“åŒ…æœŸé—´æ”¶åˆ°å…¶ä»–å‘½ä»¤ï¼Œåœæ­¢æŠ“åŒ…
         else
         {
             disconnect = 0;
             connect = 0;
             bt_line = 0;
             pointer = 0;
-            return 0;//·Ç½ûÖ¹Êı¾İ£¬¿ÉÒÔ¿ØÖÆ
+            return 0;//éç¦æ­¢æ•°æ®ï¼Œå¯ä»¥æ§åˆ¶
         }
     }
 
-    return 0;//·Ç½ûÖ¹Êı¾İ£¬¿ÉÒÔ¿ØÖÆ
+    return 0;//éç¦æ­¢æ•°æ®ï¼Œå¯ä»¥æ§åˆ¶
 }
 
 
 
-//Èí¸´Î»½øBootLoaderÇøÓò
+//è½¯å¤ä½è¿›BootLoaderåŒºåŸŸ
 static void _System_Reset_(u8 uart_recv)
 {
     static u8 res_buf[5];
@@ -586,17 +523,17 @@ static void _System_Reset_(u8 uart_recv)
     if(res_count==5)
     {
         res_count = 0;
-        //½ÓÊÜµ½ÉÏÎ»»úÇëÇóµÄ¸´Î»×Ö·û¡°reset¡±£¬Ö´ĞĞÈí¼ş¸´Î»
+        //æ¥å—åˆ°ä¸Šä½æœºè¯·æ±‚çš„å¤ä½å­—ç¬¦â€œresetâ€ï¼Œæ‰§è¡Œè½¯ä»¶å¤ä½
         if( res_buf[0]=='r'&&res_buf[1]=='e'&&res_buf[2]=='s'&&res_buf[3]=='e'&&res_buf[4]=='t' )
         {
-            NVIC_SystemReset();//½øĞĞÈí¼ş¸´Î»£¬¸´Î»ºóÖ´ĞĞ BootLoader ³ÌĞò
+            NVIC_SystemReset();//è¿›è¡Œè½¯ä»¶å¤ä½ï¼Œå¤ä½åæ‰§è¡Œ BootLoader ç¨‹åº
         }
     }
 }
 
 
 
-//µ÷ÊÔÄ£Ê½
+//è°ƒè¯•æ¨¡å¼
 void RobotControl_SetDebugLevel(char uart_recv)
 {
 	
@@ -622,7 +559,7 @@ void RobotControl_SetDebugLevel(char uart_recv)
 				default: Debug_Flag= 0; break;
 			}
 			
-			//ÈÎÎñÍ¨Öª
+			//ä»»åŠ¡é€šçŸ¥
 //			vTaskNotifyGiveFromISR(g_reportErrTaskHandle,0);
 
 		}

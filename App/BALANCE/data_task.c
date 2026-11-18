@@ -1,25 +1,14 @@
 #include "data_task.h"
 #include "hc_sr04.h"
 #include <stdio.h>
-#ifdef ENCODER_DIAG
-#include "encoder_diag.h"
-#endif
-#if defined(REAR_WHEEL_DEBUG) && defined(ENCODER_DIAG) && defined(_4WD_CAR)
-#include "rear_odom.h"
-volatile rear_odom_snapshot_t g_rear_odom_snapshot;
-#endif
 
 /* USART1: readable diagnostics; set to 0 for the legacy binary protocol. */
 #ifndef C50C_USART1_TEXT
 #define C50C_USART1_TEXT 1
 #endif
 
-/* [C50C] Probe buffer defined in balance_task.c, read here for ENC_DIAG. */
-extern volatile uint32_t g_safety_probe[48];
-
-//ÓÃÓÚ·¢ËÍÊı¾İµÄ½á¹¹Ìå
+//ç”¨äºå‘é€æ•°æ®çš„ç»“æ„ä½“
 SEND_DATA Send_Data;
-SEND_AutoCharge_DATA Send_AutoCharge_Data;
 
 S21C_SensorData_t s21c_board = { 
 	.rangerA = 5,
@@ -30,19 +19,27 @@ S21C_SensorData_t s21c_board = {
 	.rangerF = 5,
 };
 
-//³¬Éù²¨Êı¾İ
+//è¶…å£°æ³¢æ•°æ®
 #define RangerFRAME_HEAD 0xFA
 #define RangerFRAME_TAIL 0xFC
 #define RangerFRAME_LEN 19
 static uint8_t rangerbuffer[RangerFRAME_LEN];
 
+uint8_t Check_BCC(const uint8_t *data, uint16_t length) {
+    uint8_t bcc = 0;
+    for (uint16_t i = 0; i < length; i++) {
+        bcc ^= data[i];
+    }
+    return bcc;
+}
+	
 /**************************************************************************
 Function: Robot Data Transmission Task: Sending robot status, IMU, speed, and other information to various interfaces.
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£º »úÆ÷ÈËÊı¾İ·¢ËÍÈÎÎñ,Ïò¸÷¸ö½Ó¿Ú·¢ËÍ»úÆ÷ÈËµÄ×´Ì¬,imu,ËÙ¶ÈµÈĞÅÏ¢
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼š æœºå™¨äººæ•°æ®å‘é€ä»»åŠ¡,å‘å„ä¸ªæ¥å£å‘é€æœºå™¨äººçš„çŠ¶æ€,imu,é€Ÿåº¦ç­‰ä¿¡æ¯
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 TaskHandle_t data_TaskHandle = NULL;
 
@@ -53,117 +50,63 @@ void data_task(void *pvParameters)
    while(1)
     {	
 			//The task is run at 20hz
-			//´ËÈÎÎñÒÔ20HzµÄÆµÂÊÔËĞĞ
+			//æ­¤ä»»åŠ¡ä»¥20Hzçš„é¢‘ç‡è¿è¡Œ
 			vTaskDelayUntil(&lastWakeTime, F2T(DATA_TASK_RATE));
 			//Assign the data to be sent
-			//¶ÔÒª½øĞĞ·¢ËÍµÄÊı¾İ½øĞĞ¸³Öµ
+			//å¯¹è¦è¿›è¡Œå‘é€çš„æ•°æ®è¿›è¡Œèµ‹å€¼
 			data_transition(); 
 			Usart1_SendTask();
 			Usart3_SendTask();
-			CAN1_SendTask();
 		}
-}
-
-/**************************************************************************
-Functionality: Perform BCC (Block Check Character) verification on the input array and specified length
-Input Parameters: Array start address, length to be verified
-Return Value: BCC verification result
-Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º½«´«ÈëµÄÊı×éºÍĞ£ÑéµÄ³¤¶È½øĞĞBCCĞ£Ñé
-Èë¿Ú²ÎÊı£ºÊı×éÊ×µØÖ·,Òª¼ìÑéµÄ³¤¶È
-·µ»Ø  Öµ£ºbccĞ£Ñé½á¹û
-×÷    Õß£ºWHEELTEC
-**************************************************************************/
-uint8_t Check_BCC(const uint8_t *data, uint16_t length) {
-    uint8_t bcc = 0;
-    for (uint16_t i = 0; i < length; i++) {
-        bcc ^= data[i];
-    }
-    return bcc;
 }
 
 /**************************************************************************
 Function: The data sent by the serial port is assigned
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£º´®¿Ú·¢ËÍµÄÊı¾İ½øĞĞ¸³Öµ
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šä¸²å£å‘é€çš„æ•°æ®è¿›è¡Œèµ‹å€¼
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 static void data_transition(void)
 {
 	unsigned char i;
-	Send_Data.Sensor_Str.Frame_Header = FRAME_HEADER; //Frame_header //Ö¡Í·
-	Send_Data.Sensor_Str.Frame_Tail = FRAME_TAIL;     //Frame_tail //Ö¡Î²
-	
-#if defined(REAR_WHEEL_DEBUG) && defined(ENCODER_DIAG) && defined(_4WD_CAR)
-    /* Board wiring was isolated on the vehicle: left = software B, right = C.
-       Use raw accumulated counts only for this temporary rear-wheel diagnostic. */
-    static rear_odom_t rear_odom;
-    uint32_t raw_b, raw_c, now_ms;
-    rear_odom_result_t rear_velocity;
-    taskENTER_CRITICAL();
-    now_ms = (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
-    raw_b = g_encoder_diag[1].raw_sum;
-    raw_c = g_encoder_diag[2].raw_sum;
-    taskEXIT_CRITICAL();
-    rear_velocity = rear_odom_step(&rear_odom, raw_b, raw_c, now_ms,
-                                   robot.HardwareParam.Wheel_Circ,
-                                   robot.HardwareParam.WheelSpacing);
-    taskENTER_CRITICAL();
-    g_rear_odom_snapshot.left_mm_s = rear_velocity.left_mm_s;
-    g_rear_odom_snapshot.right_mm_s = rear_velocity.right_mm_s;
-    g_rear_odom_snapshot.sample_ms = now_ms;
-    g_rear_odom_snapshot.valid = rear_velocity.valid;
-    taskEXIT_CRITICAL();
-    Send_Data.Sensor_Str.Vel.X_speed = rear_velocity.vx_mm_s;
-    Send_Data.Sensor_Str.Vel.Y_speed = rear_velocity.vy_mm_s;
-    Send_Data.Sensor_Str.Vel.Z_speed = rear_velocity.wz_mrad_s;
-#else
-	//¸ù¾İ³µĞÍµÄ²»Í¬ÔËĞĞÏà¶ÔÓ¦µÄÔË¶¯Ñ§Õı½âº¯Êı,»ñÈ¡»úÆ÷ÈË3Öá¼ÆËãËÙ¶È
+	//æ ¹æ®è½¦å‹çš„ä¸åŒè¿è¡Œç›¸å¯¹åº”çš„è¿åŠ¨å­¦æ­£è§£å‡½æ•°,è·å–æœºå™¨äºº3è½´è®¡ç®—é€Ÿåº¦
 	float *vel;
-	#if defined AKM_CAR || defined DIFF_CAR
-		vel = Kinematics_akm_diff(robot.MOTOR_A.Encoder,robot.MOTOR_B.Encoder);
-	#elif defined MEC_CAR || defined _4WD_CAR
-		vel = Kinematics_mec_4wd(robot.MOTOR_A.Encoder,robot.MOTOR_B.Encoder,robot.MOTOR_C.Encoder,robot.MOTOR_D.Encoder);
-	#elif defined OMNI_CAR
-		vel = Kinematics_omni(robot.MOTOR_A.Encoder,robot.MOTOR_B.Encoder,robot.MOTOR_C.Encoder);
-	#endif
+	vel = Kinematics_mec_4wd(robot.MOTOR_A.Encoder,robot.MOTOR_B.Encoder,robot.MOTOR_C.Encoder,robot.MOTOR_D.Encoder);
 	
 	//Forward kinematics solution, from the current speed of each wheel to calculate the current speed of the three axis
-	//ÔË¶¯Ñ§Õı½â£¬´Ó¸÷³µÂÖµ±Ç°ËÙ¶ÈÇó³öÈıÖáµ±Ç°ËÙ¶È
-	Send_Data.Sensor_Str.Vel.X_speed = vel[0]*1000; //Ğ¡³µxÖáËÙ¶È,À©´ó1000±¶·¢ËÍ
-	Send_Data.Sensor_Str.Vel.Y_speed = vel[1]*1000; //Ğ¡³µyÖáËÙ¶È,À©´ó1000±¶·¢ËÍ
-	Send_Data.Sensor_Str.Vel.Z_speed = vel[2]*1000; //Ğ¡³µzÖáËÙ¶È,À©´ó1000±¶·¢ËÍ
-#endif
+	//è¿åŠ¨å­¦æ­£è§£ï¼Œä»å„è½¦è½®å½“å‰é€Ÿåº¦æ±‚å‡ºä¸‰è½´å½“å‰é€Ÿåº¦
+	Send_Data.Sensor_Str.Vel.X_speed = vel[0]*1000; //å°è½¦xè½´é€Ÿåº¦,æ‰©å¤§1000å€å‘é€
+	Send_Data.Sensor_Str.Vel.Y_speed = vel[1]*1000; //å°è½¦yè½´é€Ÿåº¦,æ‰©å¤§1000å€å‘é€
+	Send_Data.Sensor_Str.Vel.Z_speed = vel[2]*1000; //å°è½¦zè½´é€Ÿåº¦,æ‰©å¤§1000å€å‘é€
+	//The acceleration of the triaxial acceleration //åŠ é€Ÿåº¦è®¡ä¸‰è½´åŠ é€Ÿåº¦
+	Send_Data.Sensor_Str.Accelerometer.X_data= imu.accel.y; //The accelerometer Y-axis is converted to the ros coordinate X axis //åŠ é€Ÿåº¦è®¡Yè½´è½¬æ¢åˆ°ROSåæ ‡Xè½´
+	Send_Data.Sensor_Str.Accelerometer.Y_data=-imu.accel.x; //The accelerometer X-axis is converted to the ros coordinate y axis //åŠ é€Ÿåº¦è®¡Xè½´è½¬æ¢åˆ°ROSåæ ‡Yè½´
+	Send_Data.Sensor_Str.Accelerometer.Z_data= imu.accel.z; //The accelerometer Z-axis is converted to the ros coordinate Z axis //åŠ é€Ÿåº¦è®¡Zè½´è½¬æ¢åˆ°ROSåæ ‡Zè½´
 	
-	//The acceleration of the triaxial acceleration //¼ÓËÙ¶È¼ÆÈıÖá¼ÓËÙ¶È
-	Send_Data.Sensor_Str.Accelerometer.X_data= imu.accel.y; //The accelerometer Y-axis is converted to the ros coordinate X axis //¼ÓËÙ¶È¼ÆYÖá×ª»»µ½ROS×ø±êXÖá
-	Send_Data.Sensor_Str.Accelerometer.Y_data=-imu.accel.x; //The accelerometer X-axis is converted to the ros coordinate y axis //¼ÓËÙ¶È¼ÆXÖá×ª»»µ½ROS×ø±êYÖá
-	Send_Data.Sensor_Str.Accelerometer.Z_data= imu.accel.z; //The accelerometer Z-axis is converted to the ros coordinate Z axis //¼ÓËÙ¶È¼ÆZÖá×ª»»µ½ROS×ø±êZÖá
-	
-	//The Angle velocity of the triaxial velocity //½ÇËÙ¶È¼ÆÈıÖá½ÇËÙ¶È
-	Send_Data.Sensor_Str.Gyroscope.X_data= imu.gyro.y; //The Y-axis is converted to the ros coordinate X axis //½ÇËÙ¶È¼ÆYÖá×ª»»µ½ROS×ø±êXÖá
-	Send_Data.Sensor_Str.Gyroscope.Y_data=-imu.gyro.x; //The X-axis is converted to the ros coordinate y axis //½ÇËÙ¶È¼ÆXÖá×ª»»µ½ROS×ø±êYÖá
+	//The Angle velocity of the triaxial velocity //è§’é€Ÿåº¦è®¡ä¸‰è½´è§’é€Ÿåº¦
+	Send_Data.Sensor_Str.Gyroscope.X_data= imu.gyro.y; //The Y-axis is converted to the ros coordinate X axis //è§’é€Ÿåº¦è®¡Yè½´è½¬æ¢åˆ°ROSåæ ‡Xè½´
+	Send_Data.Sensor_Str.Gyroscope.Y_data=-imu.gyro.x; //The X-axis is converted to the ros coordinate y axis //è§’é€Ÿåº¦è®¡Xè½´è½¬æ¢åˆ°ROSåæ ‡Yè½´
 	
 	if( 0 == robot_control.FlagStop ) 
 		//If the motor control bit makes energy state, the z-axis velocity is sent normall
-	  //Èç¹ûµç»ú¿ØÖÆÎ»Ê¹ÄÜ×´Ì¬£¬ÄÇÃ´Õı³£·¢ËÍZÖá½ÇËÙ¶È
+	  //å¦‚æœç”µæœºæ§åˆ¶ä½ä½¿èƒ½çŠ¶æ€ï¼Œé‚£ä¹ˆæ­£å¸¸å‘é€Zè½´è§’é€Ÿåº¦
 		Send_Data.Sensor_Str.Gyroscope.Z_data=imu.gyro.z;  
 	else  
 		//If the robot is static (motor control dislocation), the z-axis is 0
-    //Èç¹û»úÆ÷ÈËÊÇ¾²Ö¹µÄ£¨µç»ú¿ØÖÆÎ»Ê§ÄÜ£©£¬ÄÇÃ´·¢ËÍµÄZÖá½ÇËÙ¶ÈÎª0		
+    //å¦‚æœæœºå™¨äººæ˜¯é™æ­¢çš„ï¼ˆç”µæœºæ§åˆ¶ä½å¤±èƒ½ï¼‰ï¼Œé‚£ä¹ˆå‘é€çš„Zè½´è§’é€Ÿåº¦ä¸º0		
 		Send_Data.Sensor_Str.Gyroscope.Z_data=0;  
 	
 	//Battery voltage (this is a thousand times larger floating point number, which will be reduced by a thousand times as well as receiving the data).
-	//µç³ØµçÑ¹(ÕâÀï½«¸¡µãÊı·Å´óÒ»Ç§±¶´«Êä£¬ÏàÓ¦µÄÔÚ½ÓÊÕ¶ËÔÚ½ÓÊÕµ½Êı¾İºóÒ²»áËõĞ¡Ò»Ç§±¶)
+	//ç”µæ± ç”µå‹(è¿™é‡Œå°†æµ®ç‚¹æ•°æ”¾å¤§ä¸€åƒå€ä¼ è¾“ï¼Œç›¸åº”çš„åœ¨æ¥æ”¶ç«¯åœ¨æ¥æ”¶åˆ°æ•°æ®åä¹Ÿä¼šç¼©å°ä¸€åƒå€)
 	Send_Data.Sensor_Str.Power_Voltage = robot.voltage*1000; 
 	
-	Send_Data.buffer[0]=Send_Data.Sensor_Str.Frame_Header; //Frame_heade //Ö¡Í·
-	Send_Data.buffer[1]=robot_control.FlagStop; //Car software loss marker //Ğ¡³µÈí¼şÊ§ÄÜ±êÖ¾Î»
+	Send_Data.buffer[0]=Send_Data.Sensor_Str.Frame_Header; //Frame_heade //å¸§å¤´
+	Send_Data.buffer[1]=robot_control.FlagStop; //Car software loss marker //å°è½¦è½¯ä»¶å¤±èƒ½æ ‡å¿—ä½
 	
 	//The three-axis speed of / / car is split into two eight digit Numbers
-	//Ğ¡³µÈıÖáËÙ¶È,¸÷Öá¶¼²ğ·ÖÎªÁ½¸ö8Î»Êı¾İÔÙ·¢ËÍ
+	//å°è½¦ä¸‰è½´é€Ÿåº¦,å„è½´éƒ½æ‹†åˆ†ä¸ºä¸¤ä¸ª8ä½æ•°æ®å†å‘é€
 	Send_Data.buffer[2]=Send_Data.Sensor_Str.Vel.X_speed >>8; 
 	Send_Data.buffer[3]=Send_Data.Sensor_Str.Vel.X_speed ;    
 	Send_Data.buffer[4]=Send_Data.Sensor_Str.Vel.Y_speed>>8;  
@@ -172,7 +115,7 @@ static void data_transition(void)
 	Send_Data.buffer[7]=Send_Data.Sensor_Str.Vel.Z_speed ;    
 	
 	//The acceleration of the triaxial axis of / / imu accelerometer is divided into two eight digit reams
-	//IMU¼ÓËÙ¶È¼ÆÈıÖá¼ÓËÙ¶È,¸÷Öá¶¼²ğ·ÖÎªÁ½¸ö8Î»Êı¾İÔÙ·¢ËÍ
+	//IMUåŠ é€Ÿåº¦è®¡ä¸‰è½´åŠ é€Ÿåº¦,å„è½´éƒ½æ‹†åˆ†ä¸ºä¸¤ä¸ª8ä½æ•°æ®å†å‘é€
 	Send_Data.buffer[8]=Send_Data.Sensor_Str.Accelerometer.X_data>>8; 
 	Send_Data.buffer[9]=Send_Data.Sensor_Str.Accelerometer.X_data;   
 	Send_Data.buffer[10]=Send_Data.Sensor_Str.Accelerometer.Y_data>>8;
@@ -181,7 +124,7 @@ static void data_transition(void)
 	Send_Data.buffer[13]=Send_Data.Sensor_Str.Accelerometer.Z_data;
 	
 	//The axis of the triaxial velocity of the / /imu is divided into two eight digits
-	//IMU½ÇËÙ¶È¼ÆÈıÖá½ÇËÙ¶È,¸÷Öá¶¼²ğ·ÖÎªÁ½¸ö8Î»Êı¾İÔÙ·¢ËÍ
+	//IMUè§’é€Ÿåº¦è®¡ä¸‰è½´è§’é€Ÿåº¦,å„è½´éƒ½æ‹†åˆ†ä¸ºä¸¤ä¸ª8ä½æ•°æ®å†å‘é€
 	Send_Data.buffer[14]=Send_Data.Sensor_Str.Gyroscope.X_data>>8;
 	Send_Data.buffer[15]=Send_Data.Sensor_Str.Gyroscope.X_data;
 	Send_Data.buffer[16]=Send_Data.Sensor_Str.Gyroscope.Y_data>>8;
@@ -190,21 +133,21 @@ static void data_transition(void)
 	Send_Data.buffer[19]=Send_Data.Sensor_Str.Gyroscope.Z_data;
 	
 	//Battery voltage, split into two 8 digit Numbers
-	//µç³ØµçÑ¹,²ğ·ÖÎªÁ½¸ö8Î»Êı¾İ·¢ËÍ
+	//ç”µæ± ç”µå‹,æ‹†åˆ†ä¸ºä¸¤ä¸ª8ä½æ•°æ®å‘é€
 	Send_Data.buffer[20]=Send_Data.Sensor_Str.Power_Voltage >>8; 
 	Send_Data.buffer[21]=Send_Data.Sensor_Str.Power_Voltage; 
 
   //Data check digit calculation, Pattern 1 is a data check
-  //Êı¾İĞ£ÑéÎ»¼ÆËã£¬Ä£Ê½1ÊÇ·¢ËÍÊı¾İĞ£Ñé
-	//ËÄÂÖ±àÂëÆ÷¼ÆÊı A/B/C/D£¬int32 ´ó¶Ë
-	/* Ô­³§È±Ïİ: robot.MOTOR_x.Encoder µ¥Î»ÊÇ m/s(float), Ö±½Ó (int) ½Ø¶Ïºó
-	 * Ö»ÓĞÂú 1.0 m/s ²Å·ÇÁã, µÍËÙÏÂºã·¢ 0. ÕâÀï¸ÄÎª mm/s ÕûÊıÉÏ±¨,
-	 * Ö÷»ú²à°´ mm/s ½âÎö¼´¿É¡£ */
+  //æ•°æ®æ ¡éªŒä½è®¡ç®—ï¼Œæ¨¡å¼1æ˜¯å‘é€æ•°æ®æ ¡éªŒ
+	//å››è½®ç¼–ç å™¨è®¡æ•° A/B/C/Dï¼Œint32 å¤§ç«¯
+	/* åŸå‚ç¼ºé™·: robot.MOTOR_x.Encoder å•ä½æ˜¯ m/s(float), ç›´æ¥ (int) æˆªæ–­å
+	 * åªæœ‰æ»¡ 1.0 m/s æ‰éé›¶, ä½é€Ÿä¸‹æ’å‘ 0. è¿™é‡Œæ”¹ä¸º mm/s æ•´æ•°ä¸ŠæŠ¥,
+	 * ä¸»æœºä¾§æŒ‰ mm/s è§£æå³å¯ã€‚ */
 	Send_Data.Sensor_Str.Encoder[0]=(int)(robot.MOTOR_A.Encoder * 1000.0f);
 	Send_Data.Sensor_Str.Encoder[1]=(int)(robot.MOTOR_B.Encoder * 1000.0f);
 	Send_Data.Sensor_Str.Encoder[2]=(int)(robot.MOTOR_C.Encoder * 1000.0f);
 	Send_Data.Sensor_Str.Encoder[3]=(int)(robot.MOTOR_D.Encoder * 1000.0f);
-	//ËÄÂ· PWM ±È½ÏÖµ CCR1..CCR4£¬uint16 ´ó¶Ë
+	//å››è·¯ PWM æ¯”è¾ƒå€¼ CCR1..CCR4ï¼Œuint16 å¤§ç«¯
 	Send_Data.Sensor_Str.Pwm[0]=(unsigned short)TIM8->CCR1;
 	Send_Data.Sensor_Str.Pwm[1]=(unsigned short)TIM8->CCR2;
 	Send_Data.Sensor_Str.Pwm[2]=(unsigned short)TIM8->CCR3;
@@ -226,28 +169,10 @@ static void data_transition(void)
 	Send_Data.Sensor_Str.Ultrasonic_mm = HC_SR04_GetDistance_mm();
 	Send_Data.buffer[SEND_DATA_ULTRASONIC_OFFSET+0]=(unsigned char)(Send_Data.Sensor_Str.Ultrasonic_mm>>8);
 	Send_Data.buffer[SEND_DATA_ULTRASONIC_OFFSET+1]=(unsigned char)(Send_Data.Sensor_Str.Ultrasonic_mm);
-	Send_Data.buffer[SEND_DATA_BCC_LEN]=Check_BCC(Send_Data.buffer,SEND_DATA_BCC_LEN); 
-	Send_Data.buffer[SEND_DATA_SIZE-1]=Send_Data.Sensor_Str.Frame_Tail; //Frame_tail //Ö¡Î²
-	
-	///////////////////////×Ô¶¯»Ø³äÏà¹Ø±äÁ¿¸³Öµ/////////////////////
-	Send_AutoCharge_Data.AutoCharge_Str.Frame_Header = AutoCharge_HEADER;   //Ö¡Í·¸³Öµ0x7C
-	Send_AutoCharge_Data.AutoCharge_Str.Frame_Tail = AutoCharge_TAIL;		//Ö¡Î²¸³Öµ0x7F
-	Send_AutoCharge_Data.AutoCharge_Str.Charging_Current = (short)charger.ChargingCurrent;//³äµçµçÁ÷¸³Öµ
-	
-	Send_AutoCharge_Data.AutoCharge_Str.RED = charger.RED_STATE; //ºìÍâ±êÖ¾Î»¸³Öµ
-	Send_AutoCharge_Data.AutoCharge_Str.Charging = charger.Charging; //ÊÇ·ñÔÚ³äµç±êÖ¾Î»¸³Öµ
+	Send_Data.buffer[SEND_DATA_BCC_LEN]=Check_BCC(Send_Data.buffer,SEND_DATA_BCC_LEN);
+	Send_Data.buffer[SEND_DATA_SIZE-1]=Send_Data.Sensor_Str.Frame_Tail; //Frame_tail //å¸§å°¾
 
-	Send_AutoCharge_Data.buffer[0] = Send_AutoCharge_Data.AutoCharge_Str.Frame_Header;		//Ö¡Í·0x7C
-	Send_AutoCharge_Data.buffer[1] = Send_AutoCharge_Data.AutoCharge_Str.Charging_Current>>8;//³äµçµçÁ÷¸ß8Î»
-	Send_AutoCharge_Data.buffer[2] = Send_AutoCharge_Data.AutoCharge_Str.Charging_Current;	//³äµçµçÁ÷µÍ8Î»
-	Send_AutoCharge_Data.buffer[3] = Send_AutoCharge_Data.AutoCharge_Str.RED;				//ÊÇ·ñ½ÓÊÕµ½ºìÍâ±êÖ¾Î»
-	Send_AutoCharge_Data.buffer[4] = Send_AutoCharge_Data.AutoCharge_Str.Charging;			//ÊÇ·ñÔÚ³äµç±êÖ¾Î»
-	Send_AutoCharge_Data.buffer[5] = charger.AllowRecharge;									//×Ô¶¯»Ø³äµÄ×´Ì¬
-	Send_AutoCharge_Data.buffer[6] = Check_BCC(Send_AutoCharge_Data.buffer,6);				//Ğ£ÑéÎ»
-	Send_AutoCharge_Data.buffer[7] = Send_AutoCharge_Data.AutoCharge_Str.Frame_Tail;		//Ö¡Î²0x7F
-	///////////////////////×Ô¶¯»Ø³äÏà¹Ø±äÁ¿¸³Öµ/////////////////////
-	
-	////////////// ³¬Éù²¨Êı¾İÖ¡ /////////////
+	////////////// è¶…å£°æ³¢æ•°æ®å¸§ /////////////
 	rangerbuffer[0] = RangerFRAME_HEAD;
 	rangerbuffer[RangerFRAME_LEN-1] = RangerFRAME_TAIL;
 	rangerbuffer[1] = (short)(s21c_board.rangerA*1000)>>8;
@@ -267,16 +192,16 @@ static void data_transition(void)
 	rangerbuffer[15] = 0;
 	rangerbuffer[16] = 0;
 	rangerbuffer[17] = Check_BCC(rangerbuffer,17);
-	////////////// ³¬Éù²¨Êı¾İÖ¡ /////////////
+	////////////// è¶…å£°æ³¢æ•°æ®å¸§ /////////////
 }
 
 /**************************************************************************
 Function: Serial port 1 sends data
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£º´®¿Ú1·¢ËÍÊı¾İ
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šä¸²å£1å‘é€æ•°æ®
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 static void Usart1_SendTask(void)
 {
@@ -287,28 +212,6 @@ static void Usart1_SendTask(void)
     static unsigned int pos, len;
     unsigned int budget = 32;
     if (pos == len) {
-#ifdef ENCODER_DIAG
-#define DIAG_VALUES(i) (unsigned long)g_encoder_diag[i].raw_sum, \
-                       (unsigned long)g_encoder_diag[i].raw_abs, \
-                       (unsigned long)g_encoder_diag[i].filtered_sum, \
-                       (unsigned long)g_encoder_diag[i].rejected
-                int n = snprintf(line, sizeof(line),
-            "E n=%04lX S=%08lX,%08lX F=%08lX,%08lX G=%08lX,%08lX,%08lX,%08lX H=%08lX,%08lX,%08lX,%08lX,%08lX\r\n",
-            (unsigned long)(g_encoder_diag[0].samples & 0xFFFFu),
-            (unsigned long)g_encoder_diag[0].raw_sum,
-            (unsigned long)g_encoder_diag[1].raw_sum,
-            (unsigned long)g_encoder_diag[0].filtered_sum,
-            (unsigned long)g_encoder_diag[1].filtered_sum,
-            (unsigned long)g_safety_probe[33],
-            (unsigned long)g_safety_probe[34],
-            (unsigned long)g_safety_probe[35],
-            (unsigned long)g_safety_probe[36],
-            (unsigned long)g_safety_probe[39],
-            (unsigned long)g_safety_probe[40],
-            (unsigned long)g_safety_probe[41],
-            (unsigned long)g_safety_probe[42],
-            (unsigned long)g_safety_probe[43]);
-#else
         int n = snprintf(line, sizeof(line),
             "C50C stop=%u mode=%u A:%ld,%ld,%d B:%ld,%ld,%d C:%ld,%ld,%d D:%ld,%ld,%d\r\n",
             (unsigned)robot_control.FlagStop, (unsigned)robot_control.ControlMode,
@@ -316,7 +219,6 @@ static void Usart1_SendTask(void)
             (long)(robot.MOTOR_B.Target * 1000.0f), (long)(robot.MOTOR_B.Encoder * 1000.0f), robot.MOTOR_B.Output,
             (long)(robot.MOTOR_C.Target * 1000.0f), (long)(robot.MOTOR_C.Encoder * 1000.0f), robot.MOTOR_C.Output,
             (long)(robot.MOTOR_D.Target * 1000.0f), (long)(robot.MOTOR_D.Encoder * 1000.0f), robot.MOTOR_D.Output);
-#endif
         if (n <= 0 || (unsigned int)n >= sizeof(line)) { pos = len = 0; return; }
         pos = 0;
         len = (unsigned int)n;
@@ -336,16 +238,7 @@ static void Usart1_SendTask(void)
 		for(i=0; i<RangerFRAME_LEN; i++)
 		{
 			uart1_send(rangerbuffer[i]);
-		}	
-	}
-	
-	if(SysVal.HardWare_charger==1 || SysVal.HardWare_Ranger==1)
-	{
-		//´æÔÚ»Ø³ä×°±¸Ê±£¬ÏòÉÏ²ã·¢ËÍ×Ô¶¯»Ø³äÏà¹Ø±äÁ¿
-		for(i=0; i<8; i++)
-		{
-			uart1_send(Send_AutoCharge_Data.buffer[i]);
-		}	
+		}
 	}
 #endif
 }
@@ -354,9 +247,9 @@ static void Usart1_SendTask(void)
 Function: Serial port 3 sends data
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£º´®¿Ú3·¢ËÍÊı¾İ
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šä¸²å£3å‘é€æ•°æ®
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 static void Usart3_SendTask(void)
 {
@@ -371,125 +264,41 @@ static void Usart3_SendTask(void)
 		for(i=0; i<RangerFRAME_LEN; i++)
 		{
 			uart3_send(rangerbuffer[i]);
-		}	
-	}
-	
-	if(SysVal.HardWare_charger==1 || SysVal.HardWare_Ranger==1)
-	{
-		//´æÔÚ»Ø³ä×°±¸Ê±£¬ÏòÉÏ²ã·¢ËÍ×Ô¶¯»Ø³äÏà¹Ø±äÁ¿
-		for(i=0; i<8; i++)
-		{
-			uart3_send(Send_AutoCharge_Data.buffer[i]);
-		}	
-	}
-}
-
-/**************************************************************************
-Function: CAN1 sends data
-Input   : none
-Output  : none
-º¯Êı¹¦ÄÜ£ºCAN1·¢ËÍÊı¾İ
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
-**************************************************************************/
-static void CAN1_SendTask(void)
-{
-	u8 CAN_SENT[8],i;
-	
-	//24×Ö½ÚÊı¾İ·Ö3×é·¢ËÍ,Ê¹ÓÃ±ê×¼Ö¡id 0x101 0x102 0x103
-	for(i=0;i<8;i++)
-	{
-	  CAN_SENT[i]=Send_Data.buffer[i];
-	}
-	CAN1_Send_Num(0x101,CAN_SENT);
-	
-	for(i=0;i<8;i++)
-	{
-	  CAN_SENT[i]=Send_Data.buffer[i+8];
-	}
-	CAN1_Send_Num(0x102,CAN_SENT);
-	
-	for(i=0;i<8;i++)
-	{
-	  CAN_SENT[i]=Send_Data.buffer[i+16];
-	}
-	CAN1_Send_Num(0x103,CAN_SENT);
-	
-	//´æÔÚ»Ø³ä×°±¸Ê±£¬½«»Ø³äÏà¹ØÅäÖÃÊı¾İ·¢ËÍµ½»Ø³ä×°±¸
-	if(SysVal.HardWare_charger==1)
-	{
-		CAN_Send_AutoRecharge();
+		}
 	}
 }
 
 /*-------------------- Positive kinematics correlation function for each vehicle model ------------------------*/
-/*--------------------------------         ¸÷³µĞÍÔË¶¯Ñ§Õı½âÏà¹Øº¯Êı          ------------------------------------*/
+/*--------------------------------         å„è½¦å‹è¿åŠ¨å­¦æ­£è§£ç›¸å…³å‡½æ•°          ------------------------------------*/
 /**************************************************************************
 Function Purpose: akm/diff Kinematic Analysis
 Input Parameters: Left wheel speed, Right wheel speed, in meters per second (m/s)
 Return Value: Robot's x, y, z velocities
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º°¢¿ËÂü/²îËÙ ÔË¶¯Ñ§Õı½â
-Èë¿Ú²ÎÊı£º×óÂÖËÙ¶È¡¢ÓÒÂÖËÙ¶È,µ¥Î» m/s
-·µ»Ø  Öµ£º»úÆ÷ÈËx¡¢y¡¢zÈıÖáËÙ¶È
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šé˜¿å…‹æ›¼/å·®é€Ÿ è¿åŠ¨å­¦æ­£è§£
+å…¥å£å‚æ•°ï¼šå·¦è½®é€Ÿåº¦ã€å³è½®é€Ÿåº¦,å•ä½ m/s
+è¿”å›  å€¼ï¼šæœºå™¨äººxã€yã€zä¸‰è½´é€Ÿåº¦
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
-#if defined AKM_CAR || defined DIFF_CAR
-static float* Kinematics_akm_diff(float motorA,float motorB)
-{
-	static float vel[3];
-	//xyzÈıÖá¼ÆËãËÙ¶È
-	vel[0] = (motorA + motorB)/2.0f;
-	vel[1] = 0;
-	vel[2] = (motorB - motorA)/robot.HardwareParam.WheelSpacing;
-	
-	return vel;
-}
-
 /**************************************************************************
 Function Purpose: mec/4wd Kinematic Analysis
 Input Parameters: Robot's four-wheel speeds, in meters per second (m/s).
 Return Value: Robot's x, y, z velocities
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºÂóÂÖ/ËÄÇı ÔË¶¯Ñ§Õı½â
-Èë¿Ú²ÎÊı£º»úÆ÷ÈËËÄ¸öÂÖµÄËÙ¶È,µ¥Î» m/s
-·µ»Ø  Öµ£º»úÆ÷ÈËx¡¢y¡¢zÈıÖáËÙ¶È
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šéº¦è½®/å››é©± è¿åŠ¨å­¦æ­£è§£
+å…¥å£å‚æ•°ï¼šæœºå™¨äººå››ä¸ªè½®çš„é€Ÿåº¦,å•ä½ m/s
+è¿”å›  å€¼ï¼šæœºå™¨äººxã€yã€zä¸‰è½´é€Ÿåº¦
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
-#elif defined MEC_CAR || defined _4WD_CAR
 static float* Kinematics_mec_4wd(float motorA,float motorB,float motorC,float motorD)
 {
 	static float vel[3];
-	//xyzÈıÖá¼ÆËãËÙ¶È
+	//xyzä¸‰è½´è®¡ç®—é€Ÿåº¦
 	vel[0] = (motorA+motorB+motorC+motorD)/4.0f;
 	vel[1] = (motorA-motorB+motorC-motorD)/4.0f;
 	vel[2] = (-motorA-motorB+motorC+motorD)/4.0f/( robot.HardwareParam.WheelSpacing + robot.HardwareParam.AxleSpacing );
 	
 	return vel;
 }
-
-/**************************************************************************
-Function Purpose: omni Kinematic Analysis
-Input Parameters: Robot's three-wheel speeds, in meters per second (m/s).
-Return Value: Robot's x, y, z velocities
-Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºÈ«ÏòÂÖ ÔË¶¯Ñ§Õı½â
-Èë¿Ú²ÎÊı£º»úÆ÷ÈË3¸öÂÖµÄËÙ¶È,µ¥Î» m/s
-·µ»Ø  Öµ£º»úÆ÷ÈËx¡¢y¡¢zÈıÖáËÙ¶È
-×÷    Õß£ºWHEELTEC
-**************************************************************************/
-#elif defined OMNI_CAR
-static float* Kinematics_omni(float motorA,float motorB,float motorC)
-{
-	static float vel[3];
-	//xyzÈıÖá¼ÆËãËÙ¶È
-	vel[0] = (motorC - motorB)/2.0f/robot.HardwareParam.X_PARAMETER;
-	vel[1] = (motorA*2 - motorB - motorC)/3.0f;
-	vel[2] = (motorA + motorB + motorC )/ 3.0f /robot.HardwareParam.TurnRadiaus;
-	
-	return vel;
-}
-
-#endif
 
 

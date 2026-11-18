@@ -5,9 +5,9 @@
 Function: Ps2 handle task
 Input   : none
 Output  : none
-º¯Êý¹¦ÄÜ£ºPS2ÊÖ±úÈÎÎñ
-Èë¿Ú²ÎÊý£ºÎÞ
-·µ»Ø  Öµ£ºÎÞ
+å‡½æ•°åŠŸèƒ½ï¼šPS2æ‰‹æŸ„ä»»åŠ¡
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›ž  å€¼ï¼šæ— 
 **************************************************************************/
 void pstwo_task(void *pvParameters)
 {
@@ -17,28 +17,24 @@ void pstwo_task(void *pvParameters)
     {
         vTaskDelayUntil(&lastWakeTime, F2T(PS2_TASK_RATE));
 		
-		if( SysVal.HardWare_Ver == V1_0 ) // V1.0Ó²¼þ°æ±¾ Ê¹ÓÃ³£¹æps2ÊÖ±ú
+		if( SysVal.HardWare_Ver == V1_0 ) // V1.0ç¡¬ä»¶ç‰ˆæœ¬ ä½¿ç”¨å¸¸è§„ps2æ‰‹æŸ„
 		{
 			//Read the ps2 data
-			//¶ÁÈ¡PS2µÄÊý¾Ý
-			PS2_Read();		
+			//è¯»å–PS2çš„æ•°æ®
+			PS2_Read();
 		}
-		else if( SysVal.HardWare_Ver >= V1_1 ) //V1.1Ó²¼þ°æ±¾ Ê¹ÓÃusbÊÖ±ú
-		{
-			//V1.1Ó²¼þÊ¹ÓÃUSBÊÖ±ú,¶ÁÈ¡ÈÎÎñ²»ÔÚ´Ëº¯Êý
-		}
-		
-		//ÓÎÏ·ÊÖ±úÄ£Ê½Æô¶¯
-		//Ô­³§Ìõ¼þÒªÇó LY>150(¼´×óÒ¡¸ËÏòºóÍÆµ½µ×)²Å½øÈëPS2Ä£Ê½, ÏòÇ°ÍÆÓÀÔ¶½ø²»È¥.
-		//¸ÄÎª: °´¹ýSTART¼ü, ÇÒÈÎÒâÒ¡¸ËÀë¿ªÖÐÎ»(Æ«ÒÆ³¬¹ýËÀÇø), ¼´½øÈëPS2Ä£Ê½.
-		if( GamePadInterface != 0 && GamePadInterface->StartFlag == 1 && Get_Control_Mode(_PS2_Control)==0
+
+		//æ¸¸æˆæ‰‹æŸ„æ¨¡å¼å¯åŠ¨
+		//åŽŸåŽ‚æ¡ä»¶è¦æ±‚ LY>150(å³å·¦æ‘‡æ†å‘åŽæŽ¨åˆ°åº•)æ‰è¿›å…¥PS2æ¨¡å¼, å‘å‰æŽ¨æ°¸è¿œè¿›ä¸åŽ».
+		//æ”¹ä¸º: æŒ‰è¿‡STARTé”®, ä¸”ä»»æ„æ‘‡æ†ç¦»å¼€ä¸­ä½(åç§»è¶…è¿‡æ­»åŒº), å³è¿›å…¥PS2æ¨¡å¼.
+		if( Classic_PS2Gamepad.StartFlag == 1 && Get_Control_Mode(_PS2_Control)==0
 		 && SysVal.Time_count>=CONTROL_DELAY
-		 && ( PS2_Stick_Offset(GamePadInterface->LX) > PS2_NEUTRAL_THRESHOLD
-		   || PS2_Stick_Offset(GamePadInterface->LY) > PS2_NEUTRAL_THRESHOLD
-		   || PS2_Stick_Offset(GamePadInterface->RX) > PS2_NEUTRAL_THRESHOLD
-		   || PS2_Stick_Offset(GamePadInterface->RY) > PS2_NEUTRAL_THRESHOLD ) )
+		 && ( PS2_Stick_Offset(Classic_PS2Gamepad.LX) > PS2_NEUTRAL_THRESHOLD
+		   || PS2_Stick_Offset(Classic_PS2Gamepad.LY) > PS2_NEUTRAL_THRESHOLD
+		   || PS2_Stick_Offset(Classic_PS2Gamepad.RX) > PS2_NEUTRAL_THRESHOLD
+		   || PS2_Stick_Offset(Classic_PS2Gamepad.RY) > PS2_NEUTRAL_THRESHOLD ) )
 			Set_Control_Mode(_PS2_Control);
-		
+
     }
 }
 

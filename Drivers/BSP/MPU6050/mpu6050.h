@@ -353,7 +353,7 @@
 #define MPU6050_WHO_AM_I_BIT        6
 #define MPU6050_WHO_AM_I_LENGTH     6
 
-//供外部调用的API
+//渚涘閮ㄨ皟鐢ㄧ殑API
 u8 MPU6050_initialize(void);
 uint8_t MPU6050_getDeviceID(void);
 void MPU6050_Get_Accelscope(void);

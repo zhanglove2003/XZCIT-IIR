@@ -5,16 +5,16 @@ static void set_RobotType(uint8_t type);
 static void Robot_Init(float wheelspacing,float axlespacing,float gearratio,int Accuracy,\
 	                    float tyre_diameter,int vkp,int vki);
 
-//Ğ¡³µÓ²¼ş½á¹¹ºÍµç»úÏà¹Ø±äÁ¿
+//å°è½¦ç¡¬ä»¶ç»“æ„å’Œç”µæœºç›¸å…³å˜é‡
 ROBOT_t robot;
 
 /**************************************************************************
 Function: According to the potentiometer switch needs to control the car type
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£º¸ù¾İµçÎ»Æ÷ÇĞ»»ĞèÒª¿ØÖÆµÄĞ¡³µÀàĞÍ
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šæ ¹æ®ç”µä½å™¨åˆ‡æ¢éœ€è¦æ§åˆ¶çš„å°è½¦ç±»å‹
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 void Robot_Select(void)
 {
@@ -31,27 +31,27 @@ void Robot_Select(void)
 Function: Initialize cart parameters
 Input   : wheelspacing, axlespacing, omni_rotation_radiaus, motor_gear_ratio, Number_of_encoder_lines, tyre_diameter
 Output  : none
-º¯Êı¹¦ÄÜ£º³õÊ¼»¯Ğ¡³µ²ÎÊı
-Èë¿Ú²ÎÊı£ºÂÖ¾à Öá¾à ×Ô×ª°ë¾¶ µç»ú¼õËÙ±È µç»ú±àÂëÆ÷¾«¶È ÂÖÌ¥Ö±¾¶
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šåˆå§‹åŒ–å°è½¦å‚æ•°
+å…¥å£å‚æ•°ï¼šè½®è· è½´è· è‡ªè½¬åŠå¾„ ç”µæœºå‡é€Ÿæ¯” ç”µæœºç¼–ç å™¨ç²¾åº¦ è½®èƒç›´å¾„
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 static void set_RobotType(uint8_t type)
 {
 	robot.type = type;
 }
 
-//Èë¿Ú²ÎÊı£º³µĞÍ¡¢ÂÖ¾à¡¢Öá¾à¡¢µç»ú¼õËÙ±È¡¢µç»ú±àÂëÆ÷¾«¶È¡¢ÂÖ×ÓÖ±¾¶¡¢°¢¿ËÂü×îĞ¡×ªÍä°ë¾¶¡¢È«ÏòÂÖ×Ô×ª°ë¾¶¡¢Ä¬ÈÏkp¡¢Ä¬ÈÏki
+//å…¥å£å‚æ•°ï¼šè½¦å‹ã€è½®è·ã€è½´è·ã€ç”µæœºå‡é€Ÿæ¯”ã€ç”µæœºç¼–ç å™¨ç²¾åº¦ã€è½®å­ç›´å¾„ã€é˜¿å…‹æ›¼æœ€å°è½¬å¼¯åŠå¾„ã€å…¨å‘è½®è‡ªè½¬åŠå¾„ã€é»˜è®¤kpã€é»˜è®¤ki
 static void Robot_Init(float wheelspacing,float axlespacing,float gearratio,int Accuracy,\
 	                    float tyre_diameter,int vkp,int vki)
 {
-    robot.HardwareParam.WheelSpacing = wheelspacing;   //ÂÖ¾à
-	robot.HardwareParam.AxleSpacing = axlespacing;     //Öá¾à
-	robot.HardwareParam.GearRatio = gearratio;         //µç»ú¼õËÙ±È
-	robot.HardwareParam.EncoderAccuracy = Accuracy;    //µç»ú±àÂëÆ÷¾«¶È
-	robot.HardwareParam.Wheel_Circ = tyre_diameter*PI; //ÂÖ×ÓÖÜ³¤(PI*D)
-	//±àÂëÆ÷¾«¶È*µç»ú¼õËÙ±È*±¶ÆµÊı = µç»úĞı×ªÒ»È¦µÄ±àÂëÆ÷¶ÁÊı
+    robot.HardwareParam.WheelSpacing = wheelspacing;   //è½®è·
+	robot.HardwareParam.AxleSpacing = axlespacing;     //è½´è·
+	robot.HardwareParam.GearRatio = gearratio;         //ç”µæœºå‡é€Ÿæ¯”
+	robot.HardwareParam.EncoderAccuracy = Accuracy;    //ç”µæœºç¼–ç å™¨ç²¾åº¦
+	robot.HardwareParam.Wheel_Circ = tyre_diameter*PI; //è½®å­å‘¨é•¿(PI*D)
+	//ç¼–ç å™¨ç²¾åº¦*ç”µæœºå‡é€Ÿæ¯”*å€é¢‘æ•° = ç”µæœºæ—‹è½¬ä¸€åœˆçš„ç¼–ç å™¨è¯»æ•°
 	robot.HardwareParam.Encoder_precision = EncoderMultiples * robot.HardwareParam.EncoderAccuracy * robot.HardwareParam.GearRatio;
-	robot.V_KP = vkp;                                  //Ä¬ÈÏkp²ÎÊı
-	robot.V_KI = vki;                                  //Ä¬ÈÏki²ÎÊı
+	robot.V_KP = vkp;                                  //é»˜è®¤kpå‚æ•°
+	robot.V_KI = vki;                                  //é»˜è®¤kiå‚æ•°
 }
 

@@ -14,144 +14,57 @@ void RGBControl_task(void *pvParameters);
 Function: LED light flashing task
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£ºLEDµÆÉÁË¸ÈÎÎñ
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šLEDç¯é—ªçƒä»»åŠ¡
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 void led_task(void *pvParameters)
 {
-	#if defined DIFF_CAR
-	//µÆ´ø³µĞÍ,Ê¹ÓÃµÆ´øÈÎÎñ,²»Ê¹ÓÃ´ËÈÎÎñ
-	if( robot.type == 5 )
-	{
-		xTaskCreate(RGBControl_task, "rgb_task", LED_STK_SIZE*2,      NULL, LED_TASK_PRIO,      NULL);
-		vTaskDelete(NULL);
-	}
-	#elif defined MEC_CAR
-	if( robot.type == 9 )
-	{
-		xTaskCreate(RGBControl_task, "rgb_task", LED_STK_SIZE*2,      NULL, LED_TASK_PRIO,      NULL);
-		vTaskDelete(NULL);
-	}
-	#endif
-	
-	
     while(1)
     {
-        static u8 led_state=0;//LEDÁÁÃğÉèÖÃ
-		
-		//¼ì²â×Ô¶¯»Ø³ä×´Ì¬,¶ÔLEDµÆÑÕÉ«½øĞĞĞŞ¸Ä
-		static u8 check_charger_mode;
-		static u8 check_Charging;
-		
-		//½øÈë»Ø³ä×´Ì¬,LEDÑÕÉ«Îª»ÆÉ«
-		if( 0 == check_charger_mode && 1 == charger.AllowRecharge ) LED_SetColor(LED_Yellow);
-		
-		//ÍË³ö»Ø³ä×´Ì¬,LEDÑÕÉ«ÉèÖÃÄ¬ÈÏÑÕÉ«
-		if( 1 == check_charger_mode && 0 == charger.AllowRecharge ) LED_SetColor(LED_Red);
-		check_charger_mode = charger.AllowRecharge;
-		
-		if( 1==charger.AllowRecharge ) 
-		{	//×Ô¶¯»Ø³ä×´Ì¬ÏÂ³äµç³É¹¦Ê±½«LEDÉèÖÃÎª×ÏÉ«
-			if( 0==check_Charging && 1 == charger.Charging ) LED_SetColor(LED_Purple);
-			if( 1==check_Charging && 0 == charger.Charging ) LED_SetColor(LED_Yellow);
-			check_Charging = charger.Charging; 
-		}
+        static u8 led_state=0;//LEDäº®ç­è®¾ç½®
 
-        //LEDÉÁË¸ÈÎÎñ
+        //LEDé—ªçƒä»»åŠ¡
         led_state = !led_state;
         LED_SetState(led_state);
 		
         //The LED flicker task is very simple, requires low frequency accuracy, and uses the relative delay function
-        //LEDÉÁË¸ÈÎÎñ·Ç³£¼òµ¥£¬¶ÔÆµÂÊ¾«¶ÈÒªÇóµÍ£¬Ê¹ÓÃÏà¶ÔÑÓÊ±º¯Êı
+        //LEDé—ªçƒä»»åŠ¡éå¸¸ç®€å•ï¼Œå¯¹é¢‘ç‡ç²¾åº¦è¦æ±‚ä½ï¼Œä½¿ç”¨ç›¸å¯¹å»¶æ—¶å‡½æ•°
         vTaskDelay(SysVal.LED_delay);
     }
 }
 
 
-//µÆ´ø¿ØÖÆÓÅÏÈ¼¶ÓÉ¸ßµ½µÍ
+//ç¯å¸¦æ§åˆ¶ä¼˜å…ˆçº§ç”±é«˜åˆ°ä½
 enum{
-	RGB_Charging = 0,                //³äµçÖĞ
-	RGB_FindChargingStations = 1,    //Ñ°ÕÒ³äµç×®
-	RGB_LowPower = 2,                //µçÁ¿µÍ
-	RGB_RangerWarning = 3,           //³¬Éù²¨Ê¶±ğÕÏ°­Îï¾¯Ê¾
-	RGB_UserDefined = 4,             //ÓÃ»§×Ô¶¨Òå
-	RGB_Default = 5                  //Ä¬ÈÏ×´Ì¬
+	RGB_LowPower = 2,                //ç”µé‡ä½
+	RGB_RangerWarning = 3,           //è¶…å£°æ³¢è¯†åˆ«éšœç¢ç‰©è­¦ç¤º
+	RGB_UserDefined = 4,             //ç”¨æˆ·è‡ªå®šä¹‰
+	RGB_Default = 5                  //é»˜è®¤çŠ¶æ€
 };
 
-//ÓÃ»§×Ô¶¨ÒåRGB×´Ì¬
+//ç”¨æˆ·è‡ªå®šä¹‰RGBçŠ¶æ€
 uint8_t userdefine_rgb[4]={ 0 };
-
-//³äµçÖ¸Ê¾µÆ±êÖ¾Î»
-static uint8_t charging_color=0;
 
 static uint8_t RGB_PriorityManagement(void)
 {
-	//×Ô¶¯»Ø³äÏà¹Ø±êÖ¾Î»
-	static uint32_t charging_green=0;
-	static uint32_t charging_red=0;
-	
-	//×Ô¶¯»Ø³äÅĞ¶¨
-	if( charger.AllowRecharge == 1 ) 
-	{
-		//³äµçÁ½ÖÖ×´Ì¬Ê¹ÓÃ±êÖ¾Î»ÇĞ»»
-		if( charger.Charging==0 ) 
-		{
-			charging_green=0;
-			charging_red=0;
-			charging_color=0;//Î´³äµçÊ±,Çå¿ÕÏà¹Ø±êÖ¾Î»
-		}
-		else if( charger.Charging==1 && charger.ChargingCurrent < 0.65f )
-		{
-			charging_green++;
-			charging_red=0;
-			if( charging_green > 5*5 ) charging_color = 1;//ÂÌµÆ³£ÁÁ
-		}
-		else if( charger.Charging==1 && charger.ChargingCurrent >= 0.65f )
-		{
-			charging_green=0;
-			charging_red++;
-			if( charging_red > 5*2 ) charging_color = 2;//ºìµÆ³£ÁÁ
-		}
-		
-		//Ä£Äâµ÷ÊÔ
-//		if( g_sys_debug.chargingfull==1 )
-//		{
-//			ChargeDev.ChargingFlag=1;
-//			charging_green++;
-//			charging_red=0;
-//			if( charging_green > 5*5 ) charging_color = 1;//ÂÌµÆ³£ÁÁ
-//		}
-//		else if( g_sys_debug.chargingON==1 )
-//		{
-//			ChargeDev.ChargingFlag=1;
-//			charging_green=0;
-//			charging_red++;
-//			if( charging_red > 5*2 ) charging_color = 2;//ºìµÆ³£ÁÁ
-//		}
-		
-		//·µ»Ø³äµçÖĞ»òÑ°ÕÒ³äµç×®×´Ì¬
-		if( charger.Charging==1 ) return RGB_Charging; 
-		else return RGB_FindChargingStations;
-	}
-	
-	//µçÁ¿µÍÅĞ¶Ï
+	//ç”µé‡ä½åˆ¤æ–­
 	if( robot.LowPower ) return RGB_LowPower; 
 	
-	//³¬Éù²¨¾¯Ê¾ÅĞ¶Ï
+	//è¶…å£°æ³¢è­¦ç¤ºåˆ¤æ–­
 	if( s21c_board.rangerA < 0.5f ||s21c_board.rangerB  < 0.5f || s21c_board.rangerC  < 0.5f ||
 		s21c_board.rangerD < 0.5f || s21c_board.rangerE < 0.5f || s21c_board.rangerF < 0.5f )
 	{
 		return RGB_RangerWarning;
 	}
 	
-	//ÓÃ»§×Ô¶¨Òå
+	//ç”¨æˆ·è‡ªå®šä¹‰
 	if( userdefine_rgb[0]==1 ) 
 	{
 		return RGB_UserDefined;
 	}
 	
-	//Ä¬ÈÏ×´Ì¬
+	//é»˜è®¤çŠ¶æ€
 	return RGB_Default;
 
 }
@@ -160,16 +73,16 @@ void RGBControl_task(void *pvParameters)
 {
 	const uint16_t TaskFreq = 5;
 	
-	//»ñÈ¡Ê±»ù,ÓÃÓÚ¸¨ÖúÈÎÎñÄÜ°´¹Ì¶¨ÆµÂÊÔËĞĞ
+	//è·å–æ—¶åŸº,ç”¨äºè¾…åŠ©ä»»åŠ¡èƒ½æŒ‰å›ºå®šé¢‘ç‡è¿è¡Œ
 	TickType_t preTime = xTaskGetTickCount();
 	
-	//RGBµÆ´ø¶ÔÏó
+	//RGBç¯å¸¦å¯¹è±¡
 	pRGBLightInterface_t rgb = &UserRGBLight;
 	
-	//ÊµÊ±×´Ì¬»ú
+	//å®æ—¶çŠ¶æ€æœº
 	uint8_t RGB_Sm = RGB_Default;
 	
-	//µÆ´ø³õÊ¼»¯Óë×Ô¼ì
+	//ç¯å¸¦åˆå§‹åŒ–ä¸è‡ªæ£€
 	rgb->init();
 	rgb->SetColor(255,0,0);
 	vTaskDelay(1000);
@@ -180,47 +93,32 @@ void RGBControl_task(void *pvParameters)
 	
 	while(1)
 	{
-		//»ñÈ¡RGB×´Ì¬µÆ×´Ì¬
+		//è·å–RGBçŠ¶æ€ç¯çŠ¶æ€
 		RGB_Sm = RGB_PriorityManagement();
 		
 		switch( RGB_Sm )
 		{
-			case RGB_Charging:
-				//¼´½«³äÂúÎªÂÌÉ«,³äµçÖĞÎªºìÉ«
-				if( charging_color==2 )
-				{
-					rgb->SetColorFade(32,0,0);
-				}
-				else if( charging_color==1 )
-				{
-					rgb->SetColorFade(0,32,0);
-				}
-				break;
-			case RGB_FindChargingStations:
-				//×ÏµÆ³£ÁÁ
-				rgb->SetColorFade(100,0,128);
-				break;
 			case RGB_LowPower:
-				//×ÏµÆµÍÆµÉÁË¸
+				//ç´«ç¯ä½é¢‘é—ªçƒ
 				rgb->SetBlink(100,0,128,2000);
 				break;
 			case RGB_RangerWarning:
-				//»ÆµÆ¾¯Ê¾
+				//é»„ç¯è­¦ç¤º
 				rgb->SetColorFade(255,128,0);
 				break;
 			case RGB_UserDefined:
-				//ÓÃ»§×Ô¶¨Òå
+				//ç”¨æˆ·è‡ªå®šä¹‰
 				rgb->SetColorFade(userdefine_rgb[1],userdefine_rgb[2],userdefine_rgb[3]);
 				break;
 			case RGB_Default:
-				//ÉèÖÃµÆ´øÄ¬ÈÏ×´Ì¬
+				//è®¾ç½®ç¯å¸¦é»˜è®¤çŠ¶æ€
 				rgb->turnoff();
 				break;
 			default:
 				break;
 		}	
 		
-		/* ÑÓ³ÙÖ¸¶¨ÆµÂÊ */
+		/* å»¶è¿ŸæŒ‡å®šé¢‘ç‡ */
 		vTaskDelayUntil(&preTime,pdMS_TO_TICKS( (1.0f/(float)TaskFreq)*1000) );
 	}
 }

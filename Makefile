@@ -33,15 +33,23 @@ C_INCLUDES = -IDrivers/CMSIS/Include -IDrivers/CMSIS/Device/ST/STM32F4xx/Include
              -IDrivers/STM32F4xx_StdPeriph_Driver/inc \
              -IMiddlewares/Third_Party/FreeRTOS/include \
              -IMiddlewares/Third_Party/FreeRTOS/portable/RVDS/ARM_CM4F \
-             -IApp/CarType/Inc \
-             -IApp/BALANCE/Inc \
-             -IDrivers/BSP/Inc \
              -IDrivers/BSP/MPU6050 \
-             -IDrivers/BSP/ICM20948 \
-             -IMiddlewares/STM32_USB_Host_Library/Class/HID/Inc \
-             -IMiddlewares/STM32_USB_Host_Library/Core/Inc \
-             -IMiddlewares/USB_Host/App \
-             -IMiddlewares/USB_Host/Target
+             -IDrivers/BSP/motor \
+             -IDrivers/BSP/encoder \
+             -IDrivers/BSP/adc \
+             -IDrivers/BSP/buzzer \
+             -IDrivers/BSP/key \
+             -IDrivers/BSP/hc_sr04 \
+             -IDrivers/BSP/I2C \
+             -IDrivers/BSP/stmflash \
+             -IDrivers/BSP/uartx \
+             -IDrivers/BSP/enable_key \
+             -IDrivers/BSP/ps2_classic \
+             -IDrivers/BSP/oled \
+             -IDrivers/BSP/bsp_RGBLight \
+             -IDrivers/BSP/led \
+             -IApp/CarType \
+             -IApp/BALANCE
 
 OPT      = -O2 -g3
 CFLAGS   = $(MCU) $(DEFS) $(C_INCLUDES) $(OPT) -Wall \
@@ -84,8 +92,6 @@ C_SOURCES = \
   Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_tim.c \
   Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_pwr.c \
   Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_dma.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_hal_hcd.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_ll_usb.c \
   Middlewares/Third_Party/FreeRTOS/croutine.c \
   Middlewares/Third_Party/FreeRTOS/event_groups.c \
   Middlewares/Third_Party/FreeRTOS/list.c \
@@ -101,27 +107,21 @@ C_SOURCES = \
   Drivers/BSP/delay/delay.c \
   Drivers/BSP/sys/sys.c \
   Drivers/BSP/usart/usart.c \
-  Drivers/BSP/adc.c \
-  Drivers/BSP/auto_recharge.c \
-  Drivers/BSP/can.c \
-  Drivers/BSP/buzzer.c \
-  Drivers/BSP/encoder.c \
-  Drivers/BSP/enable_key.c \
-  Drivers/BSP/I2C.c \
-  Drivers/BSP/ICM20948/ICM20948.c \
-  Drivers/BSP/key.c \
-  Drivers/BSP/LED.c \
-  Drivers/BSP/motor.c \
+  Drivers/BSP/adc/adc.c \
+  Drivers/BSP/buzzer/buzzer.c \
+  Drivers/BSP/encoder/encoder.c \
+  Drivers/BSP/enable_key/enable_key.c \
+  Drivers/BSP/I2C/I2C.c \
+  Drivers/BSP/key/key.c \
+  Drivers/BSP/led/led.c \
+  Drivers/BSP/motor/motor.c \
   Drivers/BSP/MPU6050/MPU6050.c \
-  Drivers/BSP/oled.c \
-  Drivers/BSP/remote.c \
-  Drivers/BSP/stmflash.c \
-  Drivers/BSP/uartx.c \
-  Drivers/BSP/hc_sr04.c \
-  Drivers/BSP/driver_d50a.c \
-  Drivers/BSP/bsp_gamepad.c \
-  Drivers/BSP/ps2_classic.c \
-  Drivers/BSP/bsp_RGBLight.c \
+  Drivers/BSP/oled/oled.c \
+  Drivers/BSP/stmflash/stmflash.c \
+  Drivers/BSP/uartx/uartx.c \
+  Drivers/BSP/hc_sr04/hc_sr04.c \
+  Drivers/BSP/ps2_classic/ps2_classic.c \
+  Drivers/BSP/bsp_RGBLight/bsp_RGBLight.c \
   App/CarType/4wd_robot_init.c \
   App/BALANCE/balance_task.c \
   App/BALANCE/rear_debug.c \
@@ -133,23 +133,7 @@ C_SOURCES = \
   App/BALANCE/data_task.c \
   App/BALANCE/uartx_callback.c \
   App/BALANCE/pwm_test.c \
-  App/BALANCE/can_callback.c \
-  App/BALANCE/timx_callback.c \
   App/BALANCE/reportErr_task.c \
-  Middlewares/STM32_USB_Host_Library/Core/Src/usbh_core.c \
-  Middlewares/STM32_USB_Host_Library/Core/Src/usbh_ctlreq.c \
-  Middlewares/STM32_USB_Host_Library/Core/Src/usbh_ioreq.c \
-  Middlewares/STM32_USB_Host_Library/Core/Src/usbh_pipes.c \
-  Middlewares/STM32_USB_Host_Library/Class/HID/Src/usbh_hid.c \
-  Middlewares/STM32_USB_Host_Library/Class/HID/Src/usbh_hid_keybd.c \
-  Middlewares/STM32_USB_Host_Library/Class/HID/Src/usbh_hid_mouse.c \
-  Middlewares/STM32_USB_Host_Library/Class/HID/Src/usbh_hid_parser.c \
-  Middlewares/USB_Host/Target/usbh_conf.c \
-  Middlewares/USB_Host/App/usb_host.c \
-  Middlewares/USB_Host/App/usbh_os_middleware.c \
-  Middlewares/USB_Host/App/usbh_hid_GamePad.c \
-  Middlewares/USB_Host/App/xbox360_gamepad.c \
-  Middlewares/USB_Host/App/WiredPS2_gamepad.c \
   Core/Startup/startup_gcc.s
 
 # C 源与汇编源分开收集，各自单独生成目标文件

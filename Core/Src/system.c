@@ -1,11 +1,11 @@
 /***********************************************
-¹«Ë¾£º¶«İ¸ÊĞÎ¢ºêÖÇÄÜ¿Æ¼¼ÓĞÏŞ¹«Ë¾
-Æ·ÅÆ£ºWHEELTEC
-¹ÙÍø£ºwheeltec.net
-ÌÔ±¦µêÆÌ£ºshop114407458.taobao.com
-ËÙÂôÍ¨: https://minibalance.aliexpress.com/store/4455017
-°æ±¾£ºV3.5
-ĞŞ¸ÄÊ±¼ä£º2021-01-29
+å…¬å¸ï¼šä¸œèå¸‚å¾®å®æ™ºèƒ½ç§‘æŠ€æœ‰é™å…¬å¸
+å“ç‰Œï¼šWHEELTEC
+å®˜ç½‘ï¼šwheeltec.net
+æ·˜å®åº—é“ºï¼šshop114407458.taobao.com
+é€Ÿå–é€š: https://minibalance.aliexpress.com/store/4455017
+ç‰ˆæœ¬ï¼šV3.5
+ä¿®æ”¹æ—¶é—´ï¼š2021-01-29
 
 Company: WeiHong Co.Ltd
 Brand: WHEELTEC
@@ -13,134 +13,88 @@ Website: wheeltec.net
 Taobao shop: shop114407458.taobao.com
 Aliexpress: https://minibalance.aliexpress.com/store/4455017
 Version: V3.5
-Update£º2021-01-29
+Updateï¼š2021-01-29
 
 All rights reserved
 ***********************************************/
 
 #include "system.h"
 
-//ÏµÍ³Ïà¹Ø±äÁ¿
+//ç³»ç»Ÿç›¸å…³å˜é‡
 SYS_VAL_t SysVal;
 
 void systemInit(void)
 {
 	//================= General Hardware Initialization Section =================//
-	//================= Í¨ÓÃÓ²¼ş³õÊ¼»¯²¿·Ö =================//
+	//================= é€šç”¨ç¡¬ä»¶åˆå§‹åŒ–éƒ¨åˆ† =================//
     //Interrupt priority group setting
-    //ÖĞ¶ÏÓÅÏÈ¼¶·Ö×éÉèÖÃ
+    //ä¸­æ–­ä¼˜å…ˆçº§åˆ†ç»„è®¾ç½®
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
 
     //Delay function initialization
-    //ÑÓÊ±º¯Êı³õÊ¼»¯
+    //å»¶æ—¶å‡½æ•°åˆå§‹åŒ–
     delay_init(168);
 	
 	//Prioritize initializing IIC and IMU C50C board distinguishes between new and old versions based on IMU model
-	//ÓÅÏÈ³õÊ¼»¯IICÓëIMU.C50C°åÍ¨¹ıIMUĞÍºÅÇø·ÖĞÂ°åÓë¾É°æ
+	//ä¼˜å…ˆåˆå§‹åŒ–IICä¸IMU.C50Cæ¿é€šè¿‡IMUå‹å·åŒºåˆ†æ–°æ¿ä¸æ—§ç‰ˆ
     //IIC initialization
-    //IIC³õÊ¼»¯
+    //IICåˆå§‹åŒ–
     I2C_GPIOInit();
 	
-	//ÏµÍ³Ïà¹ØÈí¼ş²ÎÊı³õÊ¼»¯
+	//ç³»ç»Ÿç›¸å…³è½¯ä»¶å‚æ•°åˆå§‹åŒ–
 	SYS_VAL_t_Init(&SysVal);
 	
     //Serial port 1 initialization, communication baud rate 115200,
     //can be used to communicate with ROS terminal
-    //´®¿Ú1³õÊ¼»¯£¬Í¨ĞÅ²¨ÌØÂÊ115200£¬¿ÉÓÃÓÚÓëROS¶ËÍ¨ĞÅ
+    //ä¸²å£1åˆå§‹åŒ–ï¼Œé€šä¿¡æ³¢ç‰¹ç‡115200ï¼Œå¯ç”¨äºä¸ROSç«¯é€šä¿¡
     UART1_Init(115200);
 	
-	//Èç¹ûIMUÎªMPU6050,ÔòÊÇ¾É°æC50C
+	//å¦‚æœIMUä¸ºMPU6050,åˆ™æ˜¯æ—§ç‰ˆC50C
 	if( MPU6050_DEFAULT_ADDRESS == MPU6050_getDeviceID() )
 	{
 		SysVal.HardWare_Ver = V1_0;
 		
-		//¾É°æC50CÓ²¼ş³õÊ¼»¯
+		//æ—§ç‰ˆC50Cç¡¬ä»¶åˆå§‹åŒ–
 		V1_0_LED_Init();
-		V1_0_CAN1_Mode_Init(1,3,3,6,0);
 		V1_0_MiniBalance_PWM_Init(16799,0);
 		
 		//Initialize the hardware interface to the PS2 controller
-		//³õÊ¼»¯ÓëPS2ÊÖ±úÁ¬½ÓµÄÓ²¼ş½Ó¿Ú
+		//åˆå§‹åŒ–ä¸PS2æ‰‹æŸ„è¿æ¥çš„ç¡¬ä»¶æ¥å£
 		PS2_Init();
 		
-		//PS2Èí¼ş²ÎÊı³õÊ¼»¯
+		//PS2è½¯ä»¶å‚æ•°åˆå§‹åŒ–
 		PS2_Key_Param_Init();
 		
 		//MPU6050 is initialized to read the vehicle's three-axis attitude,
 		//three-axis angular velocity and three-axis acceleration information
-		//MPU6050³õÊ¼»¯£¬ÓÃÓÚ¶ÁÈ¡Ğ¡³µÈıÖá½ÇËÙ¶È¡¢ÈıÖá¼ÓËÙ¶ÈĞÅÏ¢
+		//MPU6050åˆå§‹åŒ–ï¼Œç”¨äºè¯»å–å°è½¦ä¸‰è½´è§’é€Ÿåº¦ã€ä¸‰è½´åŠ é€Ÿåº¦ä¿¡æ¯
 		MPU6050_initialize();
 	}
-	
-	//Èç¹ûIMUĞÍºÅÎªICM20948,ÔòÊÇĞÂ°æC50C
-	else if( REG_VAL_WIA == ICM20948_getDeviceID() )//¶ÁÈ¡ICM20948 id
-	{
-		//³õÊ¼»¯°æ±¾½Ó¿Ú
-		Version_GPIO_Init();
-		
-		uint8_t ver=0;
-		ver |= (VersionBit2)<<2;
-		ver |= (VersionBit1)<<1;
-		ver |= (VersionBit0)<<0;
-		
-		switch( ver )
-		{
-			case 0:
-				SysVal.HardWare_Ver = V1_1;
-				break;
-			case 1:
-				SysVal.HardWare_Ver = V1_2;
-				UART2_Init(115200); //v1.2°æ±¾ºóÖ§³Ö485½Ó¿Ú
-				D50A_Init();
-				break;
-		}
-
-	
-		//Initialize the hardware interface connected to the LED lamp
-		//³õÊ¼»¯ÓëLEDµÆÁ¬½ÓµÄÓ²¼ş½Ó¿Ú
-		RGB_LightStrip_Init();
-		
-		//Initialize the CAN communication interface
-		//CANÍ¨ĞÅ½Ó¿Ú³õÊ¼»¯
-		CAN1_Mode_Init(1,3,3,6,0);
-		
-		//Initialize motor speed control and, for controlling motor speed, PWM frequency 10kHz
-		//³õÊ¼»¯µç»úËÙ¶È¿ØÖÆÒÔ¼°£¬ÓÃÓÚ¿ØÖÆµç»úËÙ¶È£¬PWMÆµÂÊ10KHZ
-		MiniBalance_PWM_Init(16799,0);  //¸ß¼¶¶¨Ê±Æ÷TIM8µÄÆµÂÊÎª168M£¬ÂúPWMÎª16799£¬ÆµÂÊ=168M/((16799+1)*(0+1))=10k
-	
-		//MPU6050 is initialized to read the vehicle's three-axis attitude,
-		//three-axis angular velocity and three-axis acceleration information
-		//ICM20948³õÊ¼»¯£¬ÓÃÓÚ¶ÁÈ¡Ğ¡³µÈıÖá½ÇËÙ¶È¡¢ÈıÖá¼ÓËÙ¶ÈĞÅÏ¢
-		invMSInit();
-		
-		//USB PS2³õÊ¼»¯
-		MX_USB_HOST_Init();//´´½¨usbÊÖ±úÈÎÎñ
-	}
-	else //ÎŞ·¨Ê¶±ğµÄÍÓÂİÒÇ,¸´Î»ÏµÍ³
+	else //æ— æ³•è¯†åˆ«çš„é™€èºä»ª,å¤ä½ç³»ç»Ÿ
 	{
 		NVIC_SystemReset();
 	}
 	
     //Initialize the hardware interface connected to the buzzer
-    //³õÊ¼»¯Óë·äÃùÆ÷Á¬½ÓµÄÓ²¼ş½Ó¿Ú
+    //åˆå§‹åŒ–ä¸èœ‚é¸£å™¨è¿æ¥çš„ç¡¬ä»¶æ¥å£
     Buzzer_Init();
     
     //Initialize the hardware interface connected to the enable switch
-    //³õÊ¼»¯ÓëÊ¹ÄÜ¿ª¹ØÁ¬½ÓµÄÓ²¼ş½Ó¿Ú
+    //åˆå§‹åŒ–ä¸ä½¿èƒ½å¼€å…³è¿æ¥çš„ç¡¬ä»¶æ¥å£
     EnableKey_Init();
 
     //Initialize the hardware interface connected to the user's key
-    //³õÊ¼»¯ÓëÓÃ»§°´¼üÁ¬½ÓµÄÓ²¼ş½Ó¿Ú
+    //åˆå§‹åŒ–ä¸ç”¨æˆ·æŒ‰é”®è¿æ¥çš„ç¡¬ä»¶æ¥å£
     KEY_Init();
 	
     //Initialize the hardware interface connected to the OLED display
-    //³õÊ¼»¯ÓëOLEDÏÔÊ¾ÆÁÁ¬½ÓµÄÓ²¼ş½Ó¿Ú
+    //åˆå§‹åŒ–ä¸OLEDæ˜¾ç¤ºå±è¿æ¥çš„ç¡¬ä»¶æ¥å£
     OLED_Init();
 
     //Serial port 4 initialization, communication baud rate 9600,
     //used to communicate with Bluetooth APP terminal
-    //´®¿Ú4³õÊ¼»¯£¬Í¨ĞÅ²¨ÌØÂÊ9600£¬ÓÃÓÚÓëÀ¶ÑÀAPP¶ËÍ¨ĞÅ
-	#if VECT_TAB_OFFSET == 0x10000 //¸ù¾İÊÇ·ñÅäÖÃÎŞÏßÉÕÂ¼À´Ñ¡ÔñÀ¶ÑÀµÄ²¨ÌØÂÊ
+    //ä¸²å£4åˆå§‹åŒ–ï¼Œé€šä¿¡æ³¢ç‰¹ç‡9600ï¼Œç”¨äºä¸è“ç‰™APPç«¯é€šä¿¡
+	#if VECT_TAB_OFFSET == 0x10000 //æ ¹æ®æ˜¯å¦é…ç½®æ— çº¿çƒ§å½•æ¥é€‰æ‹©è“ç‰™çš„æ³¢ç‰¹ç‡
 		UART4_Init(230400);
 	#elif VECT_TAB_OFFSET == 0
 		UART4_Init(9600);
@@ -148,106 +102,56 @@ void systemInit(void)
 	
     //Serial port 3 is initialized and the baud rate is 115200.
     //Serial port 3 is the default port used to communicate with ROS terminal
-    //´®¿Ú3³õÊ¼»¯£¬Í¨ĞÅ²¨ÌØÂÊ115200£¬´®¿Ú3ÎªÄ¬ÈÏÓÃÓÚÓëROS¶ËÍ¨ĞÅµÄ´®¿Ú
+    //ä¸²å£3åˆå§‹åŒ–ï¼Œé€šä¿¡æ³¢ç‰¹ç‡115200ï¼Œä¸²å£3ä¸ºé»˜è®¤ç”¨äºä¸ROSç«¯é€šä¿¡çš„ä¸²å£
     UART3_Init(115200);
-
-    //Initialize the model remote control interface
-    //³õÊ¼»¯º½Ä£Ò£¿Ø½Ó¿Ú
-    Remoter_Init();
 	
     //Encoder A is initialized to read the real time speed of motor A
-    //±àÂëÆ÷A³õÊ¼»¯£¬ÓÃÓÚ¶ÁÈ¡µç»úAµÄÊµÊ±ËÙ¶È
+    //ç¼–ç å™¨Aåˆå§‹åŒ–ï¼Œç”¨äºè¯»å–ç”µæœºAçš„å®æ—¶é€Ÿåº¦
     EncoderA_Init();
     //Encoder B is initialized to read the real time speed of motor B
-    //±àÂëÆ÷B³õÊ¼»¯£¬ÓÃÓÚ¶ÁÈ¡µç»úBµÄÊµÊ±ËÙ¶È
+    //ç¼–ç å™¨Båˆå§‹åŒ–ï¼Œç”¨äºè¯»å–ç”µæœºBçš„å®æ—¶é€Ÿåº¦
     EncoderB_Init();
 	
     //ADC pin initialization, used to read the battery voltage and potentiometer gear,
     //potentiometer gear determines the car after the boot of the car model
-    //ADCÒı½Å³õÊ¼»¯£¬ÓÃÓÚ¶ÁÈ¡µç³ØµçÑ¹ÓëµçÎ»Æ÷µµÎ»£¬µçÎ»Æ÷µµÎ»¾ö¶¨Ğ¡³µ¿ª»úºóµÄĞ¡³µÊÊÅäĞÍºÅ
+    //ADCå¼•è„šåˆå§‹åŒ–ï¼Œç”¨äºè¯»å–ç”µæ± ç”µå‹ä¸ç”µä½å™¨æ¡£ä½ï¼Œç”µä½å™¨æ¡£ä½å†³å®šå°è½¦å¼€æœºåçš„å°è½¦é€‚é…å‹å·
     ADC1_Init();
 	
-	//°¢¿ËÂü³µĞÍÊ¹ÓÃADC2,²»Ê¹ÓÃ±àÂëÆ÷C¡¢D;ÆäËû³µĞÍ·´Ö®
-	#if defined AKM_CAR
-		ADC2_Init();
-	#else
-		//Encoder C is initialized to read the real time speed of motor C  
-		//±àÂëÆ÷C³õÊ¼»¯£¬ÓÃÓÚ¶ÁÈ¡µç»úCµÄÊµÊ±ËÙ¶È	
-		EncoderC_Init();
-		//Encoder D is initialized to read the real time speed of motor D
-		//±àÂëÆ÷D³õÊ¼»¯£¬ÓÃÓÚ¶ÁÈ¡µç»úDµÄÊµÊ±ËÙ¶È	
-		EncoderD_Init();  
-	#endif
+	//ç¼–ç å™¨Cåˆå§‹åŒ–ï¼Œç”¨äºè¯»å–ç”µæœºCçš„å®æ—¶é€Ÿåº¦	
+	EncoderC_Init();
+	//ç¼–ç å™¨Dåˆå§‹åŒ–ï¼Œç”¨äºè¯»å–ç”µæœºDçš„å®æ—¶é€Ÿåº¦	
+	EncoderD_Init();
 	
-	//================= Èí¼ş²ÎÊı³õÊ¼»¯²¿·Ö =================//
+	//================= è½¯ä»¶å‚æ•°åˆå§‹åŒ–éƒ¨åˆ† =================//
 	
-	//È·¶¨»úÆ÷ÈËĞÍºÅ,³õÊ¼»¯»úÆ÷ÈË»úĞµ²ÎÊıºÍPID²ÎÊı.
+	//ç¡®å®šæœºå™¨äººå‹å·,åˆå§‹åŒ–æœºå™¨äººæœºæ¢°å‚æ•°å’ŒPIDå‚æ•°.
 	Robot_Select(); 
 	
-	//»úÆ÷ÈË¿ØÖÆÏà¹Ø±äÁ¿³õÊ¼»¯,°üº¬Ò£¿ØËÙ¶È»ù×¼¡¢×î´óËÙ¶ÈÏŞÖÆ¡¢ËÙ¶ÈÆ½»¬ÏµÊıµÈÄÚÈİ.
+	//æœºå™¨äººæ§åˆ¶ç›¸å…³å˜é‡åˆå§‹åŒ–,åŒ…å«é¥æ§é€Ÿåº¦åŸºå‡†ã€æœ€å¤§é€Ÿåº¦é™åˆ¶ã€é€Ÿåº¦å¹³æ»‘ç³»æ•°ç­‰å†…å®¹.
 	ROBOT_CONTROL_t_Init(&robot_control); 
 	
-	//4¸öPI¿ØÖÆÆ÷³õÊ¼»¯
+	//4ä¸ªPIæ§åˆ¶å™¨åˆå§‹åŒ–
 	PI_Controller_Init(&PI_MotorA,robot.V_KP,robot.V_KI);
 	PI_Controller_Init(&PI_MotorB,robot.V_KP,robot.V_KI);
 	PI_Controller_Init(&PI_MotorC,robot.V_KP,robot.V_KI);
 	PI_Controller_Init(&PI_MotorD,robot.V_KP,robot.V_KI);
 	
-	//×Ô¶¯»Ø³äÉè±¸Èí¼ş²ÎÊı³õÊ¼»¯
-	auto_recharge_reset();
-	
-	//OLEDÈí¼ş²ÎÊı³õÊ¼»¯
+	//OLEDè½¯ä»¶å‚æ•°åˆå§‹åŒ–
 	OLED_Param_Init(&oled);
 	
-	//APPÈí¼ş²ÎÊı³õÊ¼»¯
+	//APPè½¯ä»¶å‚æ•°åˆå§‹åŒ–
 	APPKey_Param_Init(&appkey);
-	
-	//º½Ä£Ò£¿ØÈí¼ş²ÎÊı³õÊ¼»¯
-	Remoter_Param_Init(&remoter);
-	
-	//¶æ»ú²ÎÊı³õÊ¼»¯
+		
+	//èˆµæœºå‚æ•°åˆå§‹åŒ–
 	Akm_ServoParam_Init(&Akm_Servo);
 	
-	//´ÓFlash¶Á³ö¶æ»úÊı¾İ,ÈôÎŞÊı¾İÔòÊ¹ÓÃÄ¬ÈÏ³õÊ¼»¯Öµ
+	//ä»Flashè¯»å‡ºèˆµæœºæ•°æ®,è‹¥æ— æ•°æ®åˆ™ä½¿ç”¨é»˜è®¤åˆå§‹åŒ–å€¼
 	FlashParam_Read();    
 	
-	//°¢¿ËÂü³µĞÍ¶Ô¶æ»ú³õÊ¼»¯
-	#if defined AKM_CAR
+//é˜¿å…‹æ›¼èˆµæœºåˆå§‹åŒ–å·²éšå¼‚è½¦å‹è£å‰ªåˆ é™¤
 	
-	//¸ßÅä°¢¿ËÂü³µĞÍ¶æ»ú³õÊ¼»¯
-	Servo_Senior_Init(10000-1,168-1,Akm_Servo.Mid);
-	robot.SERVO.Output = Akm_Servo.Mid;
-	
-	//¶¥Åä°¢¿ËÂü³µĞÍ¶æ»ú³õÊ¼»¯
-	if( robot.type >= 2 && robot.type!= 9 )
-	{
-		//µÈ´ıDMA²É¼¯Êı¾İ
-		delay_ms(200);
-		
-		//¶ÁÈ¡Ò»×é»¬¹ìÊı¾İ,¹À²â¶æ»úµÄÎ»ÖÃ.ÔÙ½«¹À²âµÄÎ»ÖÃ×÷ÎªPWMÖµ³õÊ¼»¯,¿É±ÜÃâ¶æ»úÍ»È»¿ìËÙ¹éÎ».
-		short TmpPWM = get_ServoPWM( get_DMA_SlideRes() );
-		
-		//¶¥Åä°¢¿ËÂü³µĞÍ¶æ»ú³õÊ¼»¯,¼ÓÈëÆ«²îÖµ,±ÜÃâ¶æ»ú¿ìËÙ¸´Î»
-		Servo_Top_Init(10000-1,84-1, TmpPWM );
-		
-		//¶æ»úPI¿ØÖÆÆ÷³õÊ¼»¯.×¢£º¶æ»úµÄPID²ÎÊı²»¿ª·ÅĞŞ¸Ä.
-		PI_Controller_Init(&PI_Servo,0,0);
-		
-		//ÉèÖÃ¶æ»úPI¿ØÖÆ»ù×¼Öµ,¼ÓÈëÆ«²îÖµ,±ÜÃâ¸Õ½øÈëPI¿ØÖÆÊ±¶æ»ú¶¶¶¯
-		PI_Servo.Output =  TmpPWM;
-		
-		//¶æ»úËÙ¶ÈÆ½»¬Öµ
-		robot_control.smooth_Servo = TmpPWM;
-		
-		//ÉèÖÃµÍËÙ¶æ»úÄ£Ê½,ÈÃ¶æ»ú»ºÂı¹éÎ»
-		robot_control.ServoLow_flag = 1;
-	}
-	
-
-	#endif
-	
-	//ËùÓĞÈíÓ²¼şÉè±¸³õÊ¼»¯Íê±Ï,Ê¹ÓÃ·äÃùÆ÷ÌáÊ¾½øÈërtos
-	Buzzer_AddTask(1,100);//·äÃù1´Î,Ê±¼ä1000ms
+	//æ‰€æœ‰è½¯ç¡¬ä»¶è®¾å¤‡åˆå§‹åŒ–å®Œæ¯•,ä½¿ç”¨èœ‚é¸£å™¨æç¤ºè¿›å…¥rtos
+	Buzzer_AddTask(1,100);//èœ‚é¸£1æ¬¡,æ—¶é—´1000ms
 }
 
 

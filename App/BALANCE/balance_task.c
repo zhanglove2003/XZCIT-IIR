@@ -28,28 +28,27 @@ static rear_debug_t g_rear_debug;
 #endif
 #endif
 
-//ËÄÇıµ÷ÊÔÆÚÕ¼¿Õ±ÈÉÏÏŞ. ÂúÁ¿³Ì FULL_DUTYCYCLE = 16800, ÕâÀïÔ¼ 54%.
+//å››é©±è°ƒè¯•æœŸå ç©ºæ¯”ä¸Šé™. æ»¡é‡ç¨‹ FULL_DUTYCYCLE = 16800, è¿™é‡Œçº¦ 54%.
 #define FOURWD_DUTY_LIMIT   9000
 
-//ÓëĞ¡³µ¿ØÖÆÏà¹Ø
+//ä¸å°è½¦æ§åˆ¶ç›¸å…³
 ROBOT_CONTROL_t robot_control;
 
-//ÓëĞ¡³µ×Ô¼ìÏà¹Ø±äÁ¿
+//ä¸å°è½¦è‡ªæ£€ç›¸å…³å˜é‡
 ROBOT_SELFCHECK_t robot_check;
 
-//»úÆ÷ÈË×¤³µÄ£Ê½Ïà¹Ø±äÁ¿
+//æœºå™¨äººé©»è½¦æ¨¡å¼ç›¸å…³å˜é‡
 static ROBOT_PARKING_t park;
 
-//ÔöÁ¿Ê½PI¿ØÖÆÆ÷
+//å¢é‡å¼PIæ§åˆ¶å™¨
 PI_CONTROLLER PI_MotorA,PI_MotorB,PI_MotorC,PI_MotorD,PI_Servo;
 
-uint8_t g_usbhost_connect=0;
 int PengZhuang=0;
 
-//Safety: Í³Ò»°²È«Í£Ö¹.ÊµÏÖÔÚ Turn_Off() Ö®ºó, Balance_task() Ö®Ç°ĞèÒªÉùÃ÷.
+//Safety: ç»Ÿä¸€å®‰å…¨åœæ­¢.å®ç°åœ¨ Turn_Off() ä¹‹å, Balance_task() ä¹‹å‰éœ€è¦å£°æ˜.
 #ifdef CHASSIS_PWM_TEST
-/* ¼Ü¿Õ²âÊÔ: ½»¸ø pwm_test Ä£¿éµÄ PWM ¹éÁã»Øµ÷¡£Ö»Ğ´Áã, ²»¶ÁÈÎºÎ²ÎÊı¡£
- * Ä£¿éÓÃËüÔÚÖĞÍ¾ÊÕµ½Í£Ö¹Ö¡Ê±°Ñ¼Ä´æÆ÷Á¢¼´ÇåÁã¡£ */
+/* æ¶ç©ºæµ‹è¯•: äº¤ç»™ pwm_test æ¨¡å—çš„ PWM å½’é›¶å›è°ƒã€‚åªå†™é›¶, ä¸è¯»ä»»ä½•å‚æ•°ã€‚
+ * æ¨¡å—ç”¨å®ƒåœ¨ä¸­é€”æ”¶åˆ°åœæ­¢å¸§æ—¶æŠŠå¯„å­˜å™¨ç«‹å³æ¸…é›¶ã€‚ */
 static void Pwm_Test_ZeroSink(void)
 {
     Set_Pwm(0, 0, 0, 0, 0);
@@ -58,9 +57,6 @@ static void Pwm_Test_ZeroSink(void)
 
 static void Safe_Stop(void);
 
-//[Õï¶Ï] ¹Ì¶¨µØÖ·¹Û²âÇø, ÓÃ ST-Link ¶Á»Ø. ÑéÖ¤Íê³ÉºóÉ¾³ı.
-//µØÖ·ÓÉÁ´½ÓÆ÷¾ö¶¨, ¹¹½¨ºóÓÃ arm-none-eabi-nm ²éÑ¯ g_safety_probe µÃµ½.
-volatile uint32_t g_safety_probe[48];
 
 /* [C50C] Forward declarations for the diagnostic points gathered at the end
  * of the control loop. The definitions live in the ROS speed loop section. */
@@ -69,19 +65,16 @@ static PI_CONTROLLER g_ros_speed_pi;
 static int  g_ros_speed_diag_ready;
 static int  g_ros_speed_diag_neutral;
 
-//[Õï¶Ï] ±àÂëÆ÷Ô­Ê¼Âö³å¹Û²âÇø, ¶¨ÒåÔÚ HARDWARE/encoder.c
-extern volatile int32_t g_enc_probe[16];
+//[è¯Šæ–­] ç¼–ç å™¨åŸå§‹è„‰å†²è§‚æµ‹åŒº, å®šä¹‰åœ¨ HARDWARE/encoder.c
 
-#if defined AKM_CAR
-AKM_SERVO_UNLOCK_t ServoState;//¶æ»ú·Ç×ÔËø¿ØÖÆÆ÷
-#endif
+AKM_SERVO_UNLOCK_t ServoState;//èˆµæœºéè‡ªé”æ§åˆ¶å™¨(å¼‚è½¦å‹é“¾å·²åˆ ,ä»…ä¿ç•™å®šä¹‰ä¾›è¯Šæ–­æ˜¾ç¤º)
 /**************************************************************************
 Function: FreerTOS task, core motion control task
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£ºFreeRTOSÈÎÎñ£¬ºËĞÄÔË¶¯¿ØÖÆÈÎÎñ
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šFreeRTOSä»»åŠ¡ï¼Œæ ¸å¿ƒè¿åŠ¨æ§åˆ¶ä»»åŠ¡
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 
 void Balance_task(void *pvParameters)
@@ -91,102 +84,78 @@ void Balance_task(void *pvParameters)
     while(1)
     {
         // This task runs at a frequency of 100Hz (10ms control once)
-        //´ËÈÎÎñÒÔ100HzµÄÆµÂÊÔËĞĞ£¨10ms¿ØÖÆÒ»´Î£©
+        //æ­¤ä»»åŠ¡ä»¥100Hzçš„é¢‘ç‡è¿è¡Œï¼ˆ10msæ§åˆ¶ä¸€æ¬¡ï¼‰
         vTaskDelayUntil(&lastWakeTime, F2T(BALANCE_TASK_RATE));
 
 #ifdef CHASSIS_PWM_TEST
-        /* ¼Ü¿Õ²âÊÔ: µ½ÆÚÓë USART3 Ö¡Ê§Ğ§¶¼ÔÚÕâÀïÅĞ, µ½ÆÚºóÊä³ö¹éÁã. */
+        /* æ¶ç©ºæµ‹è¯•: åˆ°æœŸä¸ USART3 å¸§å¤±æ•ˆéƒ½åœ¨è¿™é‡Œåˆ¤, åˆ°æœŸåè¾“å‡ºå½’é›¶. */
         Pwm_Test_Tick((uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS);
 #endif
 
         //Time count is no longer needed after 30 seconds
-        //Ê±¼ä¼ÆÊı£¬30Ãëºó²»ÔÙĞèÒª
+        //æ—¶é—´è®¡æ•°ï¼Œ30ç§’åä¸å†éœ€è¦
         if(SysVal.Time_count<3000) SysVal.Time_count++;
 		
         //and convert to transposition international units
-        //»ñÈ¡±àÂëÆ÷Êı¾İ·´À¡¡¢¶æ»úÊı¾İ·´À¡
+        //è·å–ç¼–ç å™¨æ•°æ®åé¦ˆã€èˆµæœºæ•°æ®åé¦ˆ
         Get_Robot_FeedBack();
-		
-		//×Ô¶¯»Ø³äÉè±¸¡¢×´Ì¬¡¢º½Ä£Ò£¿ØÆ÷µÈĞÅºÅ¼à²â
-		Charger_DevCheck();
-		
+
+
         //Function to Scan User Key Press Status
-        //É¨ÃèÓÃ»§°´¼ü×´Ì¬
+        //æ‰«æç”¨æˆ·æŒ‰é”®çŠ¶æ€
         UserKey_Scan( BALANCE_TASK_RATE );
-		
+
 		//Robot parking status monitoring, clearing residual motor control signals. \
 		  Reduce power consumption, reduce motor noise.
-		//»úÆ÷ÈË×¤³µ×´Ì¬¼à²â,Çå³ı²ĞÓàµç»ú¿ØÖÆÁ¿.½µµÍ¹¦ºÄ,½µµÍµç»úÔëÒô.
+		//æœºå™¨äººé©»è½¦çŠ¶æ€ç›‘æµ‹,æ¸…é™¤æ®‹ä½™ç”µæœºæ§åˆ¶é‡.é™ä½åŠŸè€—,é™ä½ç”µæœºå™ªéŸ³.
 		Robot_ParkingCheck();
 		
-		//»úÆ÷ÈËÉÏµç×Ô¼ì
-        //µÈÍÓÂİÒÇ³õÊ¼»¯Íê³Éºó,¼ì²â»úÆ÷ÈËĞÍºÅÊÇ·ñÑ¡Ôñ´íÎó
+		//æœºå™¨äººä¸Šç”µè‡ªæ£€
+        //ç­‰é™€èºä»ªåˆå§‹åŒ–å®Œæˆå,æ£€æµ‹æœºå™¨äººå‹å·æ˜¯å¦é€‰æ‹©é”™è¯¯
         //When the gyroscope is initialized, check whether the robot model is selected incorrectly
         if(CONTROL_DELAY<SysVal.Time_count && SysVal.Time_count<CONTROL_DELAY+200)
         {
-            /* °²È«¸Ä¶¯£ºÔ­³§ÉÏµç»áÒÔ 0.2 m/s Ç°½ø 2 Ãë×ö³µĞÍ×Ô¼ì£¬ÂÖ×Ó»á×ª¡£
-             * ±¾³µÒÑÈ¡Ïûµç³ØµçÑ¹¼ì²â£¨ãĞÖµ½µµ½ 3.3V£©£¬FlagStop ºãÎª 0£¬
-             * ÕâµÀ×Ô¼ì²»ÔÙ±»µçÑ¹±£»¤À¹×¡£¬ÉÏµç¼´×ª¶¯ÓĞÉËÈË·çÏÕ£¬¹ÊÇ¿ÖÆ¸ø 0¡£ */
-            Drive_Motor(0,0,0);//ÉÏµç²»×öÇ°½ø²âÊÔ
-			//TODO:×Ô¼ìĞèÒª²âÊÔ¸÷ÖÖ³µĞÍ×Ô¼ì
-            robot_mode_check();  //Detection function //¼ì²âº¯Êı
+            /* å®‰å…¨æ”¹åŠ¨ï¼šåŸå‚ä¸Šç”µä¼šä»¥ 0.2 m/s å‰è¿› 2 ç§’åšè½¦å‹è‡ªæ£€ï¼Œè½®å­ä¼šè½¬ã€‚
+             * æœ¬è½¦å·²å–æ¶ˆç”µæ± ç”µå‹æ£€æµ‹ï¼ˆé˜ˆå€¼é™åˆ° 3.3Vï¼‰ï¼ŒFlagStop æ’ä¸º 0ï¼Œ
+             * è¿™é“è‡ªæ£€ä¸å†è¢«ç”µå‹ä¿æŠ¤æ‹¦ä½ï¼Œä¸Šç”µå³è½¬åŠ¨æœ‰ä¼¤äººé£é™©ï¼Œæ•…å¼ºåˆ¶ç»™ 0ã€‚ */
+            Drive_Motor(0,0,0);//ä¸Šç”µä¸åšå‰è¿›æµ‹è¯•
+			//TODO:è‡ªæ£€éœ€è¦æµ‹è¯•å„ç§è½¦å‹è‡ªæ£€
+            robot_mode_check();  //Detection function //æ£€æµ‹å‡½æ•°
         }
         else if(CONTROL_DELAY+200<SysVal.Time_count && SysVal.Time_count<CONTROL_DELAY+230)
         {
 			robot_check.check_end = 1;
-            Drive_Motor(0,0,0); //The stop forward control is completed //¼ì²âÍê³ÉÍ£Ö¹Ç°½ø¿ØÖÆ
+            Drive_Motor(0,0,0); //The stop forward control is completed //æ£€æµ‹å®Œæˆåœæ­¢å‰è¿›æ§åˆ¶
 			SysVal.LED_delay = 500;
         }
 		
 		//After the self-check is completed, obtain the control commands for the robot.
-        //×Ô¼ì½áÊøºó£¬»ñÈ¡»úÆ÷ÈËµÄ¿ØÖÆÃüÁî
+        //è‡ªæ£€ç»“æŸåï¼Œè·å–æœºå™¨äººçš„æ§åˆ¶å‘½ä»¤
         if(SysVal.Time_count>CONTROL_DELAY+230)
         {
-			if( 0 == SysVal.SecurityLevel )//0Îª×î¸ß°²È«µÈ¼¶,´øÓĞ»úÆ÷ÈË¿ØÖÆÃüÁî¶ªÊ§±£»¤
+			if( 0 == SysVal.SecurityLevel )//0ä¸ºæœ€é«˜å®‰å…¨ç­‰çº§,å¸¦æœ‰æœºå™¨äººæ§åˆ¶å‘½ä»¤ä¸¢å¤±ä¿æŠ¤
 			{
-				//TODO:¼à²â¶ªÊ§,²»Í¬¿ØÖÆ·½Ê½,¼à²â¶ªÊ§µÄÆµÂÊ²»Í¬,ÒÔÊµ²âÉúĞ§Îª×¼.
-				//uart,ros,can,usb ps2,°²×¿app ¿ÉÓÃ,Æ»¹ûappÎŞ·¨Ê¹ÓÃ,º½Ä£ĞèÒªÆäËûÊµÏÖ
-				//TODO:°²È«µÈ¼¶Ö»¶Ôuart,ros,canÉúĞ§. ps2£¬app£¬º½Ä£ĞÅºÅ¶ªÊ§ĞèÒªÎŞÌõ¼şÍ£Ö¹
+				//TODO:ç›‘æµ‹ä¸¢å¤±,ä¸åŒæ§åˆ¶æ–¹å¼,ç›‘æµ‹ä¸¢å¤±çš„é¢‘ç‡ä¸åŒ,ä»¥å®æµ‹ç”Ÿæ•ˆä¸ºå‡†.
+				//uart,ros,can,usb ps2,å®‰å“app å¯ç”¨,è‹¹æœappæ— æ³•ä½¿ç”¨,èˆªæ¨¡éœ€è¦å…¶ä»–å®ç°
+				//TODO:å®‰å…¨ç­‰çº§åªå¯¹uart,ros,canç”Ÿæ•ˆ. ps2ï¼Œappï¼Œèˆªæ¨¡ä¿¡å·ä¸¢å¤±éœ€è¦æ— æ¡ä»¶åœæ­¢
 				robot_control.command_lostcount++;
 				if( robot_control.command_lostcount>BALANCE_TASK_RATE )
 					robot_control.Vx = 0 , robot_control.Vy = 0 , robot_control.Vz = 0;
 			}
 			
-			//×Ô¶¯»Ø³äÄ£Ê½ÏÂµÄ¿ØÖÆÃüÁî.
-			if(charger.AllowRecharge==1)
-			{	
-				#if defined AKM_CAR //°¢¿ËÂü³µĞÍ»Ø³ä¶ÀÁ¢Âß¼­
-					if( charger.NavWalk ) Drive_Motor(charger.Up_MoveX,charger.Up_MoveY,charger.Up_MoveZ);
-					else
-					{	
-						if( charger.RED_STATE!=0 ) Drive_Motor(charger.Red_MoveX,charger.Red_MoveY,charger.Red_MoveZ); 
-						else Drive_Motor(0,0,0); 
-					}
-				#else //·Ç°¢¿ËÂü³µĞÍ¹²ÓÃ»Ø³äÂß¼­
-					//Èç¹û¿ªÆôÁËµ¼º½»Ø³ä£¬Í¬Ê±Ã»ÓĞ½ÓÊÕµ½ºìÍâĞÅºÅ£¬½ÓÊÕÀ´×ÔÉÏÎ»»úµÄµÄ»Ø³ä¿ØÖÆÃüÁî
-					if      (charger.NavWalk==1 && charger.RED_STATE==0) Drive_Motor(charger.Up_MoveX,charger.Up_MoveY,charger.Up_MoveZ); 
-					//½ÓÊÕµ½ÁËºìÍâĞÅºÅ£¬½ÓÊÕÀ´×Ô»Ø³ä×°±¸µÄ»Ø³ä¿ØÖÆÃüÁî
-					else if (charger.RED_STATE!=0) charger.NavWalk = 0,Drive_Motor(charger.Red_MoveX,charger.Red_MoveY,charger.Red_MoveZ); 
-					//·ÀÖ¹Ã»ÓĞºìÍâĞÅºÅÊ±Ğ¡³µÔË¶¯
-					if (charger.NavWalk==0&&charger.RED_STATE==0) Drive_Motor(0,0,0); 
-				#endif
-
-			}
-			//Õı³£Ä£Ê½¿ØÖÆÃüÁî
-			else
+			//æ­£å¸¸æ¨¡å¼æ§åˆ¶å‘½ä»¤
 			{
-				if      ( Get_Control_Mode(_APP_Control) )    Get_APPcmd();      //Handle the APP remote commands //´¦ÀíAPPÒ£¿ØÃüÁî
-				else if ( Get_Control_Mode(_RC_Control)  )    Remote_Control();  //Handle model aircraft remote commands //´¦Àíº½Ä£Ò£¿ØÃüÁî
-				else if (Get_Control_Mode(_PS2_Control)  )    PS2_control();     //Handle PS2 controller commands //´¦ÀíPS2ÊÖ±ú¿ØÖÆÃüÁî
+				if      ( Get_Control_Mode(_APP_Control) )    Get_APPcmd();      //Handle the APP remote commands //å¤„ç†APPé¥æ§å‘½ä»¤
+				else if (Get_Control_Mode(_PS2_Control)  )    PS2_control();     //Handle PS2 controller commands //å¤„ç†PS2æ‰‹æŸ„æ§åˆ¶å‘½ä»¤
 				
 				//CAN, Uart x control can directly get the 3 axis target speed, 
 				//without additional processing
-				//CAN¡¢´®¿Úx ¿ØÖÆÖ±½ÓµÃµ½3ÖáÄ¿±êËÙ¶È£¬ÎŞĞë¶îÍâ´¦Àí
+				//CANã€ä¸²å£x æ§åˆ¶ç›´æ¥å¾—åˆ°3è½´ç›®æ ‡é€Ÿåº¦ï¼Œæ— é¡»é¢å¤–å¤„ç†
 				else    Drive_Motor(robot_control.Vx,robot_control.Vy,robot_control.Vz);
 			}
         }
 		
-		//Éî¶È×Ô¼ìÄ£Ê½,ÓÉÓÃ»§ĞèÒªÊ±½øÈë
+		//æ·±åº¦è‡ªæ£€æ¨¡å¼,ç”±ç”¨æˆ·éœ€è¦æ—¶è¿›å…¥
 		if( 1 == robot_check.DeepCheck && SysVal.Time_count>CONTROL_DELAY+300)
 		{
 			if( 1 == Deep_SelfCheck( BALANCE_TASK_RATE ) )
@@ -198,24 +167,20 @@ void Balance_task(void *pvParameters)
 		//Robot Operation Status Inspection. Inspection Items: Check if the voltage is too low, \
 		if there are any self-test errors, and if the emergency stop switch has been pressed.   \
 		The robot will not be allowed to be controlled if any of these conditions are not met.
-		//»úÆ÷ÈËÔËĞĞ×´Ì¬¼ì²â.¼ì²âÄÚÈİ£ºµçÑ¹ÊÇ·ñ¹ıµÍ¡¢×Ô¼ìÊÇ·ñ³ö´í¡¢¼±Í£¿ª¹ØÊÇ·ñ±»°´ÏÂ.²»·ûºÏÌõ¼şÊ±½«²»ÔÊĞí»úÆ÷ÈË±»¿ØÖÆ
+		//æœºå™¨äººè¿è¡ŒçŠ¶æ€æ£€æµ‹.æ£€æµ‹å†…å®¹ï¼šç”µå‹æ˜¯å¦è¿‡ä½ã€è‡ªæ£€æ˜¯å¦å‡ºé”™ã€æ€¥åœå¼€å…³æ˜¯å¦è¢«æŒ‰ä¸‹.ä¸ç¬¦åˆæ¡ä»¶æ—¶å°†ä¸å…è®¸æœºå™¨äººè¢«æ§åˆ¶
 		robot_control.FlagStop = Turn_Off();
 		
-		#if defined AKM_CAR
-			Servo_UnLock_Check(robot_control.FlagStop);//¶æ»ú·Ç×ÔËøÄ£Ê½¼à²â
-		#endif
-		
-		//»úÆ÷ÈËÔÊĞí±»¿ØÖÆ
+		//æœºå™¨äººå…è®¸è¢«æ§åˆ¶
 		if( 0 == robot_control.FlagStop )
 		{
-			//Ö´ĞĞ¿ØÖÆ,¸ù¾İ³µĞÍ¡¢ĞÍºÅ²»Í¬,½øĞĞ²»Í¬µÄ¿ØÖÆ.
+			//æ‰§è¡Œæ§åˆ¶,æ ¹æ®è½¦å‹ã€å‹å·ä¸åŒ,è¿›è¡Œä¸åŒçš„æ§åˆ¶.
 			ResponseControl();
 		}
-		else //Ê§ÄÜ¿ØÖÆ.Çå¿Õ¿ØÖÆÁ¿.
+		else //å¤±èƒ½æ§åˆ¶.æ¸…ç©ºæ§åˆ¶é‡.
 		{
-			//Safety fix: Ô­À´µ÷ÓÃ UnResponseControl(UN_LOCK), Ëü×ßÆ½»¬¼õËÙ,
-			//Êä³öÒªÈô¸ÉÅÄ²Å½µµ½ 0. °²È«³¡¾°²»ÄÜÈÃ¼õËÙ¹ı³Ì²úÉú²ĞÓàÎ»ÒÆ,
-			//¸ÄÎª Safe_Stop() Á¢¼´°ÑÄ¿±êËÙ¶È¡¢PI ÀúÊ·¡¢PWM Õ¼¿Õ±ÈÈ«²¿¹éÁã.
+			//Safety fix: åŸæ¥è°ƒç”¨ UnResponseControl(UN_LOCK), å®ƒèµ°å¹³æ»‘å‡é€Ÿ,
+			//è¾“å‡ºè¦è‹¥å¹²æ‹æ‰é™åˆ° 0. å®‰å…¨åœºæ™¯ä¸èƒ½è®©å‡é€Ÿè¿‡ç¨‹äº§ç”Ÿæ®‹ä½™ä½ç§»,
+			//æ”¹ä¸º Safe_Stop() ç«‹å³æŠŠç›®æ ‡é€Ÿåº¦ã€PI å†å²ã€PWM å ç©ºæ¯”å…¨éƒ¨å½’é›¶.
 			Safe_Stop();
 #if defined(REAR_WHEEL_DEBUG) && defined(_4WD_CAR)
 #if defined(FOUR_TURN_DEBUG)
@@ -229,12 +194,12 @@ void Balance_task(void *pvParameters)
 		}
 
 #ifdef CHASSIS_PWM_TEST
-		/* ¼Ü¿Õ²âÊÔÊä³öÊÕÁ²µã. Î»ÖÃÑ¡ÔÚÕâÀïÊÇÓĞÒâµÄ:
-		 *   1. ÉÏÃæµÄ Deep_SelfCheck ·ÖÖ§Ö´ĞĞÊ±ÒÑ continue, ×Ô¼ìÆÚ¼äµ½²»ÁË±¾¶Î;
-		 *   2. ±¾¶ÎÔÚ Turn_Off() Ö®ºó, robot_control.FlagStop ¾ÍÊÇ Turn_Off µÄ½á¹û,
-		 *      ÒÑ°üº¬ EN==0¡¢µçÑ¹¡¢errorflag¡¢SoftWare_Stop;
-		 *   3. ±¾¶ÎÔÚ ResponseControl / Safe_Stop Ö®ºó, ±¾ÅÄ²»¸²¸ÇËüÃÇµÄÊä³ö.
-		 * Ö»ÓĞ allow È«ÕæÊ±²ÅÇëÇó·ÇÁãÖµ; ·ñÔò»ØÌîÁã, ÊÇ·ñĞ´ Set_Pwm ÓÉÏÂÃæ¾ö¶¨. */
+		/* æ¶ç©ºæµ‹è¯•è¾“å‡ºæ”¶æ•›ç‚¹. ä½ç½®é€‰åœ¨è¿™é‡Œæ˜¯æœ‰æ„çš„:
+		 *   1. ä¸Šé¢çš„ Deep_SelfCheck åˆ†æ”¯æ‰§è¡Œæ—¶å·² continue, è‡ªæ£€æœŸé—´åˆ°ä¸äº†æœ¬æ®µ;
+		 *   2. æœ¬æ®µåœ¨ Turn_Off() ä¹‹å, robot_control.FlagStop å°±æ˜¯ Turn_Off çš„ç»“æœ,
+		 *      å·²åŒ…å« EN==0ã€ç”µå‹ã€errorflagã€SoftWare_Stop;
+		 *   3. æœ¬æ®µåœ¨ ResponseControl / Safe_Stop ä¹‹å, æœ¬æ‹ä¸è¦†ç›–å®ƒä»¬çš„è¾“å‡º.
+		 * åªæœ‰ allow å…¨çœŸæ—¶æ‰è¯·æ±‚éé›¶å€¼; å¦åˆ™å›å¡«é›¶, æ˜¯å¦å†™ Set_Pwm ç”±ä¸‹é¢å†³å®š. */
 		{
 			int     pwm_test[4];
 			uint8_t pwm_test_allow =
@@ -242,12 +207,11 @@ void Balance_task(void *pvParameters)
 				&& ( 0 == robot_check.DeepCheck )
 				&& ( SysVal.Time_count > CONTROL_DELAY + 230 )
 				&& Get_Control_Mode(_ROS_Control)
-				&& ( 0 == charger.AllowRecharge )
 				&& ( 1 == EN );
-			/* ¾ºÌ¬·À»¤: È¡ĞòºÅ -> ËãÊä³ö -> Ğ´ PWM -> ¸´ºË -> ¹Ø´°¿Ú.
-			 * USART3 Í£Ö¹Ö¡(»òÈÎºÎ Pwm_Test_Stop)»á¼ÓĞòºÅ; ¸´ºË²»¹ı¾ÍÒ»ÂÉ
-			 * Ğ´Áã, ²»Ğ´±¾´Î»º´æÖµ. ´°¿ÚÄÚÊÕµ½µÄÍ£Ö¹Ö¡»¹»áÓÉÄ£¿é»Øµ÷Á¢¼´
-			 * ÇåÁã¼Ä´æÆ÷, ËùÒÔÍ£Ö¹Ö¡µ½¼Ä´æÆ÷ÇåÁã²»ÒÀÀµÈÎÎñµ÷¶È. */
+			/* ç«æ€é˜²æŠ¤: å–åºå· -> ç®—è¾“å‡º -> å†™ PWM -> å¤æ ¸ -> å…³çª—å£.
+			 * USART3 åœæ­¢å¸§(æˆ–ä»»ä½• Pwm_Test_Stop)ä¼šåŠ åºå·; å¤æ ¸ä¸è¿‡å°±ä¸€å¾‹
+			 * å†™é›¶, ä¸å†™æœ¬æ¬¡ç¼“å­˜å€¼. çª—å£å†…æ”¶åˆ°çš„åœæ­¢å¸§è¿˜ä¼šç”±æ¨¡å—å›è°ƒç«‹å³
+			 * æ¸…é›¶å¯„å­˜å™¨, æ‰€ä»¥åœæ­¢å¸§åˆ°å¯„å­˜å™¨æ¸…é›¶ä¸ä¾èµ–ä»»åŠ¡è°ƒåº¦. */
 			uint32_t pwm_test_seq = Pwm_Test_BeginWrite();
 			uint32_t pwm_test_req = Pwm_Test_ControlOutput(pwm_test_allow, pwm_test);
 			robot.MOTOR_A.Output = pwm_test[0];
@@ -260,11 +224,11 @@ void Balance_task(void *pvParameters)
 			Set_Pwm(pwm_test[0], pwm_test[1], pwm_test[2], pwm_test[3], 0);
 			if( pwm_test_req && Pwm_Test_Commit(pwm_test_seq, pwm_test) )
 			{
-				/* ¸´ºËÍ¨¹ı: ±¾´ÎĞ´ÈëÈÔÈ»ÓĞĞ§, ±£³Ö. */
+				/* å¤æ ¸é€šè¿‡: æœ¬æ¬¡å†™å…¥ä»ç„¶æœ‰æ•ˆ, ä¿æŒ. */
 			}
 			else
 			{
-				/* ´°¿ÚÄÚ·¢Éú¹ıÆÚ/Í£Ö¹/ĞÂÃüÁî, ±¾´ÎÊıÖµ×÷·Ï, Á¢¼´¹éÁã. */
+				/* çª—å£å†…å‘ç”Ÿè¿‡æœŸ/åœæ­¢/æ–°å‘½ä»¤, æœ¬æ¬¡æ•°å€¼ä½œåºŸ, ç«‹å³å½’é›¶. */
 				Set_Pwm(0, 0, 0, 0, 0);
 			}
 			Pwm_Test_EndWrite();
@@ -272,86 +236,31 @@ void Balance_task(void *pvParameters)
 #endif
 		
 		
-		//[Õï¶Ï] ×îĞ¡¹Û²â¿é. Ğ´ÔÚ .bss Ö®ÍâµÄ¹Ì¶¨µØÖ·, ÓÃ ST-Link ¶Á»Ø.
-		//ÑéÖ¤Íê³ÉºóÉ¾³ı.
-		{
-			extern volatile uint32_t g_safety_probe[48];
-			g_safety_probe[0] = 0x5AFE0001u;
-			g_safety_probe[1] = (uint32_t)robot_control.FlagStop;
-			g_safety_probe[2] = (uint32_t)(robot.voltage * 100.0f);
-			g_safety_probe[3] = (uint32_t)EN;
-			g_safety_probe[4] = (uint32_t)robot_check.errorflag;
-			g_safety_probe[5] = (uint32_t)robot_control.SoftWare_Stop;
-			g_safety_probe[6] = (uint32_t)charger.AllowRecharge;
-			g_safety_probe[7] = (uint32_t)PI_MotorA.Output;
-			g_safety_probe[8] = (uint32_t)(robot_control.Vx * 1000.0f);
-			g_safety_probe[9] = (uint32_t)(robot.MOTOR_A.Target * 1000.0f);
-			g_safety_probe[10] = (uint32_t)(robot.MOTOR_B.Target * 1000.0f);
-			g_safety_probe[11] = (uint32_t)GamePadInterface->LX;
-			g_safety_probe[12] = (uint32_t)GamePadInterface->LY;
-			g_safety_probe[13] = (uint32_t)GamePadInterface->StartFlag;
-			g_safety_probe[14] = (uint32_t)(GamePadInterface == &GamePadDefalut);
-			g_safety_probe[15] = (uint32_t)robot.MOTOR_A.Output;
-			g_safety_probe[16] = (uint32_t)(robot.MOTOR_A.Encoder * 1000.0f);
-			g_safety_probe[17] = (uint32_t)(robot.MOTOR_B.Encoder * 1000.0f);
-			g_safety_probe[18] = (uint32_t)(robot.MOTOR_B.Output);
-			g_safety_probe[19] = (uint32_t)(PI_MotorA.Bias * 1000.0f);
-			g_safety_probe[20] = (uint32_t)(PI_MotorA.kp * 1000.0f);
-			g_safety_probe[21] = (uint32_t)(PI_MotorA.ki * 1000.0f);
-			g_safety_probe[22] = (uint32_t)PI_MotorB.Output;
-			g_safety_probe[23] = (uint32_t)robot.type;
-			g_safety_probe[24] = (uint32_t)(robot.HardwareParam.Encoder_precision * 1000.0f);
-			g_safety_probe[25] = (uint32_t)(robot.HardwareParam.Wheel_Circ * 1000.0f);
-			g_safety_probe[26] = (uint32_t)(robot.HardwareParam.WheelSpacing * 1000.0f);
-			g_safety_probe[27] = (uint32_t)(robot.MOTOR_C.Target * 1000.0f);
-			g_safety_probe[28] = (uint32_t)(robot.MOTOR_D.Target * 1000.0f);
-			g_safety_probe[29] = (uint32_t)robot.MOTOR_C.Output;
-			g_safety_probe[30] = (uint32_t)robot.MOTOR_D.Output;
-			g_safety_probe[31] = (uint32_t)(robot.MOTOR_C.Encoder * 1000.0f);
-			g_safety_probe[32] = (uint32_t)(robot.MOTOR_D.Encoder * 1000.0f);
-			/* [C50C] ROS closed loop observation points. Used to tell apart
-			   the two causes of PWM toggling between 0 and 8400:
-			   command wiped to zero, or PI output swinging to its limit.
-			   The self-check is not a candidate: robot_mode_check() only runs
-			   at power-up and drives zero motor output. */
-			uint32_t diag_w = 0;
-			if( g_ros_speed_diag_ready )            diag_w |= 1u << 0;
-			if( g_ros_speed_diag_neutral )          diag_w |= 1u << 1;
-			if( g_ros_steer_debug.armed )           diag_w |= 1u << 2;
-			if( g_ros_steer_debug.neutral_pending ) diag_w |= 1u << 3;
-			if( g_ros_steer_debug.left.running == 0 || g_ros_steer_debug.right.running == 0 ) diag_w |= 1u << 4;
-			g_safety_probe[33] = diag_w;
-			g_safety_probe[34] = (uint32_t)((int32_t)g_ros_speed_output);
-			g_safety_probe[35] = (uint32_t)((int32_t)g_ros_speed_pi.Output);
-			g_safety_probe[36] = (uint32_t)((int32_t)(g_ros_speed_pi.Bias * 1000.0f));
-			g_safety_probe[37] = (uint32_t)((int32_t)(g_ros_speed_pi.LastBias * 1000.0f));
-			g_safety_probe[38] = (uint32_t)(robot.MOTOR_A.Output & 0xFFFF) | ((uint32_t)(robot.MOTOR_B.Output & 0xFFFF) << 16);
-		}
 
-		//±£´æFLash²ÎÊı,ÄÚÈİ°üº¬°¢¿ËÂü²ÎÊı¡¢¾ÀÆ«ÏµÊıµÈ
+		//ä¿å­˜FLashå‚æ•°,å†…å®¹åŒ…å«é˜¿å…‹æ›¼å‚æ•°ã€çº åç³»æ•°ç­‰
 		uint8_t flash_check = 0;
-		flash_check = FlashParam_Save( &appkey.ParamSaveFlag ); //±£´æFlash²ÎÊı
-		if( 1 == flash_check ) Buzzer_AddTask(1,100);      //±£´æ³É¹¦,Õı³£·äÃùÌáÊ¾1Ãë
-		else if( 1 < flash_check ) Buzzer_AddTask(10,11); //±£´æÊ§°Ü,¿ìËÙ·äÃù10Éù¾¯¸æ
+		flash_check = FlashParam_Save( &appkey.ParamSaveFlag ); //ä¿å­˜Flashå‚æ•°
+		if( 1 == flash_check ) Buzzer_AddTask(1,100);      //ä¿å­˜æˆåŠŸ,æ­£å¸¸èœ‚é¸£æç¤º1ç§’
+		else if( 1 < flash_check ) Buzzer_AddTask(10,11); //ä¿å­˜å¤±è´¥,å¿«é€Ÿèœ‚é¸£10å£°è­¦å‘Š
 
     }
 }
 
 /*-------------------------------- Functions Related to PI Controller ------------------------------------*/
-/*--------------------------------           PI ¿ØÖÆÆ÷Ïà¹Øº¯Êı          ------------------------------------*/
+/*--------------------------------           PI æ§åˆ¶å™¨ç›¸å…³å‡½æ•°          ------------------------------------*/
 /**************************************************************************
 Functionality: Set PID Control Parameters - Configures the proportional (Kp) and integral (Ki) parameters for PID control.
 Input Parameters: Kp parameter, Ki parameter.
 Return Value: None.
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºÉèÖÃPID¿ØÖÆµÄ²ÎÊı
-Èë¿Ú²ÎÊı£ºKp²ÎÊı¡¢Ki²ÎÊı
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šè®¾ç½®PIDæ§åˆ¶çš„å‚æ•°
+å…¥å£å‚æ•°ï¼šKpå‚æ•°ã€Kiå‚æ•°
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 static void PI_SetParam(PI_CONTROLLER* p,int kp,int ki)
 {
-	//PID²ÎÊı²»¿ÉÎª¸º,Ò²²»¿ÉÎª0.
+	//PIDå‚æ•°ä¸å¯ä¸ºè´Ÿ,ä¹Ÿä¸å¯ä¸º0.
 	if( kp > 0 ) 
 	{
 		p->kp = kp;
@@ -367,7 +276,7 @@ void Set_Robot_PI_Param(int kp,int ki)
 	if( kp > 0 ) robot.V_KP = kp;
 	if( ki > 0 ) robot.V_KI = ki;
 	
-	//ÉèÖÃËÄÂ·pi²ÎÊı
+	//è®¾ç½®å››è·¯piå‚æ•°
 	PI_SetParam(&PI_MotorA,robot.V_KP,robot.V_KI);
 	PI_SetParam(&PI_MotorB,robot.V_KP,robot.V_KI);
 	PI_SetParam(&PI_MotorC,robot.V_KP,robot.V_KI);
@@ -379,10 +288,10 @@ Functionality: Incremental PI Controller Reset - Resets an incremental PI (Propo
 Input Parameters: PI controller.
 Return Value: None.
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºÔöÁ¿Ê½PI¿ØÖÆÆ÷¸´Î»
-Èë¿Ú²ÎÊı£ºPI¿ØÖÆÆ÷
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šå¢é‡å¼PIæ§åˆ¶å™¨å¤ä½
+å…¥å£å‚æ•°ï¼šPIæ§åˆ¶å™¨
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 static void PI_Controller_Reset(PI_CONTROLLER *p)
 {
@@ -398,585 +307,68 @@ Functionality: Incremental PI Control - Implements the control logic for an
 Input Parameters: PI controller, feedback value, target value.
 Return Value: Control output result.
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºÔöÁ¿Ê½PI¿ØÖÆ
-Èë¿Ú²ÎÊı£ºPI¿ØÖÆÆ÷,·´À¡Öµ,Ä¿±êÖµ
-·µ»Ø  Öµ£º¿ØÖÆÁ¿½á¹ûÊä³ö
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šå¢é‡å¼PIæ§åˆ¶
+å…¥å£å‚æ•°ï¼šPIæ§åˆ¶å™¨,åé¦ˆå€¼,ç›®æ ‡å€¼
+è¿”å›  å€¼ï¼šæ§åˆ¶é‡ç»“æœè¾“å‡º
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 static int Incremental_MOTOR(PI_CONTROLLER* p,float current,float target)
 {
-	//¼ÆËãÆ«²î
+	//è®¡ç®—åå·®
 	p->Bias = target - current;
 	
-	//¼ÆËãÊä³ö
+	//è®¡ç®—è¾“å‡º
 	p->Output += p->kp * ( p->Bias - p->LastBias ) + p->ki * p->Bias;
 	
-	//Êä³öÏŞ·ù
+	//è¾“å‡ºé™å¹…
 	if( p->Output >   FULL_DUTYCYCLE ) p->Output =   FULL_DUTYCYCLE;
 	if( p->Output < - FULL_DUTYCYCLE ) p->Output = - FULL_DUTYCYCLE;
 	
-	//±£´æ±¾´ÎÆ«²î
+	//ä¿å­˜æœ¬æ¬¡åå·®
 	p->LastBias = p->Bias;
 	
-	//Êä³ö
+	//è¾“å‡º
 	return p->Output;
 }
 
-/**************************************************************************
-Functionality: Incremental PI Control - Implements the control logic for an 
-               incremental PI (Proportional-Integral) controller using feedback and target values.
-Input Parameters: PI controller, feedback value, target value.
-Return Value: Control output result.
-Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºÔöÁ¿Ê½PI¿ØÖÆ
-Èë¿Ú²ÎÊı£ºPI¿ØÖÆÆ÷,·´À¡Öµ,Ä¿±êÖµ
-·µ»Ø  Öµ£º¿ØÖÆÁ¿½á¹ûÊä³ö
-×÷    Õß£ºWHEELTEC
-**************************************************************************/
-#if defined AKM_CAR
-static int Incremental_Servo(PI_CONTROLLER* p,float current,float target)
-{
-	//¶æ»ú¶ÀÁ¢PID²ÎÊı,²»¿ª·ÅÓÃ»§ĞŞ¸Ä.ÒÑµ÷ÕûÎª×î¼ÑÖµ
-	float servo_kp = 0;
-	float servo_ki = 0;
-	int8_t servo_dir = 1;
-	
-	//¸ù¾İ»¬¹ìµÄĞĞ³Ì¡¢²»Í¬µÄ³µĞÍ À´È·¶¨PI²ÎÊı
-	if( robot.type==2 || robot.type==3 ) //¶¥Åä°ÚÊ½°¢¿ËÂü
-	{
-		//Òò»úĞµ½á¹¹Ô­Òò,ÓÒ×ªµÄĞĞ³Ì±È½Ï³¤,´ËÊ±ĞèÒª¼Ó¿ì×ªÏòËÙ¶È
-		if( target<0 || current<-200 ) servo_kp = 0.002f*1.3f , servo_ki = 0.006f*1.3f;
-		else                           servo_kp = 0.002f , servo_ki = 0.006f;
-	}
-	else if( robot.type==4 || robot.type==5 ) //¶¥Åä¶ÀÁ¢°¢¿ËÂü
-	{
-		servo_dir = -1;//¶æ»ú·´×°,Ö´ĞĞ·½ÏòÓĞ±ä»¯
-		
-		//Òò»úĞµ½á¹¹Ô­Òò,ÓÒ×ªµÄĞĞ³Ì±È½Ï³¤,´ËÊ±ĞèÒª¼Ó¿ì×ªÏòËÙ¶È
-		if( target>0 || current<200 )  servo_kp = 0.002f*1.3f , servo_ki = 0.006f*1.3f;
-		else                           servo_kp = 0.002f , servo_ki = 0.006f;
-	}
-	
-	//µÍËÙ¶æ»úÄ£Ê½
-	static uint16_t low_speedMode = 0;
-	if( robot_control.ServoLow_flag ) 
-	{
-		servo_kp = 0.001,servo_ki = 0.003;
-		low_speedMode++;
-		if( low_speedMode > BALANCE_TASK_RATE*2 ) //ÉèÖÃ×Ô¶¯ÍË³öÊ±¼ä,2Ãë
-		{
-			low_speedMode = 0;
-			robot_control.ServoLow_flag = 0;//×Ô¶¯ÍË³öµÍËÙÄ£Ê½
-		}
-	}
-	else
-		low_speedMode = 0;
-	
-	//¼ÆËãÆ«²î
-	p->Bias = target - current ;
-	
-	//Êä³ö¼ÆËã
-	p->Output += (servo_kp*servo_dir) * ( p->Bias - p->LastBias ) + (servo_ki*servo_dir) * p->Bias;
-	
-	//Êä³öÏŞ·ù
-	if( p->Output > Akm_Servo.Max )  p->Output = Akm_Servo.Max;
-	if( p->Output < Akm_Servo.Min )  p->Output = Akm_Servo.Min;
-	
-	//±£´æ±¾´ÎÆ«²î
-	p->LastBias = p->Bias;
-	
-	//¶æ»ú·Ç×ÔËøÄ£Ê½ÊµÏÖ.Í¨¹ıÔÚÅĞ¶ÏÌõ¼ş¼ÓÈë±êÖ¾Î»¿É½ûÓÃ·Ç×ÔËøÄ£Ê½
-	static uint16_t count = 0;
-	if( robot_control.smooth_Servo == p->Output && robot_control.FlagStop==0 ) //½öÔÚ»úÆ÷ÈËÔÊĞí¿ØÖÆÊ±Ê¹ÓÃ±¾Âß¼­
-	{
-		count++;
-		if( count>=BALANCE_TASK_RATE )
-		{
-			count=0;
-			ServoState.UnLock = 1;           //½øÈë²»×ÔËøÄ£Ê½
-			ServoState.UnLock_Pos =  current;//²¢¼ÇÂ¼¶æ»úµ±Ç°µÄÎ»ÖÃ
-			ServoState.UnLock_Target = target - Akm_Servo.Bias;//¼ÇÂ¼¶æ»úµÄÄ¿±êÎ»ÖÃ
-			ServoState.UnLock_Output = robot.SERVO.Output;//¼ÇÂ¼¶æ»úµ±Ç°µÄpwmÖµ
-			return 0;//¶æ»úµ½´ïÄ¿±ê½Ç¶Èºó,²»×ÔËø
-		}
-	}
-	else count = 0;
-	
-	#if 1
-	//¶æ»úÆ½»¬¿ØÖÆ,½µµÍ¼ÓËÙ¶È
-	//ÈÃ¶æ»úÖµ»ºÂıÔö¼Óµ½µÄ¼ÆËãµÄÄ¿±êÖµ
-	if( robot_control.smooth_Servo > p->Output ) 
-	{
-		robot_control.smooth_Servo -= robot_control.smooth_ServoStep;
-		if( robot_control.smooth_Servo <= p->Output ) robot_control.smooth_Servo = p->Output;
-	}
-	else if( robot_control.smooth_Servo < p->Output )
-	{
-		robot_control.smooth_Servo += robot_control.smooth_ServoStep;
-		if( robot_control.smooth_Servo >= p->Output  ) robot_control.smooth_Servo = p->Output;
-	}
-	else
-	{
-		robot_control.smooth_Servo = p->Output;
-	}
-	
-	return (int)robot_control.smooth_Servo;
-	#else
-		//²»Ê¹ÓÃÂË²¨Ö±½ÓÊä³ö
-		return p->Output;
-	#endif
-}
-
-
-
-/**************************************************************************
-Function function: Determine the PWM value of the servo motor based on the position of the slide rail,
-                   only available for top of the line models
-Entrance parameters: servo encoder reading
-Return value: Servo PWM
-Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºÍ¨¹ı»¬¹ìÎ»ÖÃÅĞ¶Ï¶æ»úPWMÖµ,½ö¶¥Åä³µĞÍ¿ÉÓÃ
-Èë¿Ú²ÎÊı£º¶æ»ú±àÂëÆ÷¶ÁÊı
-·µ»Ø  Öµ£º¶æ»úPWM
-×÷    Õß£ºWHEELTEC
-**************************************************************************/
-short get_ServoPWM(short TmpPos)
-{
-	//¹«Ê½ÄâºÏ°æ±¾,Ğ§¹ûºÃ,µ«Ã¿Ì¨³µ¹«Ê½²»Ò»Ñù£¬¿Í»§¿ÉÒÔ×ÔĞĞÄâºÏ
-//	//¹À²â¶æ»úµÄÎ»ÖÃÓë¶æ»úÖĞÖµµÄÆ«²î
-//	//¶¥Åä°ÚÊ½Óë¶¥Åä¶ÀÁ¢Ğü¹Ò¶æ»ú·½ÏòÏà·´.
-//	if( robot.type == 2 || robot.type == 3 )
-//	{
-//		//Í¨¹ı»¬¹ìµÄÎ»ÖÃ²Â²â¶æ»úµÄPWMÊıÖµ´óĞ¡.¹«Ê½ÓÉ²ÉÑù¼¸×éÊı¾İ½øĞĞÄâºÏµÃ³ö
-//		return 1.57e+03 + 4.04e-01*TmpPos + (-5.82e-05)*pow(TmpPos,2);
-//	}
-//	else if( robot.type == 4 || robot.type == 5 )
-//	{
-//		//Í¨¹ı»¬¹ìµÄÎ»ÖÃ²Â²â¶æ»úµÄPWMÊıÖµ´óĞ¡.¹«Ê½ÓÉ²ÉÑù¼¸×éÊı¾İ½øĞĞÄâºÏµÃ³ö
-////		return 1.46e+03 + (-4.05e-01)*TmpPos + (-9.42e-07)*pow(TmpPos,2);
-//		return 1.48e+03 + (-2.39e-01)*TmpPos + (4.90e-06)*pow(TmpPos,2);	
-//	}
-//	else
-//		return 0;
-	
-	uint16_t pwm_val = Akm_Servo.Mid;
-	
-	//¹À²â°æ±¾
-	if( robot.type==4||robot.type==5 )
-	{
-			 if( TmpPos>=500&&TmpPos<=1000 )    pwm_val = Akm_Servo.Mid - 250;
-		else if( TmpPos>1000 )                  pwm_val = Akm_Servo.Mid - 450;
-		else if( TmpPos<=-500&&TmpPos>=-1000 )   pwm_val = Akm_Servo.Mid + 250;
-		else if( TmpPos<-1000 )                   pwm_val = Akm_Servo.Mid + 450;
-	}
-	else if( robot.type==2 || robot.type==3 )
-	{
-			 if( TmpPos>=500&&TmpPos<=1000 )    pwm_val = Akm_Servo.Mid + 250;
-		else if( TmpPos>1000 )                  pwm_val = Akm_Servo.Mid + 450;
-		else if( TmpPos<=-500&&TmpPos>=-1000 )   pwm_val = Akm_Servo.Mid - 250;
-		else if( TmpPos<-1000 )                   pwm_val = Akm_Servo.Mid - 450;
-	}
-	
-	return pwm_val;
-}
-
-/**************************************************************************
-Function Function: Servo Calibration Function. When the servo is in non self-locking mode and 
-the position of the servo changes due to external factors, this function can be used for calibration
-Entrance parameters: None
-Return value: None
-Author: SHEELTEC
-º¯Êı¹¦ÄÜ£º¶æ»úĞ£Õıº¯Êı.µ±¶æ»úÔÚ·Ç×ÔËøÄ£Ê½ÏÂÊ±,ÒòÎªÍâ½çÒòËØµ¼ÖÂ¶æ»úÎ»ÖÃ·¢Éú±ä»¯,Ê¹ÓÃ¸Ãº¯ÊıĞ£×¼
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
-**************************************************************************/
-static void ServoCalibration(void)
-{
-	short tmp_pwm;
-	tmp_pwm = get_ServoPWM( robot.SERVO.Encoder ); //»ñÈ¡µ±Ç°Î»ÖÃ¶ÔÓ¦PWMÊıÖµ
-	SERVO_TOP = tmp_pwm;                  //³õÊ¼»¯¶æ»úµÄÎ»ÖÃ,¸Ã±äÁ¿Ö±½Ó¾ö¶¨¶æ»úµÄÎ»ÖÃ
-	PI_Controller_Reset(&PI_Servo);       //¸´Î»¶æ»úµÄPI¿ØÖÆÆ÷
-	PI_Servo.Output = tmp_pwm;            //PI¿ØÖÆÆ÷µÄÊä³öÖµ,½«»áÒÔ¸ÃÊıÖµ×÷Îª»ù´¡½øĞĞËÙ¶ÈÆ½»¬.
-	robot_control.smooth_Servo = tmp_pwm; //Æ½»¬Öµ,ÕâÊÇÊµ¼ÊµÄ¿ØÖÆÁ¿.
-}
-
-//¶æ»ú·Ç×ÔËøÄ£Ê½¼à²â
-static void Servo_UnLock_Check(uint8_t car_stopflag)
-{
-	static uint8_t now = 0 ;
-	static uint8_t last = 0;
-	
-	if(SysVal.Time_count < CONTROL_DELAY ) return;
-	
-	//¶æ»ú·Ç×ÔËøÄ£Ê½Ïà¹Ø
-	if ( robot.type>=2 && robot.type!=9 ) //½ö¶¥Åä³µĞÍ
-	{
-		//Ğ¡³µÊ¹ÄÜ±êÖ¾Î»¼ì²â
-		now = car_stopflag;
-		if( now==1 && last==0 ) //Ğ¡³µ±»Ê§ÄÜ
-		{
-			ServoState.UnLock_Pos = robot.SERVO.Encoder;//¼ÇÂ¼Ê§ÄÜÊ±¶æ»úµÄÎ»ÖÃ
-			ServoState.UnLock_Output = robot.SERVO.Output;//¶æ»úPWMÖµ
-		}
-		else if( now==0 && last==1 ) //Ğ¡³µ±»Ê¹ÄÜ
-		{
-			if( fabs( ServoState.UnLock_Pos - robot.SERVO.Encoder ) > 100 ) //ÔÚÊ§ÄÜÆÚ¼ä,¶æ»úÎ»ÖÃ±»Íâ½ç¸Ä±äÁË,ÔòÖØĞÂ½ÃÕı
-			{
-				ServoState.UnLock = 0;
-				ServoCalibration();//½ÃÕı¶æ»úÎ»ÖÃ
-				robot_control.ServoLow_flag = 1;//½øÈë¶æ»úµÍËÙÄ£Ê½,±£Ö¤¶æ»ú»ºÂı¸´Î»(½ö¶¥Åä°¢¿ËÂü)
-			}
-		}
-		last = now;
-		
-		//·Ç×ÔËøÄ£Ê½ÍË³ö¼ì²â
-		if( 1 == ServoState.UnLock )
-		{
-			//ÔÚ·Ç×ÔËøÆÚ¼ä,¶æ»ú½Ç¶È±»Íâ½Ó¸Ä±ä,ĞèÒª½øĞĞĞ£×¼.
-			if( fabs( robot.SERVO.Encoder - ServoState.UnLock_Pos ) > 100 ) ServoState.wait_Calib = 1;
-			
-			//¶æ»úÓĞ¿ØÖÆÁ¿Ê±,½â³ı·Ç×ÔËø,½øÈëÕı³£¿ØÖÆÄ£Ê½
-			if( fabs( robot.SERVO.Target - ServoState.UnLock_Target ) > 50 || 1 == ValChangeCheck(BALANCE_TASK_RATE,Akm_Servo.Bias,3)) 
-			{
-				if( ServoState.wait_Calib ) 
-				{
-					ServoState.wait_Calib=0,ServoCalibration();//ÈçÓĞĞèÒªÔòÏÈĞ£×¼¶æ»ú
-					if( fabs(robot_control.smooth_Vx) < 0.001f ) robot_control.ServoLow_flag = 1;//Èç¹ûĞ¡³µ²»ÔÚĞĞÊ»ÖĞ£¬ÔÚ½ÃÕıÊ±Ê¹ÓÃµÍËÙ½ÃÕı
-				}
-				ServoState.UnLock = 0;//½â³ı·Ç×ÔËøÄ£Ê½
-			}		
-			
-		} 
-	}//³µĞÍÅĞ¶Ïend
-}
-#endif
 /**************************************************************************
 Functionality: PI Controller Clearing Function - Clears the output residue of a PI (Proportional-Integral) 
                controller when the robot is disabled, aiming to reduce power consumption and motor noise.
 Input Parameters: PI controller.
 Return Value: None.
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºPI¿ØÖÆÆ÷Çå³ıº¯Êı,ÔÚ»úÆ÷ÈË½ûÖ¹Ê±Çå¿ÕÊä³ö²ĞÓà£¬½µµÍ¹¦ºÄÒÔ¼°µç»úµÄÔëÒô
-Èë¿Ú²ÎÊı£ºPI¿ØÖÆÆ÷
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šPIæ§åˆ¶å™¨æ¸…é™¤å‡½æ•°,åœ¨æœºå™¨äººç¦æ­¢æ—¶æ¸…ç©ºè¾“å‡ºæ®‹ä½™ï¼Œé™ä½åŠŸè€—ä»¥åŠç”µæœºçš„å™ªéŸ³
+å…¥å£å‚æ•°ï¼šPIæ§åˆ¶å™¨
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 static uint8_t PI_Clear_Output(PI_CONTROLLER* p)
 {
-	u8 state = 0;//Çå³ı±êÖ¾Î»
+	u8 state = 0;//æ¸…é™¤æ ‡å¿—ä½
 	
 	if( p->Output > 0 ) p->Output -- ;
 	if( p->Output < 0 ) p->Output ++ ;
 	
-	//½Ó½ü0Ê±,Ö±½ÓÖÃ0
+	//æ¥è¿‘0æ—¶,ç›´æ¥ç½®0
 	if( p->Output < 2.0f && p->Output > -2.0f ) p->Output = 0 , state = 1;
 	
-	//·µ»ØÇå³ı½á¹û. 0:Î´Íê³É 1:Çå³ıÍê±Ï
+	//è¿”å›æ¸…é™¤ç»“æœ. 0:æœªå®Œæˆ 1:æ¸…é™¤å®Œæ¯•
 	return state;
 }
 
 /*-------------------------------- Function for Inverse Kinematics Solution ------------------------------------*/
-/*--------------------------------         ¸÷³µĞÍÔË¶¯Ñ§Äæ½âÏà¹Øº¯Êı          ------------------------------------*/
-#if defined AKM_CAR
-
-//ÊäÈë»¬¿éÎ»ÖÃ£¬¼ÆËã³öµ±Ç°µÄ×óÇ°ÂÖ×ª½Ç
-float SteeringStructure_ForwardKinematic(short ori_pos)
-{
-    float pos;
-    float tmp_theta;
-    float tmp_C;
-
-    pos = (float)ori_pos*0.0244f + 103;
-
-    tmp_C = ( -1500.5f - pow(pos,2) ) / ( 140.4f*sqrt( pow(pos,2) + 3340.8f ) );
-
-    tmp_theta = atan2(pos,57.8f) - asin( tmp_C ) - PI;
-
-    return tmp_theta/PI * 180.0f + 72.39f;
-}
-
-//ÊäÈë×óÇ°ÂÖ×ª½Ç,Êä³ö»¬¹ìµçÎ»Æ÷µÄÄ¿±êÖµ
-static int SteeringStructure_Reverse(float target_theta)
-{
-	float theta;
-	float pos;
-	
-	//¶¥Åä°ÚÊ½°¢¿ËÂü
-	if( 2 == robot.type || 3 == robot.type )
-	{
-		theta = target_theta - 1.26f;   //6768.4f
-		pos = 70.2f * cos(theta) + sqrt( 6084.0f - pow((70.2f*sin(theta)+57.8f),2) ) - 103;
-		pos /= 0.0244f;
-		
-		//µçÎ»Æ÷µÄÊä³öĞèÒª±£Ö¤ÔÚ¿É´ï·¶Î§.
-		pos = target_limit_float(pos,-2000,2000);
-	}
-	
-	//¶¥Åä¶ÀÁ¢°¢¿ËÂü
-	else if( 4 == robot.type || 5 == robot.type )
-	{
-		theta = target_theta - 1.170f;    //24831.4f
-		pos = 95.15f * cos(theta) + sqrt( 24025.0f - pow((95.15f*sin(theta)+56.5f),2) ) - 191.54f;
-		pos /= 0.0244f;
-		
-		//µçÎ»Æ÷µÄÊä³öĞèÒª±£Ö¤ÔÚ¿É´ï·¶Î§.
-		pos = target_limit_float(pos,-2000,2000);
-	}
-
-	return (int)pos;
-
-}
-
-/**************************************************************************
-Function function: Ackermann inverse kinematics solution
-Entrance parameters: X-axis velocity (in m/s), left front wheel angle (in rad)
-Return value: None
-Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º°¢¿ËÂüÔË¶¯Ñ§Äæ½â
-Èë¿Ú²ÎÊı£ºXÖáµÄËÙ¶È(µ¥Î»m/s)£¬×óÇ°ÂÖµÄ×ª½Ç(µ¥Î»rad)
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
-**************************************************************************/
-static void InverseKinematics_akm(float Vx,float Vz) 
-{
-	//ÔË¶¯Ñ§·ÖÎöÇ°,ÓÅÏÈ²É¼¯¶æ»úµÄµçÎ»Æ÷Ğ£×¼Öµ,ÒÔ±ãÔË¶¯Ñ§·ÖÎö½á¹ûµ÷ÓÃ
-	Akm_Servo.Bias = -get_DMA_ServoBias() / 5.0f;
-	
-	//·Ç±ê¶¨ÖÆ³µĞÍ,Çë¸ù¾İ¶æ»úµÄÀàĞÍ²»Í¬À´¸´ÖÆ¶ÔÓ¦µÄÔË¶¯Ñ§·ÖÎöÄÚÈİ.
-	if( robot.type==6 )
-	{
-	  
-	}
-	//SENIOR_AKM - ¸ßÅä°¢¿ËÂü 
-	else if(robot.type==0||robot.type==1||robot.type==9) 
-	{
-		//Ackerman car specific related variables //°¢¿ËÂüĞ¡³µ×¨ÓÃÏà¹Ø±äÁ¿
-		float TurnR=0, Left_Angle=0;
-		
-		// For Ackerman small car, Vz represents the front wheel steering Angle
-		//¶ÔÓÚ°¢¿ËÂüĞ¡³µVz´ú±íÓÒÇ°ÂÖ×ªÏò½Ç¶È
-		Left_Angle = Vz;
-		
-		//ÏŞÖÆ×óÓÒ×ªÏòµÄ½Ç¶È
-		const float limt_angle = 30.0f;
-		//×ó¼«ÏŞµÄ×ªÍä°ë¾¶
-		float bd_turnR = robot.HardwareParam.AxleSpacing/tan(angle_to_rad(limt_angle)) + 0.5f*robot.HardwareParam.WheelSpacing;
-		//¸ù¾İ¼«ÏŞ×ªÍä°ë¾¶,¼ÆËãÍùÓÒ×ªÊ±ºòµÄ×óÂÖ½Ç¶È
-		float bd_rightAngle = atan(robot.HardwareParam.AxleSpacing/((-bd_turnR)-0.5f*robot.HardwareParam.WheelSpacing));
-		
-		// Front wheel steering Angle limit (front wheel steering Angle controlled by steering engine), unit: rad
-		//Ç°ÂÖ×ªÏò½Ç¶ÈÏŞ·ù(¶æ»ú¿ØÖÆÇ°ÂÖ×ªÏò½Ç¶È)£¬µ¥Î»£ºrad
-		Left_Angle=target_limit_float(Left_Angle,bd_rightAngle,angle_to_rad(limt_angle));
-		
-		//¸ù¾İ×ªÏò½Ç¶È¼ÆËã³öµ±Ç°µÄ×ªÍä°ë¾¶
-		if(Left_Angle!=0)
-			TurnR = robot.HardwareParam.AxleSpacing/tan(Left_Angle) + 0.5f*robot.HardwareParam.WheelSpacing;
-		
-		//¸ù¾İ×ªÍä°ë¾¶¡¢ÂÖ¾à,Äæ½â³ö×óÓÒÂÖµÄËÙ¶È
-		//Inverse kinematics //ÔË¶¯Ñ§Äæ½â
-		if(Left_Angle!=0)
-		{	//×óÓÒÁ½ÂÖÄ¿±êËÙ¶È,µ¥Î»ÊÇm/s
-			robot.MOTOR_A.Target = Vx*(TurnR-0.5f*robot.HardwareParam.WheelSpacing)/TurnR;
-			robot.MOTOR_B.Target = Vx*(TurnR+0.5f*robot.HardwareParam.WheelSpacing)/TurnR;
-		}
-		else //²»´ø×ªÏòµÄ¿ØÖÆ
-		{	
-			robot.MOTOR_A.Target = Vx;
-			robot.MOTOR_B.Target = Vx;
-		}
-		
-		// The PWM value of the servo controls the steering Angle of the front wheel
-		//¶æ»úPWMÖµ£¬¶æ»ú¿ØÖÆÇ°ÂÖ×ªÏò½Ç¶È
-		//Ç°ÂÖ×ª½ÇÓë¶æ»úÊıÖµµÄ¶ÔÓ¦¹ØÏµ
-//		robot.SERVO.Target    =  7.3f + 823.4f*Left_Angle + (-440.4f)*pow(Left_Angle,2) + (-28.8)*pow(Left_Angle,3);
-		robot.SERVO.Target    =  7.85f + 847.0f*Left_Angle + (-394.0f)*pow(Left_Angle,2) + (-74.2f)*pow(Left_Angle,3);
-		
-		//¶æ»ú×îÖÕÊä³ö = ÖĞÖµ + µçÎ»Æ÷¾ÀÕıÖµ + ¼ÆËãÖµ
-		robot.SERVO.Output = Akm_Servo.Mid + Akm_Servo.Bias + robot.SERVO.Target;
-	}
-	
-	//TOP_AKM_BS - ¶¥Åä°¢¿ËÂüĞ¡³µ°ÚÊ½Ğü¹Ò
-	else if( robot.type==2 || robot.type==3 )
-	{
-		//×ªÍä°ë¾¶¡¢×óÂÖ½Ç¶È
-		float TurnR = 0, Left_Angle = 0;
-		
-		//¶ÔÓÚ°¢¿ËÂüĞ¡³µVz´ú±í×óÇ°ÂÖ×ªÏò½Ç¶È
-		Left_Angle = Vz;
-		
-		//ÏŞÖÆ×óÓÒ×ªÏòµÄ½Ç¶È
-		const float limt_angle = 25.0f;
-		
-		//¼ÆËã½Ç¶ÈÊ±µÄÁ¬¸Ë¾àÀëK
-		const float K = 0.326f;
-		
-		//×ó¼«ÏŞµÄ×ªÍä°ë¾¶
-		float bd_turnR = robot.HardwareParam.AxleSpacing/tan(angle_to_rad(limt_angle)) + 0.5f*K;
-		
-		//¸ù¾İ¼«ÏŞ×ªÍä°ë¾¶,¼ÆËãÍùÓÒ×ªÊ±ºòµÄ×óÂÖ½Ç¶È
-		float bd_rightAngle = atan(robot.HardwareParam.AxleSpacing/((-bd_turnR)-0.5f*K));
-		
-		//Ç°ÂÖ×ªÏò½Ç¶ÈÏŞ·ù(¶æ»ú¿ØÖÆÇ°ÂÖ×ªÏò½Ç¶È)£¬µ¥Î»£ºrad
-		Left_Angle=target_limit_float(Left_Angle,bd_rightAngle,angle_to_rad(limt_angle));//×¢: ×ó+ ÓÒ-
-		
-		//»¬¹ìÄ¿±êÖµ¼ÆËã£º
-		robot.SERVO.Target = SteeringStructure_Reverse(Left_Angle);
-		//robot.SERVO.Target+=Akm_Servo.Bias;	//¼ÓÈëÆ«²îÖµ,ÊµÏÖÇ°ÂÖ×ª½Ç¿ÉÓÃµçÎ»Æ÷µ÷½Ú²¹³¥
-		
-		//¸ù¾İ×ªÏò½Ç¶È¼ÆËã³öµ±Ç°µÄ×ªÍä°ë¾¶
-		if(Left_Angle!=0)
-			TurnR = robot.HardwareParam.AxleSpacing/tan(Left_Angle) + 0.5f*K;
-		
-		//×óÓÒÂÖÄ¿±êÖµ¼ÆËã£º
-		//¸ù¾İ×ªÍä°ë¾¶¡¢ÂÖ¾à,Äæ½â³ö×óÓÒÂÖµÄËÙ¶È
-		//Inverse kinematics //ÔË¶¯Ñ§Äæ½â
-		if(Left_Angle!=0)
-		{
-			robot.MOTOR_A.Target = Vx*(TurnR-0.5f*robot.HardwareParam.WheelSpacing)/TurnR;
-			robot.MOTOR_B.Target = Vx*(TurnR+0.5f*robot.HardwareParam.WheelSpacing)/TurnR;
-		}
-		else //²»´ø×ªÏòµÄ¿ØÖÆ
-		{
-			robot.MOTOR_A.Target = Vx;
-			robot.MOTOR_B.Target = Vx;
-		}
-		
-	}
-	
-	else if ( robot.type==4 || robot.type==5 )
-	{
-		//×ªÍä°ë¾¶¡¢×óÂÖ½Ç¶È
-		float TurnR = 0, Left_Angle = 0;
-		
-		//¶ÔÓÚ°¢¿ËÂüĞ¡³µVz´ú±í×óÇ°ÂÖ×ªÏò½Ç¶È
-		Left_Angle = Vz;
-		
-		//ÏŞÖÆ×óÓÒ×ªÏòµÄ½Ç¶È
-		const float limt_angle = 25.0f;
-		
-		//¼ÆËã½Ç¶ÈÊ±µÄÁ¬¸Ë¾àÀëK
-		const float K = 0.441f;
-		
-		//×ó¼«ÏŞµÄ×ªÍä°ë¾¶
-		float bd_turnR = robot.HardwareParam.AxleSpacing/tan(angle_to_rad(limt_angle)) + 0.5f*K;
-		
-		//¸ù¾İ¼«ÏŞ×ªÍä°ë¾¶,¼ÆËãÍùÓÒ×ªÊ±ºòµÄ×óÂÖ½Ç¶È
-		float bd_rightAngle = atan(robot.HardwareParam.AxleSpacing/((-bd_turnR)-0.5f*K));
-		
-		//Ç°ÂÖ×ªÏò½Ç¶ÈÏŞ·ù(¶æ»ú¿ØÖÆÇ°ÂÖ×ªÏò½Ç¶È)£¬µ¥Î»£ºrad
-		Left_Angle=target_limit_float(Left_Angle,bd_rightAngle,angle_to_rad(limt_angle));//×¢: ×ó+ ÓÒ-
-		
-		//»¬¹ìÄ¿±êÖµ¼ÆËã£º
-		robot.SERVO.Target = SteeringStructure_Reverse(Left_Angle);
-		
-		//¸ù¾İ×ªÏò½Ç¶È¼ÆËã³öµ±Ç°µÄ×ªÍä°ë¾¶
-		if(Left_Angle!=0)
-			TurnR = robot.HardwareParam.AxleSpacing/tan(Left_Angle) + 0.5f*K;
-		
-		//×óÓÒÂÖÄ¿±êÖµ¼ÆËã£º
-		//¸ù¾İ×ªÍä°ë¾¶¡¢ÂÖ¾à,Äæ½â³ö×óÓÒÂÖµÄËÙ¶È
-		//Inverse kinematics //ÔË¶¯Ñ§Äæ½â
-		if(Left_Angle!=0)
-		{
-			robot.MOTOR_A.Target = Vx*(TurnR-0.5f*robot.HardwareParam.WheelSpacing)/TurnR;
-			robot.MOTOR_B.Target = Vx*(TurnR+0.5f*robot.HardwareParam.WheelSpacing)/TurnR;
-		}
-		else //²»´ø×ªÏòµÄ¿ØÖÆ
-		{
-			robot.MOTOR_A.Target = Vx;
-			robot.MOTOR_B.Target = Vx;
-		}
-	}
-	else if( robot.type == 7 )
-	{
-		if( Vz > 0 ) robot.SERVO.Output = 1800;
-		else if( Vz < 0 ) robot.SERVO.Output = 1100;
-		else robot.SERVO.Output = 1500;
-	}
-}
-
-/**************************************************************************
-Function function: Convert the target forward velocity Vx and target angular velocity Vz sent by
-                the upper computer into the left front wheel steering angle of the Ackermann car
-Entrance parameters: target forward velocity Vx, target angular velocity Vz, unit: m/s, rad/s
-Return value: Left front wheel steering angle of Ackermann car, unit: rad
-º¯Êı¹¦ÄÜ£º½«ÉÏÎ»»ú·¢¹ıÀ´Ä¿±êÇ°½øËÙ¶ÈVx¡¢Ä¿±ê½ÇËÙ¶ÈVz£¬×ª»»Îª°¢¿ËÂüĞ¡³µµÄ×óÇ°ÂÖ×ª½Ç
-Èë¿Ú²ÎÊı£ºÄ¿±êÇ°½øËÙ¶ÈVx¡¢Ä¿±ê½ÇËÙ¶ÈVz£¬µ¥Î»£ºm/s£¬rad/s
-·µ»Ø  Öµ£º°¢¿ËÂüĞ¡³µµÄ×óÇ°ÂÖ×ª½Ç£¬µ¥Î»£ºrad
-**************************************************************************/
-float Akm_Vz_to_Angle(float Vx,float Vz)
-{
-    float TurnR, Angle_Left;//×ªÍä°ë¾¶,×óÇ°ÂÖ½Ç¶È
-
-    if(Vz!=0 && Vx!=0)
-    {
-		//¼ÆËã×ªÍä°ë¾¶
-		TurnR = Vx/Vz;
-		
-        //È·±£×ªÍä°ë¾¶²»»á³¬³öÔË¶¯Ñ§¹«Ê½µÄ¼ÆËã·¶Î§ÄÚ
-        if( TurnR > 0 && TurnR <= 0.5f*robot.HardwareParam.WheelSpacing ) TurnR = 0.5f*robot.HardwareParam.WheelSpacing+0.01f;
-        if( TurnR < 0 && TurnR >= -0.5f*robot.HardwareParam.WheelSpacing ) TurnR = -0.5f*robot.HardwareParam.WheelSpacing-0.01f;
-		
-		//¸ù¾İ×ªÍä°ë¾¶È·¶¨×óÇ°ÂÖ×ª½Ç»¡¶È
-		Angle_Left=atan(robot.HardwareParam.AxleSpacing/(TurnR - 0.5f*robot.HardwareParam.WheelSpacing));
-
-    }
-    else
-    {
-        Angle_Left=0;
-    }
-
-    return Angle_Left;
-}
-
-/**************************************************************************
-Function function: Differential robot inverse kinematics solution
-Entrance parameters: X-axis velocity (in m/s), Z-axis velocity (in rad/s)
-Return value: None
-Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º²îËÙ»úÆ÷ÈËÔË¶¯Ñ§Äæ½â
-Èë¿Ú²ÎÊı£ºXÖáËÙ¶È(µ¥Î»m/s)¡¢ZÖáËÙ¶È(µ¥Î» rad/s)
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
-**************************************************************************/
-#elif defined DIFF_CAR
-static void InverseKinematics_diff(float Vx,float Vz)
-{
-	robot.MOTOR_A.Target = Vx - Vz * robot.HardwareParam.WheelSpacing / 2.0f;
-	robot.MOTOR_B.Target = Vx + Vz * robot.HardwareParam.WheelSpacing / 2.0f;
-}
-
-/**************************************************************************
-Function function: inverse kinematics solution of the wheat wheel robot
-Entrance parameters: X-axis velocity (in m/s), Y-axis velocity (in m/s), Z-axis velocity (in rad/s)
-Return value: None
-Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºÂóÂÖ»úÆ÷ÈËÔË¶¯Ñ§Äæ½â
-Èë¿Ú²ÎÊı£ºXÖáËÙ¶È(µ¥Î»m/s)¡¢YÖáËÙ¶È(m/s)¡¢ZÖáËÙ¶È(rad/s)
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
-**************************************************************************/
-#elif defined MEC_CAR
-static void InverseKinematics_mec(float Vx,float Vy,float Vz)
-{
-    robot.MOTOR_A.Target = +Vy+Vx-Vz*(robot.HardwareParam.AxleSpacing+robot.HardwareParam.WheelSpacing);
-    robot.MOTOR_B.Target = -Vy+Vx-Vz*(robot.HardwareParam.AxleSpacing+robot.HardwareParam.WheelSpacing);
-    robot.MOTOR_C.Target = +Vy+Vx+Vz*(robot.HardwareParam.AxleSpacing+robot.HardwareParam.WheelSpacing);
-    robot.MOTOR_D.Target = -Vy+Vx+Vz*(robot.HardwareParam.AxleSpacing+robot.HardwareParam.WheelSpacing);
-}
-
+/*--------------------------------         å„è½¦å‹è¿åŠ¨å­¦é€†è§£ç›¸å…³å‡½æ•°          ------------------------------------*/
 /**************************************************************************
 Function function: inverse kinematics solution of four-wheel drive robot
 Entrance parameters: X-axis velocity (in m/s), Y-axis velocity (in m/s), Z-axis velocity (in rad/s)
 Return value: None
 Author  :WHEELTEC
-º¯Êı¹¦ÄÜ£ºËÄÇı»úÆ÷ÈËÔË¶¯Ñ§Äæ½â
-Èë¿Ú²ÎÊı£ºXÖáËÙ¶È(µ¥Î»m/s)¡¢YÖáËÙ¶È(m/s)¡¢ZÖáËÙ¶È(rad/s)
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šå››é©±æœºå™¨äººè¿åŠ¨å­¦é€†è§£
+å…¥å£å‚æ•°ï¼šXè½´é€Ÿåº¦(å•ä½m/s)ã€Yè½´é€Ÿåº¦(m/s)ã€Zè½´é€Ÿåº¦(rad/s)
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
-#elif defined _4WD_CAR
+	
 static void InverseKinematics_4wd(float Vx,float Vz)
 {
     /* A/D: right side; B/C: left side, as measured on this chassis. */
@@ -986,127 +378,70 @@ static void InverseKinematics_4wd(float Vx,float Vz)
     robot.MOTOR_D.Target = Vx-Vz*(robot.HardwareParam.AxleSpacing+robot.HardwareParam.WheelSpacing);
 }
 
-/**************************************************************************
-Function function: Inverse kinematics solution for omnidirectional wheeled robots
-Entrance parameters: X-axis velocity (in m/s), Y-axis velocity (in m/s), Z-axis velocity (in rad/s)
-Return value: None
-Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºÈ«ÏòÂÖ»úÆ÷ÈËÔË¶¯Ñ§Äæ½â
-Èë¿Ú²ÎÊı£ºXÖáËÙ¶È(µ¥Î»m/s)¡¢YÖáËÙ¶È(m/s)¡¢ZÖáËÙ¶È(rad/s)
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
-**************************************************************************/
-#elif defined OMNI_CAR
-static void InverseKinematics_omni(float Vx,float Vy,float Vz)
-{
-    robot.MOTOR_A.Target =  Vy + robot.HardwareParam.TurnRadiaus*Vz;
-    robot.MOTOR_B.Target = -robot.HardwareParam.X_PARAMETER*Vx - robot.HardwareParam.Y_PARAMETER*Vy + robot.HardwareParam.TurnRadiaus*Vz;
-    robot.MOTOR_C.Target = +robot.HardwareParam.X_PARAMETER*Vx - robot.HardwareParam.Y_PARAMETER*Vy + robot.HardwareParam.TurnRadiaus*Vz;
-}
-
-#endif
 
 /*-------------------------------- Control class related functions ------------------------------------*/
-/*--------------------------------        ¿ØÖÆÀàÏà¹Øº¯Êı          ------------------------------------*/
-//¼ÆËã¾ÀÆ«ÏµÊı
+/*--------------------------------        æ§åˆ¶ç±»ç›¸å…³å‡½æ•°          ------------------------------------*/
+//è®¡ç®—çº åç³»æ•°
 static float wheelCoefficient(uint32_t diffparam,uint8_t isLeftWheel)
 {
-	if( 1 == isLeftWheel ) //×óÂÖ¾ÀÆ«,¶ÔÓ¦50~100¶ÔÓ¦1.0~1.2±¶µÄ¾ÀÆ«ÏµÊı
+	if( 1 == isLeftWheel ) //å·¦è½®çº å,å¯¹åº”50~100å¯¹åº”1.0~1.2å€çš„çº åç³»æ•°
 	{
 		if( diffparam>=50 )
 			return 1.0f + 0.004f*(diffparam-50);
 	}
-	else //ÓÒÂÖ¾ÀÆ«,50~0¶ÔÓ¦1.0~1.2±¶µÄ¾ÀÆ«ÏµÊı
+	else //å³è½®çº å,50~0å¯¹åº”1.0~1.2å€çš„çº åç³»æ•°
 	{
 		if( diffparam<=50 )
 			return 1.0f + 0.004f*(50-diffparam);
 	}
 	
-	return 1.0f;//²»Âú×ãÌõ¼şÊ±,Ä¬ÈÏÊÇ1.
+	return 1.0f;//ä¸æ»¡è¶³æ¡ä»¶æ—¶,é»˜è®¤æ˜¯1.
 }
 
 /**************************************************************************
 Function: The inverse kinematics solution is used to calculate the target speed of each wheel according to the target speed of three axes
 Input   : X and Y, Z axis direction of the target movement speed
 Output  : none
-º¯Êı¹¦ÄÜ£ºÖ´ĞĞÔË¶¯Ñ§Äæ½âº¯Êı£¬¸ù¾İÈıÖáÄ¿±êËÙ¶È¼ÆËã¸÷³µÂÖÄ¿±ê×ªËÙ
-Èë¿Ú²ÎÊı£ºX¡¢Y¡¢ZÈıÖáËÙ¶È
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šæ‰§è¡Œè¿åŠ¨å­¦é€†è§£å‡½æ•°ï¼Œæ ¹æ®ä¸‰è½´ç›®æ ‡é€Ÿåº¦è®¡ç®—å„è½¦è½®ç›®æ ‡è½¬é€Ÿ
+å…¥å£å‚æ•°ï¼šXã€Yã€Zä¸‰è½´é€Ÿåº¦
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 static void Drive_Motor(float T_Vx,float T_Vy,float T_Vz)
 {
 	// Function to Limit Maximum Target Speed Input 
-	//¶ÔÊäÈëµÄÄ¿±êËÙ¶È½øĞĞ×î´óÖµÏŞ·ù,µ¥Î»m/s
+	//å¯¹è¾“å…¥çš„ç›®æ ‡é€Ÿåº¦è¿›è¡Œæœ€å¤§å€¼é™å¹…,å•ä½m/s
 	T_Vx = target_limit_float( T_Vx, -robot_control.limt_max_speed , robot_control.limt_max_speed );
 	T_Vy = target_limit_float( T_Vy, -robot_control.limt_max_speed , robot_control.limt_max_speed );
 	T_Vz = target_limit_float( T_Vz, -robot_control.limt_max_speed , robot_control.limt_max_speed );
 	
 	//Smoothly control the target speed input.
-	//¶ÔÊäÈëµÄÄ¿±êËÙ¶È½øĞĞÆ½»¬¿ØÖÆ
-	if( charger.AllowRecharge==0 )
+	//å¯¹è¾“å…¥çš„ç›®æ ‡é€Ÿåº¦è¿›è¡Œå¹³æ»‘æ§åˆ¶
 	{
 		robot_control.smooth_Vx = Vel_SmoothControl(robot_control.smooth_Vx,T_Vx,robot_control.smooth_MotorStep);
 		robot_control.smooth_Vy = Vel_SmoothControl(robot_control.smooth_Vy,T_Vy,robot_control.smooth_MotorStep);
-		
-		//°¢¿ËÂü³µĞÍ,Vz´ú±í×óÇ°ÂÖ½Ç¶È.ÕâÀï²»×öÆ½»¬´¦Àí
-		#if defined AKM_CAR
-			robot_control.smooth_Vz = T_Vz;
-		#else
-			robot_control.smooth_Vz = Vel_SmoothControl(robot_control.smooth_Vz,T_Vz,robot_control.smooth_MotorStep);
-		#endif	
-	}
-	else
-	{
-		robot_control.smooth_Vx = T_Vx;//×Ô¶¯»Ø³äÄ£Ê½ÏÂ²»Ê¹ÓÃÆ½»¬¹¦ÄÜ,Ìá¸ßĞ¡³µµÄÏìÓ¦ËÙ¶È¶Ô½Ó.
-		robot_control.smooth_Vy = T_Vy;
-		robot_control.smooth_Vz = T_Vz;
+
+		robot_control.smooth_Vz = Vel_SmoothControl(robot_control.smooth_Vz,T_Vz,robot_control.smooth_MotorStep);
 	}
 
 	// Call Inverse Kinematics Function for Corresponding Vehicle Model to Obtain Target Values for Wheels and Steering Angle
-	//µ÷ÓÃ¶ÔÓ¦³µĞÍµÄÔË¶¯Ñ§Äæ½âº¯Êı,»ñµÃ¸÷¸öÂÖ×ÓµÄÄ¿±êÖµ¡¢¶æ»ú½Ç¶È
-	#if defined AKM_CAR
-		InverseKinematics_akm(robot_control.smooth_Vx,robot_control.smooth_Vz);
-	#elif defined DIFF_CAR
-		InverseKinematics_diff(robot_control.smooth_Vx,robot_control.smooth_Vz);
-	#elif defined MEC_CAR
-		InverseKinematics_mec(robot_control.smooth_Vx,robot_control.smooth_Vy,robot_control.smooth_Vz);
-	#elif defined _4WD_CAR
-		InverseKinematics_4wd(robot_control.smooth_Vx,robot_control.smooth_Vz);
-	#elif OMNI_CAR
-		InverseKinematics_omni(robot_control.smooth_Vx,robot_control.smooth_Vy,robot_control.smooth_Vz);
-	#endif
+	//è°ƒç”¨å››é©±è½¦å‹çš„è¿åŠ¨å­¦é€†è§£å‡½æ•°,è·å¾—å„ä¸ªè½®å­çš„ç›®æ ‡å€¼
+	InverseKinematics_4wd(robot_control.smooth_Vx,robot_control.smooth_Vz);
 
-	//¾ÀÆ«ÏµÊı¼ÆËã
+	//çº åç³»æ•°è®¡ç®—
 	float LeftWheelDiff = wheelCoefficient(robot_control.LineDiffParam,1);
 	float RightWheelDiff = wheelCoefficient(robot_control.LineDiffParam,0);
 	
 	// Limit Final Wheel Speeds or Servo Travel After Kinematic Analysis.
-	//¾­¹ıÔË¶¯Ñ§·ÖÎöºóÊä³ö¸÷¸öÂÖ×ÓËÙ¶ÈÓë¶æ»ú½Ç¶È,ÏÂÃæ¶Ô×îÖÕµÄÂÖËÙ»ò¶æ»úĞĞ³Ì½øĞĞÏŞ·ù.
+	//ç»è¿‡è¿åŠ¨å­¦åˆ†æåè¾“å‡ºå„ä¸ªè½®å­é€Ÿåº¦ä¸èˆµæœºè§’åº¦,ä¸‹é¢å¯¹æœ€ç»ˆçš„è½®é€Ÿæˆ–èˆµæœºè¡Œç¨‹è¿›è¡Œé™å¹….
 	robot.MOTOR_A.Target = target_limit_float( robot.MOTOR_A.Target , -robot_control.limt_max_speed , robot_control.limt_max_speed );
 	robot.MOTOR_B.Target = target_limit_float( robot.MOTOR_B.Target , -robot_control.limt_max_speed , robot_control.limt_max_speed );
 	
-	#if defined AKM_CAR || defined DIFF_CAR
-		robot.MOTOR_A.Target*=LeftWheelDiff;
-		robot.MOTOR_B.Target*=RightWheelDiff;
-	#elif defined MEC_CAR || defined _4WD_CAR
-		robot.MOTOR_C.Target = target_limit_float( robot.MOTOR_C.Target , -robot_control.limt_max_speed , robot_control.limt_max_speed );
-		robot.MOTOR_D.Target = target_limit_float( robot.MOTOR_D.Target , -robot_control.limt_max_speed , robot_control.limt_max_speed );
-        #if defined _4WD_CAR
-		robot.MOTOR_A.Target*=RightWheelDiff;
-		robot.MOTOR_B.Target*=LeftWheelDiff;
-		robot.MOTOR_C.Target*=LeftWheelDiff;
-		robot.MOTOR_D.Target*=RightWheelDiff;
-        #else
-		robot.MOTOR_A.Target*=LeftWheelDiff;
-		robot.MOTOR_B.Target*=LeftWheelDiff;
-		robot.MOTOR_C.Target*=RightWheelDiff;
-		robot.MOTOR_D.Target*=RightWheelDiff;
-        #endif
-	#elif defined OMNI_CAR
-		robot.MOTOR_C.Target = target_limit_float( robot.MOTOR_C.Target , -robot_control.limt_max_speed , robot_control.limt_max_speed );	
-		robot.MOTOR_B.Target*=LeftWheelDiff;
-		robot.MOTOR_C.Target*=RightWheelDiff;
-	#endif
+	robot.MOTOR_C.Target = target_limit_float( robot.MOTOR_C.Target , -robot_control.limt_max_speed , robot_control.limt_max_speed );
+	robot.MOTOR_D.Target = target_limit_float( robot.MOTOR_D.Target , -robot_control.limt_max_speed , robot_control.limt_max_speed );
+	robot.MOTOR_A.Target*=RightWheelDiff;
+	robot.MOTOR_B.Target*=LeftWheelDiff;
+	robot.MOTOR_C.Target*=LeftWheelDiff;
+	robot.MOTOR_D.Target*=RightWheelDiff;
 }
 
 /**************************************************************************
@@ -1116,10 +451,10 @@ of the executing mechanism through PID control
 Entrance parameters: None
 Return value: None
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º¿ØÖÆÏàÓ¦º¯Êı.¾­¹ıÔË¶¯Ñ§Äæ½âºóµÃ³ö»úÆ÷ÈË¸÷¸öÖ´ĞĞ»ú¹¹µÄÄ¿±êÖµ,Í¨¹ıPID¿ØÖÆÖ´ĞĞ»ú¹¹ÔË¶¯
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šæ§åˆ¶ç›¸åº”å‡½æ•°.ç»è¿‡è¿åŠ¨å­¦é€†è§£åå¾—å‡ºæœºå™¨äººå„ä¸ªæ‰§è¡Œæœºæ„çš„ç›®æ ‡å€¼,é€šè¿‡PIDæ§åˆ¶æ‰§è¡Œæœºæ„è¿åŠ¨
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 #if defined(ROS_STRAIGHT_DRIVE)
 /* ROS speed [m/s] to PWM duty: 1 m/s maps to 12000 counts.
@@ -1134,25 +469,25 @@ Author: WHEELTEC
    because Set_Pwm lifts any non-zero duty to PWM_MIN_CMD. */
 static int ros_drive_duty(float speed_mps)
 {
-	/* [C50C] »ù×¼Õ¼¿Õ»»Ëã. Êµ²â: 3360 Õ¼¿ÕÔ¼ 0.23 m/s, 4000 Õ¼¿ÕÔ¼ 0.30 m/s,
-	   ÇúÏß½üËÆÏßĞÔ, Ğ±ÂÊÔ¼ 1 m/s = 12000 Õ¼¿Õ. Ô­ÏµÊı 1000 ÈÃ 0.4/0.8 Á½µµ
-	   Ö»²î 278 Õ¼¿Õ, Á½µµÅÜ³öÍ¬Ò»ËÙ¶È. ¸ÄÎª 12000 ºó 0.4 µµ¸ø 4800,
-	   0.8 µµ¸ø 9600, ÓÉ Set_Pwm µÄ 80% ÉÏÏŞ(13440)½Ø¶Ï. */
+	/* [C50C] åŸºå‡†å ç©ºæ¢ç®—. å®æµ‹: 3360 å ç©ºçº¦ 0.23 m/s, 4000 å ç©ºçº¦ 0.30 m/s,
+	   æ›²çº¿è¿‘ä¼¼çº¿æ€§, æ–œç‡çº¦ 1 m/s = 12000 å ç©º. åŸç³»æ•° 1000 è®© 0.4/0.8 ä¸¤æ¡£
+	   åªå·® 278 å ç©º, ä¸¤æ¡£è·‘å‡ºåŒä¸€é€Ÿåº¦. æ”¹ä¸º 12000 å 0.4 æ¡£ç»™ 4800,
+	   0.8 æ¡£ç»™ 9600, ç”± Set_Pwm çš„ 80% ä¸Šé™(13440)æˆªæ–­. */
 	return (int)(speed_mps * 12000.0f);
 }
 #endif
 
-/* ---- ROS ËÙ¶È±Õ»· ----
- * ·´À¡È¡ËÄÂÖ±àÂëÆ÷»»Ëã³öµÄ m/s£¨robot.MOTOR_x.Encoder£©£¬Ä¿±êÈ¡ robot_control.Vx¡£
- * PI Êä³öµ¥Î»ÊÇÕ¼¿Õ¼ÆÊı£¬ºÍ ros_drive_duty() µÄ¿ª»·Êä³öÍ¬Á¿¸Ù£¬
- * Òò´Ë¿ÉÒÔÔ­ÑùÎ¹¸ø steer_debug_step_duty()£¬ÆğÌøÖµÓëÉÏÏŞÈÔÓÉ Set_Pwm Í³Ò»´¦Àí¡£
- * ÔöÒæÑØÓÃ³µĞÍ±íÀïµÄ VEL_KP / VEL_KI£¬ÉÏµçºó±ØĞëÏÔÊ½×°ÔØÒ»´Î£¬
- * ·ñÔò½á¹¹ÌåÇåÁã»áÈÃ kp/ki ±£³Ö 0£¬±Õ»·ÍË»¯³É´¿¿ª»·Ö±Í¨¡£ */
-#define ROS_SPEED_LOOP_READY_MS   500u      /* ÉÏµçºóÏÈ¿ª»·Ò»¶ÎÊ±¼äÔÙ½Ó¹Ü£¬±ÜÃâ¾²Ä¦²Á°Ñ»ı·Ö¶¥Âú */
-#define ROS_SPEED_LOOP_INTEGRAL_MAX 12000  /* »ı·ÖÏîµ¥¶ÀÏŞ·ù£¬·ÀÖ¹¶Â×ªÊ±»ıµ½ÂúÕ¼¿Õ */
-#define ROS_SPEED_LOOP_OUTPUT_MIN (16800 / 5)   /* 20% ÆğÌøÕ¼¿Õ£¬¼û Set_Pwm µÄ PWM_MIN_CMD */
-#define ROS_SPEED_TRIM_MAX   800                /* ±Õ»·ĞŞÕıÁ¿ÏŞ·ù£¬Ô¼ ¡À4.8% Õ¼¿Õ */
-#define ROS_SPEED_TRIM_K     0.5f               /* Ã¿ 1 mm/s Îó²îĞŞÕı 0.5 Õ¼¿Õ */
+/* ---- ROS é€Ÿåº¦é—­ç¯ ----
+ * åé¦ˆå–å››è½®ç¼–ç å™¨æ¢ç®—å‡ºçš„ m/sï¼ˆrobot.MOTOR_x.Encoderï¼‰ï¼Œç›®æ ‡å– robot_control.Vxã€‚
+ * PI è¾“å‡ºå•ä½æ˜¯å ç©ºè®¡æ•°ï¼Œå’Œ ros_drive_duty() çš„å¼€ç¯è¾“å‡ºåŒé‡çº²ï¼Œ
+ * å› æ­¤å¯ä»¥åŸæ ·å–‚ç»™ steer_debug_step_duty()ï¼Œèµ·è·³å€¼ä¸ä¸Šé™ä»ç”± Set_Pwm ç»Ÿä¸€å¤„ç†ã€‚
+ * å¢ç›Šæ²¿ç”¨è½¦å‹è¡¨é‡Œçš„ VEL_KP / VEL_KIï¼Œä¸Šç”µåå¿…é¡»æ˜¾å¼è£…è½½ä¸€æ¬¡ï¼Œ
+ * å¦åˆ™ç»“æ„ä½“æ¸…é›¶ä¼šè®© kp/ki ä¿æŒ 0ï¼Œé—­ç¯é€€åŒ–æˆçº¯å¼€ç¯ç›´é€šã€‚ */
+#define ROS_SPEED_LOOP_READY_MS   500u      /* ä¸Šç”µåå…ˆå¼€ç¯ä¸€æ®µæ—¶é—´å†æ¥ç®¡ï¼Œé¿å…é™æ‘©æ“¦æŠŠç§¯åˆ†é¡¶æ»¡ */
+#define ROS_SPEED_LOOP_INTEGRAL_MAX 12000  /* ç§¯åˆ†é¡¹å•ç‹¬é™å¹…ï¼Œé˜²æ­¢å µè½¬æ—¶ç§¯åˆ°æ»¡å ç©º */
+#define ROS_SPEED_LOOP_OUTPUT_MIN (16800 / 5)   /* 20% èµ·è·³å ç©ºï¼Œè§ Set_Pwm çš„ PWM_MIN_CMD */
+#define ROS_SPEED_TRIM_MAX   800                /* é—­ç¯ä¿®æ­£é‡é™å¹…ï¼Œçº¦ Â±4.8% å ç©º */
+#define ROS_SPEED_TRIM_K     0.5f               /* æ¯ 1 mm/s è¯¯å·®ä¿®æ­£ 0.5 å ç©º */
 
 /* g_ros_speed_output / g_ros_speed_pi are declared near the top of this file
    so the end-of-loop diagnostic block can read them. */
@@ -1175,9 +510,9 @@ static void ros_speed_loop_init(void)
 
 static float ros_measured_forward_mps(void)
 {
-	/* A/B ÎªÇ°²àÒ»¶Ô£¬C/D Îªºó²àÒ»¶Ô£»È¡Á½²àÆ½¾ùµ±×÷³µÌåÇ°½øËÙ¶È¡£
-	   [C50C] ·µ»ØºÁÃ×Á¿¼¶¡£VEL_KP/VEL_KI(=300) ÊÇÔ­³§°´ mm/s µ÷µÄÔöÁ¿£¬
-	   ÈôÖ±½ÓËÍ m/s (0.3) ½øÈ¥£¬Î¢·ÖÏî»áÔÚÒ»ÅÄÄÚ°ÑÊä³öÍÆµ½ÏŞ·ù£¬µ¼ÖÂÕı·´·½Ïò¶¶¶¯¡£ */
+	/* A/B ä¸ºå‰ä¾§ä¸€å¯¹ï¼ŒC/D ä¸ºåä¾§ä¸€å¯¹ï¼›å–ä¸¤ä¾§å¹³å‡å½“ä½œè½¦ä½“å‰è¿›é€Ÿåº¦ã€‚
+	   [C50C] è¿”å›æ¯«ç±³é‡çº§ã€‚VEL_KP/VEL_KI(=300) æ˜¯åŸå‚æŒ‰ mm/s è°ƒçš„å¢é‡ï¼Œ
+	   è‹¥ç›´æ¥é€ m/s (0.3) è¿›å»ï¼Œå¾®åˆ†é¡¹ä¼šåœ¨ä¸€æ‹å†…æŠŠè¾“å‡ºæ¨åˆ°é™å¹…ï¼Œå¯¼è‡´æ­£åæ–¹å‘æŠ–åŠ¨ã€‚ */
 	return 1000.0f * 0.5f * (robot.MOTOR_A.Encoder + robot.MOTOR_B.Encoder);
 }
 
@@ -1188,18 +523,18 @@ static void ros_speed_loop(int ros_ready)
 {
 	if( !ros_ready || robot_control.Vx == 0.0f )
 	{
-		/* [C50C] ²»Áô²ĞÓàÊä³ö£ºÔöÁ¿Ê½ PI ²ĞÁô»áÈÃµç»úÒ»Í¨µç¾Í±»ÂúÕ¼¿ÕÇı¶¯¡£ */
+		/* [C50C] ä¸ç•™æ®‹ä½™è¾“å‡ºï¼šå¢é‡å¼ PI æ®‹ç•™ä¼šè®©ç”µæœºä¸€é€šç”µå°±è¢«æ»¡å ç©ºé©±åŠ¨ã€‚ */
 		g_ros_speed_output = 0;
 		g_ros_speed_pi.Output = 0;
 		g_ros_speed_pi.Bias = 0.0f;
 		g_ros_speed_pi.LastBias = 0.0f;
 		return;
 	}
-	/* [C50C] »ù×¼Õ¼¿Õ¼ÓĞ¡·ùĞŞÕı£¬Ìæ´úÔöÁ¿Ê½ PI¡£
-	   »ù×¼°´µµÎ»¸ø£º0.4 m/s µÃ 4800£¬0.8 m/s µÃ 9600£¨1 m/s = 12000 Õ¼¿Õ£©¡£
-	   ĞŞÕıÁ¿°´±àÂëÆ÷²âµ½µÄ³µËÙ×ö±ÈÀıµ÷½Ú£¬ÏŞÔÚ +-ROS_SPEED_TRIM_MAX ÄÚ¡£
-	   ÕâÑùÊä³ö²»»á×²Õ¼¿ÕÉÏÏŞ£¬Ò²²»»áÒò»ı·Ö±¥ºÍÀ´»Ø»»Ïò¡£
-	   ĞŞÕıÖ»ÓÃ±ÈÀı£¬²»ÓÃ»ı·Ö£º¾²Ä¦²ÁÓë¸ºÔØ±ä»¯¿¿»ù×¼¸²¸Ç¡£ */
+	/* [C50C] åŸºå‡†å ç©ºåŠ å°å¹…ä¿®æ­£ï¼Œæ›¿ä»£å¢é‡å¼ PIã€‚
+	   åŸºå‡†æŒ‰æ¡£ä½ç»™ï¼š0.4 m/s å¾— 4800ï¼Œ0.8 m/s å¾— 9600ï¼ˆ1 m/s = 12000 å ç©ºï¼‰ã€‚
+	   ä¿®æ­£é‡æŒ‰ç¼–ç å™¨æµ‹åˆ°çš„è½¦é€Ÿåšæ¯”ä¾‹è°ƒèŠ‚ï¼Œé™åœ¨ +-ROS_SPEED_TRIM_MAX å†…ã€‚
+	   è¿™æ ·è¾“å‡ºä¸ä¼šæ’å ç©ºä¸Šé™ï¼Œä¹Ÿä¸ä¼šå› ç§¯åˆ†é¥±å’Œæ¥å›æ¢å‘ã€‚
+	   ä¿®æ­£åªç”¨æ¯”ä¾‹ï¼Œä¸ç”¨ç§¯åˆ†ï¼šé™æ‘©æ“¦ä¸è´Ÿè½½å˜åŒ–é åŸºå‡†è¦†ç›–ã€‚ */
 	int ros_base = ros_drive_duty(robot_control.Vx);
 	float ros_err = 1000.0f * robot_control.Vx - ros_measured_forward_mps();
 	int ros_trim = (int)(ros_err * ROS_SPEED_TRIM_K);
@@ -1211,58 +546,12 @@ static void ros_speed_loop(int ros_ready)
 	g_ros_speed_pi.LastBias = ros_err;
 	g_ros_speed_pi.Output = ros_base + ros_trim;
 	g_ros_speed_output = g_ros_speed_pi.Output;
-	/* [C50C] ÁÙÊ±Õï¶Ï: ¹Û²ì±Õ»·ÄÚ²¿, ÓÉ data_task µÄ E ĞĞÍâ·¢.
-	   [39]=Vx*1e6 [40]=ros_base [41]=´íÎó(mm/s) [42]=ros_trim [43]=×îÖÕÊä³ö */
-	g_safety_probe[39] = (uint32_t)(int32_t)(robot_control.Vx * 1000000.0f);
-	g_safety_probe[40] = (uint32_t)(int32_t)ros_base;
-	g_safety_probe[41] = (uint32_t)(int32_t)ros_err;
-	g_safety_probe[42] = (uint32_t)(int32_t)ros_trim;
-	g_safety_probe[43] = (uint32_t)(int32_t)g_ros_speed_output;
 }
 
 
 static void ResponseControl(void)
 {
-	#if defined AKM_CAR
-	//PI¿ØÖÆ
-	robot.MOTOR_A.Output = Incremental_MOTOR( &PI_MotorA , robot.MOTOR_A.Encoder , robot.MOTOR_A.Target );
-	robot.MOTOR_B.Output = Incremental_MOTOR( &PI_MotorB , robot.MOTOR_B.Encoder , robot.MOTOR_B.Target );
-	
-	//The servo of the top of the line Ackermann model only requires PI control. \
-	The high-end model does not come with steering rail feedback
-	//½ö¶¥Åä°¢¿ËÂü³µĞÍµÄ¶æ»úĞèÒªPI¿ØÖÆ.¸ßÅä³µĞÍ²»´ø×ªÏò»¬¹ì·´À¡.
-	if( robot.type>=2 && robot.type!=9 && robot.type!=7 )
-	{
-		if(ServoState.UnLock==0)
-			robot.SERVO.Output   = Incremental_Servo( &PI_Servo  , robot.SERVO.Encoder  ,  robot.SERVO.Target + Akm_Servo.Bias );	
-	}
-		
-	//½«½á¹ûÊä³öµ½Ö´ĞĞ»ú¹¹
-	      if( robot.type == 6 )                      Set_Pwm(0,0,0,0,0); //·Ç±êÔ¤Áô¶¨ÖÆ³µ,Çë¸ù¾İµç»úĞÍºÅÉèÖÃÊä³öÖµµÄÕı¸º·½Ïò
-	else if ( robot.type <= 1 || robot.type == 9)   Set_Pwm(-robot.MOTOR_A.Output ,-robot.MOTOR_B.Output , 0 , 0 ,robot.SERVO.Output ); //¸ßÅä°¢¿ËÂü-MD36µç»ú
-	else if ( robot.type >= 2 && robot.type <= 5 )  Set_Pwm(-robot.MOTOR_A.Output ,-robot.MOTOR_B.Output , 0 , 0 ,robot.SERVO.Output ); //¶¥Åä°¢¿ËÂü-MD60µç»ú
-	else if ( robot.type == 7 )                     Set_Pwm( 0 , 0 , 0 , 0 , robot.SERVO.Output ); //°²×°²âÊÔ×¨ÓÃ.¶æ»ú¿ª»·¿ØÖÆ
-	else if ( robot.type == 8 )                     Set_Pwm( 0 , 0 , 0 , 0 , 1500 ); //°²×°²âÊÔ×¨ÓÃ.ÈÃ¶æ»ú±£³ÖÔÚÖĞ¼äÎ»ÖÃĞ£×¼
-	
-	#elif defined DIFF_CAR
-	
-	robot.MOTOR_A.Output = Incremental_MOTOR(&PI_MotorA,robot.MOTOR_A.Encoder,robot.MOTOR_A.Target);
-	robot.MOTOR_B.Output = Incremental_MOTOR(&PI_MotorB,robot.MOTOR_B.Encoder,robot.MOTOR_B.Target);
-	
-	if( robot.type<=1 )  Set_Pwm(-robot.MOTOR_A.Output ,-robot.MOTOR_B.Output ,0,0,0);//¸ßÅä²îËÙ-MD36µç»ú
-	else                 Set_Pwm(-robot.MOTOR_A.Output ,-robot.MOTOR_B.Output ,0,0,0);//¶¥Åä²îËÙ-MD60µç»ú
-	
-	#elif defined MEC_CAR
-	
-	robot.MOTOR_A.Output = Incremental_MOTOR(&PI_MotorA,robot.MOTOR_A.Encoder,robot.MOTOR_A.Target);
-	robot.MOTOR_B.Output = Incremental_MOTOR(&PI_MotorB,robot.MOTOR_B.Encoder,robot.MOTOR_B.Target);
-	robot.MOTOR_C.Output = Incremental_MOTOR(&PI_MotorC,robot.MOTOR_C.Encoder,robot.MOTOR_C.Target);
-	robot.MOTOR_D.Output = Incremental_MOTOR(&PI_MotorD,robot.MOTOR_D.Encoder,robot.MOTOR_D.Target);
-	
-	if( robot.type<=2 ) Set_Pwm(-robot.MOTOR_A.Output,-robot.MOTOR_B.Output,-robot.MOTOR_C.Output,-robot.MOTOR_D.Output,0);//¸ßÅäÂóÂÖ-MD36µç»ú
-	else                Set_Pwm(-robot.MOTOR_A.Output,-robot.MOTOR_B.Output,-robot.MOTOR_C.Output,-robot.MOTOR_D.Output,0);//¶¥Åä»òÆì½¢ÂóÂÖ-MD60µç»ú
-	
-	#elif defined _4WD_CAR
+	//å››é©±è½¦å‹æ‰§è¡Œè·¯å¾„(å¼‚è½¦å‹åˆ†æ”¯å·²åˆ )
 
 #if defined(REAR_WHEEL_DEBUG)
     {
@@ -1286,17 +575,16 @@ static void ResponseControl(void)
         /* The four wheel output comes from robot_control.Vx/Vz, never from the pad.
            When ros_ready is false the duties are forced to zero, so the last accepted
            speed cannot survive a mode switch or a stop request. */
-        int ros_ready = SysVal.HardWare_Ver == V1_0 && GamePadInterface != NULL &&
+        int ros_ready = SysVal.HardWare_Ver == V1_0 &&
                         Get_Control_Mode(_ROS_Control) &&
                         (uint32_t)(tick - robot_control.ros_cmd_tick) <= pdMS_TO_TICKS(ROS_CMD_TIMEOUT_MS) &&
-                        !charger.AllowRecharge &&
                         !robot_check.DeepCheck && SysVal.Time_count > CONTROL_DELAY + 230;
         /* ROS closed loop: speed PI on encoder feedback, then split to wheels.
            Feedback is m/s, PI output is duty counts; start-up floor and ceiling
            are still applied by Set_Pwm. */
         ros_speed_loop(ros_ready);
-        /* ÖĞĞÔÅĞ¾İÓÃÖ¸ÁîÊÇ·ñÎª 0£¬²»ÓÃÕ¼¿Õ¡£±Õ»·Õ¼¿ÕÔÚÔË¶¯Ê±ÓÀ²»Îª 0£¬
-           ÓÃËüÅĞÖĞĞÔ»áÈÃ armed Ò»´ÎÊ§Ğ§ºóÓÀ¾ÃËøËÀ¡£ */
+        /* ä¸­æ€§åˆ¤æ®ç”¨æŒ‡ä»¤æ˜¯å¦ä¸º 0ï¼Œä¸ç”¨å ç©ºã€‚é—­ç¯å ç©ºåœ¨è¿åŠ¨æ—¶æ°¸ä¸ä¸º 0ï¼Œ
+           ç”¨å®ƒåˆ¤ä¸­æ€§ä¼šè®© armed ä¸€æ¬¡å¤±æ•ˆåæ°¸ä¹…é”æ­»ã€‚ */
         int ros_cmd_neutral = (robot_control.Vx == 0.0f) && (robot_control.Vz == 0.0f);
         g_ros_speed_diag_ready = ros_ready;
         g_ros_speed_diag_neutral = ros_cmd_neutral;
@@ -1324,12 +612,12 @@ static void ResponseControl(void)
 #endif
 #if defined(FOUR_TURN_DEBUG)
         {
-        int ready = SysVal.HardWare_Ver == V1_0 && GamePadInterface != NULL &&
-                    Get_Control_Mode(_PS2_Control) && !charger.AllowRecharge &&
+        int ready = SysVal.HardWare_Ver == V1_0 &&
+                    Get_Control_Mode(_PS2_Control) &&
                     !robot_check.DeepCheck && SysVal.Time_count > CONTROL_DELAY + 230 &&
                     g_rear_ps2_valid && (uint32_t)(tick - g_rear_ps2_tick) <= pdMS_TO_TICKS(150);
-        uint8_t forward_axis = ready ? GamePadInterface->LY : 127;
-        uint8_t turn_axis = ready ? GamePadInterface->RX : 127;
+        uint8_t forward_axis = ready ? Classic_PS2Gamepad.LY : 127;
+        uint8_t turn_axis = ready ? Classic_PS2Gamepad.RX : 127;
         steer_output_t drive = steer_debug_step(&g_steer_debug, forward_axis, turn_axis, ready, ms);
         robot.MOTOR_A.Output = drive.right;
         robot.MOTOR_B.Output = -drive.left;
@@ -1348,7 +636,7 @@ static void ResponseControl(void)
         Set_Pwm(drive.right, -drive.left, drive.left, -drive.right, 0);
         }
 #else
-        uint8_t axis = ready ? GamePadInterface->LY : 127;
+        uint8_t axis = ready ? Classic_PS2Gamepad.LY : 127;
         int command = rear_debug_step(&g_rear_debug, axis, ready, ms);
 #if defined(FRONT_TEST_CHANNEL)
         robot.MOTOR_A.Output = robot.MOTOR_B.Output = FRONT_TEST_CHANNEL == 6 ? command : 0;
@@ -1372,7 +660,7 @@ static void ResponseControl(void)
 #endif
 	
 #ifdef WHEEL_DIR_CALIB
-	//ÖğÂ·±ê¶¨: ËÄÂ·ÂÖÁ÷×ª, Ã¿Â·ÕıÊä³ö 3 Ãë, ²»ÊÜÒ¡¸ËºÍÁãÄ¿±êÊØÃÅÓ°Ïì.
+	//é€è·¯æ ‡å®š: å››è·¯è½®æµè½¬, æ¯è·¯æ­£è¾“å‡º 3 ç§’, ä¸å—æ‘‡æ†å’Œé›¶ç›®æ ‡å®ˆé—¨å½±å“.
 	{
 		static uint32_t calib_cnt = 0;
 		uint32_t calib_ch = (calib_cnt++ / 300u) % 4u;
@@ -1386,9 +674,9 @@ static void ResponseControl(void)
 	return;
 #endif
 	
-	//Safety fix: ËÄÂ·TargetÈ«Îª0Ê±, ²»ÅÜPI, Ö±½ÓÊä³ö0.
-	//Ô­Òò: ±àÂëÆ÷ÉÏµçÒ°ÖµÓëÄ¿±êÖµ0Ïà»¥×÷ÓÃ»áÈÃÔöÁ¿Ê½PIµÄOutput³å¸ß,
-	//Ö®ºóÖ»ÄÜ¿¿PI_Clear_OutputÃ¿ÅÄ¼õ1ÂıÇå(Ô¼90Ãë), ÆÚ¼äµç»ú×Ô×ª.
+	//Safety fix: å››è·¯Targetå…¨ä¸º0æ—¶, ä¸è·‘PI, ç›´æ¥è¾“å‡º0.
+	//åŸå› : ç¼–ç å™¨ä¸Šç”µé‡å€¼ä¸ç›®æ ‡å€¼0ç›¸äº’ä½œç”¨ä¼šè®©å¢é‡å¼PIçš„Outputå†²é«˜,
+	//ä¹‹ååªèƒ½é PI_Clear_Outputæ¯æ‹å‡1æ…¢æ¸…(çº¦90ç§’), æœŸé—´ç”µæœºè‡ªè½¬.
 	if( 0.0f == robot.MOTOR_A.Target && 0.0f == robot.MOTOR_B.Target
 	 && 0.0f == robot.MOTOR_C.Target && 0.0f == robot.MOTOR_D.Target )
 	{
@@ -1404,18 +692,13 @@ static void ResponseControl(void)
 		return;
 	}
 	
-	//probe: ¼ÇÂ¼±¾ÅÄËÄÂ·Ä¿±êËÙ¶È(µ¥Î» m/s *1000)
-	g_enc_probe[5] = (int32_t)(robot.MOTOR_A.Target*1000);
-	g_enc_probe[6] = (int32_t)(robot.MOTOR_B.Target*1000);
-	g_enc_probe[7] = (int32_t)(robot.MOTOR_C.Target*1000);
-	g_enc_probe[8] = (int32_t)(robot.MOTOR_D.Target*1000);
 	
 	robot.MOTOR_A.Output = Incremental_MOTOR(&PI_MotorA,robot.MOTOR_A.Encoder,robot.MOTOR_A.Target);
 	robot.MOTOR_B.Output = Incremental_MOTOR(&PI_MotorB,robot.MOTOR_B.Encoder,robot.MOTOR_B.Target);
 	robot.MOTOR_C.Output = Incremental_MOTOR(&PI_MotorC,robot.MOTOR_C.Encoder,robot.MOTOR_C.Target);
 	robot.MOTOR_D.Output = Incremental_MOTOR(&PI_MotorD,robot.MOTOR_D.Encoder,robot.MOTOR_D.Target);
 	
-	//ÏŞÕ¼¿Õ±È: 9000 / 16800 Ô¼Îª 54%.
+	//é™å ç©ºæ¯”: 9000 / 16800 çº¦ä¸º 54%.
 	if( robot.MOTOR_A.Output >   FOURWD_DUTY_LIMIT ) robot.MOTOR_A.Output =   FOURWD_DUTY_LIMIT;
 	if( robot.MOTOR_A.Output < - FOURWD_DUTY_LIMIT ) robot.MOTOR_A.Output = - FOURWD_DUTY_LIMIT;
 	if( robot.MOTOR_B.Output >   FOURWD_DUTY_LIMIT ) robot.MOTOR_B.Output =   FOURWD_DUTY_LIMIT;
@@ -1425,21 +708,11 @@ static void ResponseControl(void)
 	if( robot.MOTOR_D.Output >   FOURWD_DUTY_LIMIT ) robot.MOTOR_D.Output =   FOURWD_DUTY_LIMIT;
 	if( robot.MOTOR_D.Output < - FOURWD_DUTY_LIMIT ) robot.MOTOR_D.Output = - FOURWD_DUTY_LIMIT;
 	
-	//ËÄÇı·½Ïò: ·½ÏòµçÆ½ÒÑÍ³Ò»Îª m>0 -> 01, ¸÷Â··ûºÅÓÉ±ê¶¨µÃ³ö.
-	//ÖğÂ·±ê¶¨½á¹û: A=ÓÒºó(ÕıÊä³ö·´×ª) B=×óºó(Õı) C=×óÇ°(Õı) D=ÓÒÇ°(ÕıÊä³ö·´×ª).
-	//¹Ê A¡¢D È¡·´, B¡¢C ±£³Ö.
+	//å››é©±æ–¹å‘: æ–¹å‘ç”µå¹³å·²ç»Ÿä¸€ä¸º m>0 -> 01, å„è·¯ç¬¦å·ç”±æ ‡å®šå¾—å‡º.
+	//é€è·¯æ ‡å®šç»“æœ: A=å³å(æ­£è¾“å‡ºåè½¬) B=å·¦å(æ­£) C=å·¦å‰(æ­£) D=å³å‰(æ­£è¾“å‡ºåè½¬).
+	//æ•… Aã€D å–å, Bã€C ä¿æŒ.
 	Set_Pwm(-robot.MOTOR_A.Output, robot.MOTOR_B.Output, robot.MOTOR_C.Output,-robot.MOTOR_D.Output,0);
 	
-	#elif defined OMNI_CAR
-	 
-	robot.MOTOR_A.Output = Incremental_MOTOR(&PI_MotorA,robot.MOTOR_A.Encoder,robot.MOTOR_A.Target);
-	robot.MOTOR_B.Output = Incremental_MOTOR(&PI_MotorB,robot.MOTOR_B.Encoder,robot.MOTOR_B.Target);
-	robot.MOTOR_C.Output = Incremental_MOTOR(&PI_MotorC,robot.MOTOR_C.Encoder,robot.MOTOR_C.Target);
-	
-	if( robot.type<=1 ) Set_Pwm(-robot.MOTOR_A.Output,-robot.MOTOR_B.Output,-robot.MOTOR_C.Output,0,0);//¸ßÅäÈ«ÏòÂÖ-MD36µç»ú
-	else                Set_Pwm(-robot.MOTOR_A.Output,-robot.MOTOR_B.Output,-robot.MOTOR_C.Output,0,0);//¶¥ÅäÈ«ÏòÂÖ-MD60µç»ú
-
-	#endif
 }
 
 
@@ -1449,30 +722,30 @@ Input Parameters: Set the robot's stop mode: 0: Set to unclamp axes, allowing th
                   1: Set to clamp axes, locking all actuators.
 Return Value: None
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º·Ç¿ØÖÆÏìÓ¦º¯Êı,µ±»úÆ÷ÈË´æÔÚ±¨´íÊ±,½«Ö´ĞĞ´Ëº¯Êı.½ûÖ¹»úÆ÷ÈËµÄÔË¶¯
-Èë¿Ú²ÎÊı£ºÉèÖÃ»úÆ÷ÈËÍ£Ö¹ÔË¶¯µÄ·½Ê½: 0:ÉèÖÃÎª½âÖá,»úÆ÷ÈË¿ÉÒÔËæÒâÍÆ¶¯  1:ÉèÖÃÎªËøÖá,»úÆ÷ÈËËø×¡ËùÓĞÖ´ĞĞ»ú¹¹
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šéæ§åˆ¶å“åº”å‡½æ•°,å½“æœºå™¨äººå­˜åœ¨æŠ¥é”™æ—¶,å°†æ‰§è¡Œæ­¤å‡½æ•°.ç¦æ­¢æœºå™¨äººçš„è¿åŠ¨
+å…¥å£å‚æ•°ï¼šè®¾ç½®æœºå™¨äººåœæ­¢è¿åŠ¨çš„æ–¹å¼: 0:è®¾ç½®ä¸ºè§£è½´,æœºå™¨äººå¯ä»¥éšæ„æ¨åŠ¨  1:è®¾ç½®ä¸ºé”è½´,æœºå™¨äººé”ä½æ‰€æœ‰æ‰§è¡Œæœºæ„
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 static void UnResponseControl(uint8_t mode)
 {
-	//Êı¾İÓĞĞ§ĞÔĞ£Ñé
+	//æ•°æ®æœ‰æ•ˆæ€§æ ¡éªŒ
 	if(mode!=UN_LOCK && mode!=LOCK) mode = UN_LOCK;
 	
-	//½âÖáÊ§ÄÜ
+	//è§£è½´å¤±èƒ½
 	if(mode==UN_LOCK)
 	{
-		//¸´Î»PI¿ØÖÆÆ÷,Ïû³ı»ıÀÛ
+		//å¤ä½PIæ§åˆ¶å™¨,æ¶ˆé™¤ç§¯ç´¯
 		PI_Controller_Reset(&PI_MotorA);
 		PI_Controller_Reset(&PI_MotorB);
 		PI_Controller_Reset(&PI_MotorC);
 		PI_Controller_Reset(&PI_MotorD);
 		
-		//·¢ËÍ0Í£Ö¹µç»úµÄ×ª¶¯
+		//å‘é€0åœæ­¢ç”µæœºçš„è½¬åŠ¨
 		Set_Pwm( 0 , 0 , 0 , 0 , 0 );
 	}
 	
-	//ËøÖáÊ§ÄÜ,ÎŞ·¨ÍÆ¶¯Ğ¡³µ
+	//é”è½´å¤±èƒ½,æ— æ³•æ¨åŠ¨å°è½¦
 	else if( mode==LOCK )
 	{
 		Drive_Motor(0,0,0);
@@ -1486,16 +759,16 @@ Input Parameters: Control value for A wheel motor, control value for B wheel mot
                    control value for D wheel motor, control value for servo.
 Return Value: None.
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºÏÂ·¢¿ØÖÆÁ¿µ½¸÷¸öÖ´ĞĞ»ú¹¹
-Èë¿Ú²ÎÊı£ºAÂÖµç»ú¿ØÖÆÁ¿¡¢BÂÖµç»ú¿ØÖÆÁ¿¡¢CÂÖµç»ú¿ØÖÆÁ¿¡¢DÂÖµç»ú¿ØÖÆÁ¿¡¢¶æ»ú¿ØÖÆÁ¿
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šä¸‹å‘æ§åˆ¶é‡åˆ°å„ä¸ªæ‰§è¡Œæœºæ„
+å…¥å£å‚æ•°ï¼šAè½®ç”µæœºæ§åˆ¶é‡ã€Bè½®ç”µæœºæ§åˆ¶é‡ã€Cè½®ç”µæœºæ§åˆ¶é‡ã€Dè½®ç”µæœºæ§åˆ¶é‡ã€èˆµæœºæ§åˆ¶é‡
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
-/* [C50C] PWM ÆğÌøÖµ/ÉÏÏŞ. ÖÜÆÚ 16800 ¼ÆÊı:
-   PWM_MIN_CMD 3360 = 20% Õ¼¿Õ±È(µÍÓÚ´ËÖµµç»ú¿Ë·ş²»ÁË¾²Ä¦²Á)
-   PWM_MAX_CMD 13440 = 80% Õ¼¿Õ±È(2026-11-13 ÓÃ»§ÒªÇó´Ó 50% Ìá¸ßµ½ 80%) */
+/* [C50C] PWM èµ·è·³å€¼/ä¸Šé™. å‘¨æœŸ 16800 è®¡æ•°:
+   PWM_MIN_CMD 3360 = 20% å ç©ºæ¯”(ä½äºæ­¤å€¼ç”µæœºå…‹æœä¸äº†é™æ‘©æ“¦)
+   PWM_MAX_CMD 13440 = 80% å ç©ºæ¯”(2026-11-13 ç”¨æˆ·è¦æ±‚ä» 50% æé«˜åˆ° 80%) */
 #define PWM_PERIOD_COUNTS   16800
-/* ÆğÌøÖµ±ØĞë±£³Ö 20%: µÍÓÚ´ËÖµÊ±µç»ú¿Ë·ş²»ÁË×ÔÉíÄ¦²ÁÓëµØÃæÄ¦²Á, ÂÖ×Ó×ª²»¶¯. ²»ÒªÎªÁË²â¿ª»·ËÙ¶È±í¶ø½µµÍËü. */
+/* èµ·è·³å€¼å¿…é¡»ä¿æŒ 20%: ä½äºæ­¤å€¼æ—¶ç”µæœºå…‹æœä¸äº†è‡ªèº«æ‘©æ“¦ä¸åœ°é¢æ‘©æ“¦, è½®å­è½¬ä¸åŠ¨. ä¸è¦ä¸ºäº†æµ‹å¼€ç¯é€Ÿåº¦è¡¨è€Œé™ä½å®ƒ. */
 #define PWM_MIN_CMD         (PWM_PERIOD_COUNTS / 5)
 #define PWM_MAX_CMD         (PWM_PERIOD_COUNTS * 4 / 5)
 
@@ -1517,41 +790,9 @@ static void Set_Pwm(int m_a,int m_b,int m_c,int m_d,int servo)
     m_d = 0;
 #endif
 #endif
-	#if defined AKM_CAR || defined DIFF_CAR
-	
-		//µç»ú¿ØÖÆ
-		if( m_a < 0 ) AIN1=1,AIN2=0;
-		else          AIN1=0,AIN2=1;
+
 		
-		if(SysVal.HardWare_Ver==V1_0)
-		{
-			if( m_b > 0 ) V1_0_BIN1=1,V1_0_BIN2=0;
-			else          V1_0_BIN1=0,V1_0_BIN2=1;
-		}
-		else if( SysVal.HardWare_Ver>=V1_1 )
-		{
-			if( m_b > 0 ) BIN1=1,BIN2=0;
-			else          BIN1=0,BIN2=1;
-		}
-		
-		PWMA = abs(m_a);
-		PWMB = abs(m_b);
-	
-		#if defined AKM_CAR
-		//¶æ»ú¿ØÖÆ
-		if( robot.type == 0 || robot.type == 1 || robot.type==9 )//¸ßÅä°¢¿ËÂü³µĞÍ
-		{
-			SERVO_SENIOR = servo;
-		}
-		else //¶¥Åä°¢¿ËÂü³µĞÍ
-		{
-			SERVO_TOP = servo;
-		}
-		#endif
-		
-	#else 
-		
-		//µç»ú¿ØÖÆ
+		//ç”µæœºæ§åˆ¶
 		if( m_a > 0 ) AIN1=0,AIN2=1;
 #if defined(REAR_WHEEL_DEBUG) && defined(_4WD_CAR)
 		else if (m_a < 0) AIN1=1,AIN2=0;
@@ -1574,8 +815,8 @@ static void Set_Pwm(int m_a,int m_b,int m_c,int m_d,int servo)
 			else          BIN1=1,BIN2=0;
 		}
 	
-		//ËÄÇı·½ÏòĞŞÕı: Ô­´úÂë C/D µÄÕıÏòµçÆ½Óë A/B Ïà·´(10 vs 01),
-		//µ¼ÖÂÍ¬Ñù·ûºÅµÄ PWM ÈÃÂÖ×Ó×ªÏòÏà·´. ÕâÀïÍ³Ò»Îª m>0 -> 01.
+		//å››é©±æ–¹å‘ä¿®æ­£: åŸä»£ç  C/D çš„æ­£å‘ç”µå¹³ä¸ A/B ç›¸å(10 vs 01),
+		//å¯¼è‡´åŒæ ·ç¬¦å·çš„ PWM è®©è½®å­è½¬å‘ç›¸å. è¿™é‡Œç»Ÿä¸€ä¸º m>0 -> 01.
 		if( m_c > 0 ) CIN1=0,CIN2=1;
 #if defined(FRONT_TEST_CHANNEL)
 		else if (m_c < 0) CIN1=1,CIN2=0;
@@ -1590,10 +831,10 @@ static void Set_Pwm(int m_a,int m_b,int m_c,int m_d,int servo)
 		else          DIN1=1,DIN2=0;
 #endif
 		
-		//[C50C] ÆğÌøÖµÓëÉÏÏŞ: µÍËÙÄ¦²Á´ø²»¶¯, ·ÇÁãÖ¸ÁîÌ§µ½ 3360(20%); ³¬¹ı 8400(50%) ½Ø¶Ï.
+		//[C50C] èµ·è·³å€¼ä¸ä¸Šé™: ä½é€Ÿæ‘©æ“¦å¸¦ä¸åŠ¨, éé›¶æŒ‡ä»¤æŠ¬åˆ° 3360(20%); è¶…è¿‡ 8400(50%) æˆªæ–­.
 		{
-			/* [C50C] m_a..m_d Îª int, abs() ·µ»Ø int; Ô­Ğ´ v Îª int Ê± 8000 Ó¦Ô­ÑùÍ¨¹ı,
-			   µ«Êµ²âÁ½µµ¶¼Í£ÔÚ 3360, ¹Ê¸ÄÓÃ long ²¢ÏÔÊ½´òÓ¡±È½Ï½á¹û. */
+			/* [C50C] m_a..m_d ä¸º int, abs() è¿”å› int; åŸå†™ v ä¸º int æ—¶ 8000 åº”åŸæ ·é€šè¿‡,
+			   ä½†å®æµ‹ä¸¤æ¡£éƒ½åœåœ¨ 3360, æ•…æ”¹ç”¨ long å¹¶æ˜¾å¼æ‰“å°æ¯”è¾ƒç»“æœ. */
 			long v;
 			v = abs(m_a); if( v != 0 ) v = ( v < PWM_MIN_CMD ) ? PWM_MIN_CMD : v; if( v > PWM_MAX_CMD ) v = PWM_MAX_CMD; PWMA = v;
 			v = abs(m_b); if( v != 0 ) v = ( v < PWM_MIN_CMD ) ? PWM_MIN_CMD : v; if( v > PWM_MAX_CMD ) v = PWM_MAX_CMD; PWMB = v;
@@ -1601,59 +842,35 @@ static void Set_Pwm(int m_a,int m_b,int m_c,int m_d,int servo)
 			v = abs(m_d); if( v != 0 ) v = ( v < PWM_MIN_CMD ) ? PWM_MIN_CMD : v; if( v > PWM_MAX_CMD ) v = PWM_MAX_CMD; PWMD = v;
 		}
 		
-		//[Õï¶Ï]¼ÇÂ¼ËÄÂ·PWM¼Ä´æÆ÷Êµ¼ÊÖµÓë·½Ïò½ÅµçÆ½
-		extern volatile uint32_t g_seqpwm_probe[12];
-		g_seqpwm_probe[0] = 0x5AFE0002u;
-		g_seqpwm_probe[1] = TIM8->CCR1;
-		g_seqpwm_probe[2] = TIM8->CCR2;
-		g_seqpwm_probe[3] = TIM8->CCR3;
-		g_seqpwm_probe[4] = TIM8->CCR4;
-		g_seqpwm_probe[5] = GPIOC->MODER;
-		g_seqpwm_probe[6] = GPIOA->MODER;
-		g_seqpwm_probe[7] = GPIOD->MODER;
-		g_seqpwm_probe[8] = GPIOB->MODER;
-		g_seqpwm_probe[9] = GPIOC->AFR[0];
-		g_seqpwm_probe[10] = TIM8->CCER;
-		g_seqpwm_probe[11] = TIM8->BDTR;
-		g_seqpwm_probe[6] = GPIOB->ODR;
-		g_seqpwm_probe[7] = GPIOD->ODR;
-		g_seqpwm_probe[8] = GPIOA->ODR;
-		g_seqpwm_probe[9] = GPIOC->ODR;
-		g_seqpwm_probe[11] = (uint32_t)m_a;
-		g_seqpwm_probe[10] = (uint32_t)m_b;
-		g_seqpwm_probe[5] = (uint32_t)m_c;
-		g_seqpwm_probe[4] = (uint32_t)m_d;
-	#endif
 }
 
-volatile uint32_t g_seqpwm_probe[12];
 
 /**************************************************************************
 Function: Check the battery voltage, enable switch status, software failure flag status
 Input   : Voltage
 Output  : Whether control is allowed, 1: not allowed, 0 allowed
-º¯Êı¹¦ÄÜ£º¼ì²éµç³ØµçÑ¹¡¢Ê¹ÄÜ¿ª¹Ø×´Ì¬¡¢Èí¼şÊ§ÄÜ±êÖ¾Î»×´Ì¬
-Èë¿Ú²ÎÊı£ºµçÑ¹
-·µ»Ø  Öµ£ºÊÇ·ñÔÊĞí¿ØÖÆ£¬1£º²»ÔÊĞí£¬0ÔÊĞí
+å‡½æ•°åŠŸèƒ½ï¼šæ£€æŸ¥ç”µæ± ç”µå‹ã€ä½¿èƒ½å¼€å…³çŠ¶æ€ã€è½¯ä»¶å¤±èƒ½æ ‡å¿—ä½çŠ¶æ€
+å…¥å£å‚æ•°ï¼šç”µå‹
+è¿”å›  å€¼ï¼šæ˜¯å¦å…è®¸æ§åˆ¶ï¼Œ1ï¼šä¸å…è®¸ï¼Œ0å…è®¸
 **************************************************************************/
 static u8 Turn_Off(void)
 {
     u8 temp = 0;
 	static uint8_t saveflag = 0;
 	
-	//µçÑ¹²»Âú×ãÒªÇó£ºµçÑ¹µÍÓÚ20V,ÇÒ²»ÊÇ×Ô¶¯»Ø³ä×´Ì¬.(ÈôÊÇ½øÈë×Ô¶¯»Ø³ä×´Ì¬,ÔòºöÂÔµçÑ¹)
-	if( robot.voltage < 3.3f && charger.AllowRecharge==0 ) temp = 1;
+	//ç”µå‹ä¸æ»¡è¶³è¦æ±‚ï¼šç”µå‹ä½äº20V,ä¸”ä¸æ˜¯è‡ªåŠ¨å›å……çŠ¶æ€.(è‹¥æ˜¯è¿›å…¥è‡ªåŠ¨å›å……çŠ¶æ€,åˆ™å¿½ç•¥ç”µå‹)
+	if( robot.voltage < 3.3f ) temp = 1;
 
-	//¼±Í£¿ª¹Ø±»°´ÏÂ
+	//æ€¥åœå¼€å…³è¢«æŒ‰ä¸‹
 	if( EN==0 ) temp = 1;
 	
-	//»úÆ÷ÈË×Ô¼ì³ö´í
+	//æœºå™¨äººè‡ªæ£€å‡ºé”™
 	if( robot_check.errorflag==1 ) temp = 1;
 
-	//»úÆ÷ÈËÍ¨¹ıÈí¼şÉèÖÃÁË¼±Í£
+	//æœºå™¨äººé€šè¿‡è½¯ä»¶è®¾ç½®äº†æ€¥åœ
 	if( robot_control.SoftWare_Stop==1 ) temp = 1;
 	
-	//Ğ¡³µÓÉÊ§ÄÜ±äÎªÊ¹ÄÜµÄ¹ı³Ì,Çå¿ÕÄ¿±êËÙ¶È.
+	//å°è½¦ç”±å¤±èƒ½å˜ä¸ºä½¿èƒ½çš„è¿‡ç¨‹,æ¸…ç©ºç›®æ ‡é€Ÿåº¦.
 	if(temp==0 && saveflag==1)
 	{
 		robot_control.Vx = 0;
@@ -1672,17 +889,17 @@ static u8 Turn_Off(void)
 Function: Unified safe stop. Clears every motion quantity in one pass.
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£ºÍ³Ò»°²È«Í£Ö¹.Ò»´Î°ÑËùÓĞÔË¶¯Á¿ÇåÁã
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
-ËµÃ÷£ºÓë UnResponseControl() µÄÇø±ğ:
-      1.UnResponseControl ×ßÆ½»¬¼õËÙ, Êä³öÖğÅÄµİ¼õ, ĞèÒªÈô¸ÉÅÄ²Å¹éÁã.
-      2.Safe_Stop Á¢¼´°ÑÄ¿±êËÙ¶È¡¢PI ÀúÊ·¡¢PWM Õ¼¿Õ±ÈÈ«²¿¹éÁã.
-      °²È«³¡¾°ÒªÓÃ 2, ²»ÄÜÈÃ¼õËÙ¹ı³Ì²úÉú²ĞÓàÎ»ÒÆ.
+å‡½æ•°åŠŸèƒ½ï¼šç»Ÿä¸€å®‰å…¨åœæ­¢.ä¸€æ¬¡æŠŠæ‰€æœ‰è¿åŠ¨é‡æ¸…é›¶
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
+è¯´æ˜ï¼šä¸ UnResponseControl() çš„åŒºåˆ«:
+      1.UnResponseControl èµ°å¹³æ»‘å‡é€Ÿ, è¾“å‡ºé€æ‹é€’å‡, éœ€è¦è‹¥å¹²æ‹æ‰å½’é›¶.
+      2.Safe_Stop ç«‹å³æŠŠç›®æ ‡é€Ÿåº¦ã€PI å†å²ã€PWM å ç©ºæ¯”å…¨éƒ¨å½’é›¶.
+      å®‰å…¨åœºæ™¯è¦ç”¨ 2, ä¸èƒ½è®©å‡é€Ÿè¿‡ç¨‹äº§ç”Ÿæ®‹ä½™ä½ç§».
 **************************************************************************/
 static void Safe_Stop(void)
 {
-	//1.Ä¿±êËÙ¶ÈÓëÆ½»¬Öµ
+	//1.ç›®æ ‡é€Ÿåº¦ä¸å¹³æ»‘å€¼
 	robot_control.Vx = 0;
 	robot_control.Vy = 0;
 	robot_control.Vz = 0;
@@ -1692,34 +909,29 @@ static void Safe_Stop(void)
 	robot_control.command_lostcount = 0;
 
 #ifdef CHASSIS_PWM_TEST
-	//1b.¼Ü¿Õ²âÊÔ: Í£³µÂ·¾¶ÓÅÏÈ, ÈÎºÎ¹Ì¶¨Õ¼¿Õ±È¶¼ÔÚÕâÀï¹éÁã.
+	//1b.æ¶ç©ºæµ‹è¯•: åœè½¦è·¯å¾„ä¼˜å…ˆ, ä»»ä½•å›ºå®šå ç©ºæ¯”éƒ½åœ¨è¿™é‡Œå½’é›¶.
 	Pwm_Test_Stop();
 #endif
 
-	//2.ËÄ¸öÂÖ×ÓµÄÄ¿±êÓëÊä³ö
+	//2.å››ä¸ªè½®å­çš„ç›®æ ‡ä¸è¾“å‡º
 	robot.MOTOR_A.Target = 0;  robot.MOTOR_A.Output = 0;
 	robot.MOTOR_B.Target = 0;  robot.MOTOR_B.Output = 0;
 	robot.MOTOR_C.Target = 0;  robot.MOTOR_C.Output = 0;
 	robot.MOTOR_D.Target = 0;  robot.MOTOR_D.Output = 0;
 
-	//3.Çå PI ÀúÊ·, ·ÀÖ¹ÏÂ´ÎÊ¹ÄÜÊ±»ı·ÖÏî¼ÌĞøÀÛ¼Ó²úÉúÍ»Ìø
+	//3.æ¸… PI å†å², é˜²æ­¢ä¸‹æ¬¡ä½¿èƒ½æ—¶ç§¯åˆ†é¡¹ç»§ç»­ç´¯åŠ äº§ç”Ÿçªè·³
 	PI_Controller_Reset(&PI_MotorA);
 	PI_Controller_Reset(&PI_MotorB);
 	PI_Controller_Reset(&PI_MotorC);
 	PI_Controller_Reset(&PI_MotorD);
 
-	#if defined AKM_CAR
-		robot.SERVO.Target = 0;
-		PI_Controller_Reset(&PI_Servo);
-	#endif
-
-	//4.PWM Õ¼¿Õ±ÈÇåÁã
+	//4.PWM å ç©ºæ¯”æ¸…é›¶
 	PWMA = 0;
 	PWMB = 0;
 	PWMC = 0;
 	PWMD = 0;
 
-	//5.Çå×¤³µ×´Ì¬, ·ÀÖ¹ÑØ¾ÉÂ·¾¶µİ¼õ
+	//5.æ¸…é©»è½¦çŠ¶æ€, é˜²æ­¢æ²¿æ—§è·¯å¾„é€’å‡
 	park.start_clear = 0;
 	park.clear_state = (1<<7);
 }
@@ -1728,16 +940,16 @@ static void Safe_Stop(void)
 Function: Processes the command sent by APP through usart x
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£º¶ÔAPPÍ¨¹ı´®¿Úx·¢ËÍ¹ıÀ´µÄÃüÁî½øĞĞ´¦Àí
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šå¯¹APPé€šè¿‡ä¸²å£xå‘é€è¿‡æ¥çš„å‘½ä»¤è¿›è¡Œå¤„ç†
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 static void Get_APPcmd(void)
 {
-	/*  APPÒ¡¸ËÓëËÙ¶È·½Ïò
+	/*  APPæ‘‡æ†ä¸é€Ÿåº¦æ–¹å‘
 	     A
 	     ^  +Vx       ^ +Vz
-   H     |       B    £©
+   H     |       B    ï¼‰
 	     |
    G----------> -Vy  C
 	     |
@@ -1745,17 +957,10 @@ static void Get_APPcmd(void)
 	     E
 	*/
 	
-	short m_sign = 1;         //·ûºÅ±äÁ¿
-	float base_vz= PI/4.0f;   //ZÖáËÙ¶È»ù×¼
+	short m_sign = 1;         //ç¬¦å·å˜é‡
+	float base_vz= PI/4.0f;   //Zè½´é€Ÿåº¦åŸºå‡†
 	
-	//·ÇÈ«ÏòÒÆ¶¯Ğ¡³µ
-	#if defined AKM_CAR || defined DIFF_CAR || defined _4WD_CAR
-	
-		#if defined AKM_CAR
-			m_sign = -1;                  //°¢¿ËÂüVz±íÊ¾Ç°ÂÖ×ª½Ç,²¿·Ö·½Ïò·ûºÅĞèÒªĞŞ¸Ä.
-			base_vz = angle_to_rad(30);
-		#endif
-	
+	//å››é©±å°è½¦: æ–¹å‘é”®æ˜ å°„åˆ° Vx/Vz
 	switch( appkey.DirectionFlag ) 
 	{
 		case 1: robot_control.Vx = robot_control.rc_speed , robot_control.Vz = 0               ; break; //A
@@ -1771,347 +976,88 @@ static void Get_APPcmd(void)
 	}
 	
 	
-	//¿ÉÈ«ÏòÒÆ¶¯Ğ¡³µ
-	#elif defined MEC_CAR || defined OMNI_CAR
-	
-	switch( appkey.DirectionFlag ) 
-	{
-		case 1: robot_control.Vx = robot_control.rc_speed , robot_control.Vy = 0                      ; break; //A
-		case 2: robot_control.Vx = robot_control.rc_speed , robot_control.Vy =-robot_control.rc_speed ; break; //B
-		case 3: robot_control.Vx = 0 ,                      robot_control.Vy =-robot_control.rc_speed ; break; //C
-		case 4: robot_control.Vx =-robot_control.rc_speed , robot_control.Vy =-robot_control.rc_speed ; break; //D
-		case 5: robot_control.Vx =-robot_control.rc_speed , robot_control.Vy = 0                      ; break; //E
-		case 6: robot_control.Vx =-robot_control.rc_speed , robot_control.Vy = robot_control.rc_speed ; break; //F
-		case 7: robot_control.Vx = 0 ,                      robot_control.Vy = robot_control.rc_speed ; break; //G
-		case 8: robot_control.Vx = robot_control.rc_speed , robot_control.Vy = robot_control.rc_speed ; break; //H
-		
-		default : robot_control.Vx=0;robot_control.Vy=0;robot_control.Vz=0 , m_sign=0 ; break;
-	}
-	
-	//Ğ¡³µ²»´æÔÚx¡¢yÖáÃüÁîÊ±,¼ì²éZÖáÃüÁî
-	if( m_sign==0 )
-	{
-		     if( appkey.TurnFlag==1 ) robot_control.Vz =  base_vz;
-		else if( appkey.TurnFlag==2 ) robot_control.Vz = -base_vz;
-		else                          robot_control.Vz = 0;
-	}
-	
-	#endif
 
-	//µ¥Î»×ª»» mm/s -> m/s
+	//å•ä½è½¬æ¢ mm/s -> m/s
 	robot_control.Vx = robot_control.Vx/1000.0f;
 	robot_control.Vy = robot_control.Vy/1000.0f;
-	robot_control.Vz = robot_control.Vz * ( robot_control.rc_speed/500.0f );//ZÖáËÙ¶È¸ù¾İÒ£¿ØËÙ¶Èµ÷Õû.
+	robot_control.Vz = robot_control.Vz * ( robot_control.rc_speed/500.0f );//Zè½´é€Ÿåº¦æ ¹æ®é¥æ§é€Ÿåº¦è°ƒæ•´.
 
     //Control target value is obtained and kinematics analysis is performed
-    //µÃµ½¿ØÖÆÄ¿±êÖµ£¬½øĞĞÔË¶¯Ñ§·ÖÎö
+    //å¾—åˆ°æ§åˆ¶ç›®æ ‡å€¼ï¼Œè¿›è¡Œè¿åŠ¨å­¦åˆ†æ
     Drive_Motor(robot_control.Vx,robot_control.Vy,robot_control.Vz);
 }
 
-/**************************************************************************
-Function: The remote control command of model aircraft is processed
-Input   : none
-Output  : none
-º¯Êı¹¦ÄÜ£º¶Ôº½Ä£Ò£¿Ø¿ØÖÆÃüÁî½øĞĞ´¦Àí
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
-**************************************************************************/
-static void Remote_Control(void)
-{
-    //Data within 1 second after entering the model control mode will not be processed
-    //¶Ô½øÈëº½Ä£¿ØÖÆÄ£Ê½ºó1ÃëÄÚµÄÊı¾İ²»´¦Àí
-    static u8 thrice=BALANCE_TASK_RATE;
-    int Yuzhi=100; //Threshold to ignore small movements of the joystick //ãĞÖµ£¬ºöÂÔÒ¡¸ËĞ¡·ù¶È¶¯×÷
-
-    //limiter //ÏŞ·ù
-    int LX,LY,RY,RX,Remote_RCvelocity;
-	float base_vz = PI/4.0f ;//ZÖáËÙ¶È»ù×¼
-	
-	//°¢¿ËÂüZÖá´ú±í×óÇ°ÂÖ½Ç¶È,ÉèÖÃ»ù×¼ÖµÎª 30 ¶È
-	#if defined AKM_CAR
-		base_vz = angle_to_rad(30.0f);
-	#endif
-	
-	//4¸öÍ¨µÀÔ­Ê¼ÖµÏŞ·ù
-	remoter.ch1 = target_limit_int(remoter.ch1,1000,2000);
-	remoter.ch2 = target_limit_int(remoter.ch2,1000,2000);
-	remoter.ch3 = target_limit_int(remoter.ch3,1000,2000);
-	remoter.ch4 = target_limit_int(remoter.ch4,1000,2000);
-
-    //Front and back direction of left rocker. Control forward and backward.
-    //×óÒ¡¸ËÇ°ºó·½Ïò¡£¿ØÖÆÇ°½øºóÍË¡£
-    LX=remoter.ch2-1500;
-    
-	//The left joystick's horizontal directions control lateral \
-	  movement for omnidirectional mobile vehicles.
-    //×óÒ¡¸Ë×óÓÒ·½Ïò,¶ÔÓÚÈ«ÏòÒÆ¶¯Ğ¡³µ¿É¿ØÖÆ×óÓÒºáÒÆ
-    LY=remoter.ch4-1500;
-
-    //Front and back direction of right rocker. Throttle/acceleration/deceleration.
-    //ÓÒÒ¡¸ËÇ°ºó·½Ïò¡£ÓÍÃÅ/¼Ó¼õËÙ¡£
-    RX=remoter.ch3-1500;
-	
-    //Right stick left and right. To control the rotation.
-    //ÓÒÒ¡¸Ë×óÓÒ·½Ïò¡£¿ØÖÆ×Ô×ª¡£
-    RY=-(remoter.ch1-1500);//×Ô×ª
-
-    if(LX>-Yuzhi&&LX<Yuzhi)LX=0;
-    if(LY>-Yuzhi&&LY<Yuzhi)LY=0;
-    if(RX>-Yuzhi&&RX<Yuzhi)RX=0;
-    if(RY>-Yuzhi&&RY<Yuzhi)RY=0;
-
-	//ÓÍÃÅµ÷ÕûËÙ¶È Remote_RCvelocityÈ¡Öµ:0~1000
-    Remote_RCvelocity= robot_control.rc_speed + RX;
-    if(Remote_RCvelocity<0)Remote_RCvelocity=0;
-
-    //The remote control command of model aircraft is processed
-    //¶Ôº½Ä£Ò£¿Ø¿ØÖÆÃüÁî½øĞĞ´¦Àí
-	
-	robot_control.Vx = LX * (float)Remote_RCvelocity/500.0f;
-	robot_control.Vy =-LY * (float)Remote_RCvelocity/500.0f;
-	
-	//»ù×¼:base_vz,×ÔÉí±¶Êı:RY/500,È¡Öµ[-1~1],ÓÍÃÅ±¶Êı:(Remote_RCvelocity/500.0f),È¡Öµ[0,2]
-	robot_control.Vz = base_vz*((float)RY/500.0f) * ((float)Remote_RCvelocity/500.0f) ; 
-
-	//·Ç°¢¿ËÂü³µĞÍ,ÔÚºóÍËÊ±×ªÏò·½ÏòÈ¡·´.·ûºÏÒ¡¸Ë²Ù×÷Âß¼­.
-	#if !defined AKM_CAR
-	if(  robot_control.Vx < 0 ) robot_control.Vz = -robot_control.Vz;
-	#endif
-
-    //Unit conversion, mm/s -> m/s
-    //µ¥Î»×ª»»£¬mm/s -> m/s
-	robot_control.Vx = robot_control.Vx/1000.0f;
-	robot_control.Vy = robot_control.Vy/1000.0f;
-
-    //Data within 1 second after entering the model control mode will not be processed
-    //¶Ô½øÈëº½Ä£¿ØÖÆÄ£Ê½ºó1ÃëÄÚµÄÊı¾İ²»´¦Àí
-    if(thrice>0) robot_control.Vx=0,robot_control.Vy=0,robot_control.Vz=0,thrice--;
-
-    //Control target value is obtained and kinematics analysis is performed
-    //µÃµ½¿ØÖÆÄ¿±êÖµ£¬½øĞĞÔË¶¯Ñ§·ÖÎö
-    Drive_Motor(robot_control.Vx,robot_control.Vy,robot_control.Vz);
-}
 
 /**************************************************************************
 Function: Handle PS2 controller control commands
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£º¶ÔPS2ÊÖ±ú¿ØÖÆÃüÁî½øĞĞ´¦Àí
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šå¯¹PS2æ‰‹æŸ„æ§åˆ¶å‘½ä»¤è¿›è¡Œå¤„ç†
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
-#include "xbox360_gamepad.h"
-#include "WiredPS2_gamepad.h"
-//xbox360ÓÎÏ·ÊÖ±ú°´¼ü»Øµ÷º¯Êı
-void Xbox360GamePad_KeyEvent_Callback(uint8_t keyid,GamePadKeyEventType_t event)
-{
-	//°´ÏÂstart°´¼ü
-	if( keyid == Xbox360KEY_Menu && event == GamePadKeyEvent_SINGLECLICK )
-		GamePadInterface->StartFlag = 1;
-	
-	if( gamepad_brand == Xbox360 )
-	{
-		//ÊÖ±ú¼Ó¼õËÙ
-		if( keyid == Xbox360KEY_LB && (event == GamePadKeyEvent_DOUBLECLICK || event == GamePadKeyEvent_SINGLECLICK )  )
-			robot_control.rc_speed -= 50;
-		else if( keyid == Xbox360KEY_RB && (event == GamePadKeyEvent_DOUBLECLICK || event == GamePadKeyEvent_SINGLECLICK )  )
-			robot_control.rc_speed += 50;
-		
-		if( robot_control.rc_speed < 0 ) robot_control.rc_speed = 0;
-	}
-	else if(  gamepad_brand == PS2_USB_Wiredless )
-	{
-		if( keyid == Xbox360KEY_LB && (event == GamePadKeyEvent_DOUBLECLICK || event == GamePadKeyEvent_SINGLECLICK )  )
-			robot_control.rc_speed += 50;
-		else if( keyid == Xbox360_PaddingBit && (event == GamePadKeyEvent_DOUBLECLICK || event == GamePadKeyEvent_SINGLECLICK ) )
-			robot_control.rc_speed -= 50;
-		if( robot_control.rc_speed < 0 ) robot_control.rc_speed = 0;
-	}
-	
-	
-	//Õğ¶¯¼¤»îÓëÈ¡Ïû
-	if( keyid == Xbox360KEY_SELECT && event == GamePadKeyEvent_LONGCLICK )
-	{
-		if( GamePadInterface->Vib_EN )
-		{
-			GamePadInterface->SetVibration(0,127);
-			vTaskDelay(50);
-			GamePadInterface->Vib_EN = !GamePadInterface->Vib_EN;
-		}
-		else
-		{
-			GamePadInterface->Vib_EN = !GamePadInterface->Vib_EN;
-			vTaskDelay(50);
-			GamePadInterface->SetVibration(0,127);
-		}	
-	}
-}
-
-//ÓĞÏßUSBÊÖ±ú»Øµ÷º¯Êı
-void Wired_USB_PS2GamePad_KeyEvent_Callback(uint8_t keyid,GamePadKeyEventType_t event)
-{
-	//°´ÏÂstart°´¼ü
-	if( keyid == PS2KEY_START && event == GamePadKeyEvent_SINGLECLICK )
-		GamePadInterface->StartFlag = 1;
-	
-	//ÊÖ±ú¼Ó¼õËÙ
-	else if( keyid == PS2KEY_L2 && (event == GamePadKeyEvent_DOUBLECLICK || event == GamePadKeyEvent_SINGLECLICK )  )
-		robot_control.rc_speed -= 50;
-	else if( keyid == PS2KEY_L1 && (event == GamePadKeyEvent_DOUBLECLICK || event == GamePadKeyEvent_SINGLECLICK )  )
-		robot_control.rc_speed += 50;
-	
-	if( robot_control.rc_speed < 0 ) robot_control.rc_speed = 0;
-}
-
-//¾­µäPS2ÊÖ±ú»Øµ÷º¯Êı,·ÇUSB¿î
+/* USB Host æ•´é“¾ç§»é™¤, ä»…ä¿ç•™ç»å…¸GPIOæ—¶åºPS2æ‰‹æŸ„å›è°ƒ. */
+//ç»å…¸PS2æ‰‹æŸ„å›è°ƒå‡½æ•°,éUSBæ¬¾
 void Classic_PS2GamePad_KeyEvent_Callback(uint8_t keyid,GamePadKeyEventType_t event)
 {
-	//°´ÏÂstart°´¼ü
+	//æŒ‰ä¸‹startæŒ‰é”®
 	if( keyid == PS2KEY_START && event == GamePadKeyEvent_SINGLECLICK )
-		GamePadInterface->StartFlag = 1;
-	
-	//ÊÖ±ú¼Ó¼õËÙ
+		Classic_PS2Gamepad.StartFlag = 1;
+
+	//æ‰‹æŸ„åŠ å‡é€Ÿ
 	else if( keyid == PS2KEY_L2 && (event == GamePadKeyEvent_DOUBLECLICK || event == GamePadKeyEvent_SINGLECLICK )  )
 		robot_control.rc_speed -= 50;
 	else if( keyid == PS2KEY_L1 && (event == GamePadKeyEvent_DOUBLECLICK || event == GamePadKeyEvent_SINGLECLICK )  )
 		robot_control.rc_speed += 50;
-	
+
 	if( robot_control.rc_speed < 0 ) robot_control.rc_speed = 0;
 }
 
 
-//ÊÖ±úÕğ¶¯Ó³Éäº¯Êı
-static uint8_t map_to_vib(float x) {
-    // ¼ì²éÊäÈë·¶Î§£¬ÏŞÖÆÔÚ [0.2, 1.2] ÄÚ
-    if (x < 0.1f) return 0;
-    if (x > 1.2f) x = 1.2f;
-
-    // ÏßĞÔÓ³Éä
-    float result = 255.0f * (x - 0.1f) / 1.1f;
-
-    // ËÄÉáÎåÈë²¢×ª»»Îª uint8_t
-    return (uint8_t)(result + 0.5f);
-}
-
-uint8_t g_usbhost_disconnect=0;
-extern USBH_HandleTypeDef hUsbHostFS;
 static void PS2_control(void)
 {
 	float LX=127,LY=127,RX=127;
 	float ThrottleTri = 255;
-	float base_vz = PI/4.0f ;//ZÖáËÙ¶È»ù×¼
-	
-	g_usbhost_connect++;
-	if(g_usbhost_connect==50 && SysVal.HardWare_Ver>=V1_1)
-	{
-		g_usbhost_connect=50;
-		
-		//±»¶¯¶ÏÁ¬±êÖ¾Î»
-		g_usbhost_disconnect=1;
-		
-		//¼¤»îUSBÈÎÎñÖØĞÂÁ¬½Ó
-        hUsbHostFS.os_msg = (uint32_t)USBH_PORT_EVENT;
-        osMessageQueuePut( hUsbHostFS.os_event, & hUsbHostFS.os_msg, 0U, 0U);
-		
-		//Çå¿ÕÄ¿±êÖµ
-		GamePadInterface->LY=127;
-		GamePadInterface->LX=127;
-		GamePadInterface->RX=127;
-		GamePadInterface->RT=0;
-		GamePadInterface->LT=0;
-		
-		//ÍË³öÊÖ±úÄ£Ê½
-		//Set_Control_Mode(_ROS_Control);
-		robot_control.Vx=0;robot_control.Vy=0;robot_control.Vz=0;
-	}
-	
-	//Ç°½øÒ¡¸Ë
-	LY = GamePadInterface->LY - 127;
-	
-	//×óÓÒºáÒÆ
-	LX = 127 - GamePadInterface->LX;
-	
-	//Ë³ÄæÊ±Õë
-	RX = 127 - GamePadInterface->RX;
-	
-	//Ò¡¸ËÎ¢Ğ¡·ù¶È¹ıÂË
+	float base_vz = PI/4.0f ;//Zè½´é€Ÿåº¦åŸºå‡†
+
+	//å‰è¿›æ‘‡æ†
+	LY = Classic_PS2Gamepad.LY - 127;
+
+	//å·¦å³æ¨ªç§»
+	LX = 127 - Classic_PS2Gamepad.LX;
+
+	//é¡ºé€†æ—¶é’ˆ
+	RX = 127 - Classic_PS2Gamepad.RX;
+
+	//æ‘‡æ†å¾®å°å¹…åº¦è¿‡æ»¤
 	if( fabs(LY)<20 ) LY = 0;
 	if( fabs(LX)<20 ) LX = 0;
 	if( fabs(RX)<20 ) RX = 0;
-	
-	//Õë¶Ôxbox360ÊÖ±ú£¬°â»úÎªÄ£ÄâÁ¿Ê±£¬ÔÊĞíÊ¹ÓÃ°â»ú¿ØÖÆ
-	if( gamepad_brand == Xbox360 )
-	{
-		//Ç°½øÒ¡¸ËÎŞÖµÊ±,²ÉÓÃ°â»úµÄÖµ
-		if( (int)LY == 0 )
-		{
-			if( GamePadInterface->LT == 0 && GamePadInterface->RT != 0 )
-				ThrottleTri =  GamePadInterface->RT, LY = 127;
-			else if( GamePadInterface->LT != 0 && GamePadInterface->RT == 0 )
-				ThrottleTri =  -GamePadInterface->LT,LY = 127;
-			else
-				ThrottleTri = 0;
-		}
-	}
-	
-	//Õë¶ÔusbÓĞÏßÊÖ±ú,ÔÚ·ÇÄ£ÄâÁ¿Ä£Ê½ÏÂµÄÒ¡¸ËÖµÓ³Éä
-	else if( gamepad_brand == PS2_USB_Wired ||  gamepad_brand == PS2_USB_WiredV2 )
-	{
-		if( fabs(RX)<0.0001f )
-		{
-			if( GamePadInterface->getKeyState(PS2KEY_4PINK) )
-				RX = 127;
-			else if( GamePadInterface->getKeyState(PS2KEY_2RED) )
-				RX = -127;
-		}
-	}
-	
+
+
 	robot_control.Vx = (LY/127.0f) * robot_control.rc_speed * (ThrottleTri/255.0f);
 	robot_control.Vy = (LX/127.0f) * robot_control.rc_speed;
 	robot_control.Vz = base_vz * (RX/127.0f) * ( robot_control.rc_speed/500.0f );
 	
-	#if !defined AKM_CAR
-		if( robot_control.Vx<0 ) robot_control.Vz = -robot_control.Vz;
-	#endif
+	if( robot_control.Vx<0 ) robot_control.Vz = -robot_control.Vz;
 
     //Unit conversion, mm/s -> m/s
-    //µ¥Î»×ª»»£¬mm/s -> m/s
+    //å•ä½è½¬æ¢ï¼Œmm/s -> m/s
     robot_control.Vx = robot_control.Vx/1000.0f;
 	robot_control.Vy = robot_control.Vy/1000.0f;
 
     //Control target value is obtained and kinematics analysis is performed
-    //µÃµ½¿ØÖÆÄ¿±êÖµ£¬½øĞĞÔË¶¯Ñ§·ÖÎö
+    //å¾—åˆ°æ§åˆ¶ç›®æ ‡å€¼ï¼Œè¿›è¡Œè¿åŠ¨å­¦åˆ†æ
     Drive_Motor(robot_control.Vx,robot_control.Vy,robot_control.Vz);
 	
-	//¸ù¾İ¼ÓËÙ¶È·´Ó¦Õğ¶¯Çé¿ö´«´ïµ½ÊÖ±ú
-	#include "bsp_gamepad.h"
-	
-	//ZÖáÊı¾İÅĞ¶ÏÕğ¶¯Ç¿¶È
-	float now_z = imu.accel.z/1671.84f;
-	static float last_z = 0;
-	float strength = fabs(last_z - now_z);
-	
-	#if defined MEC_CAR || defined OMNI_CAR
-	const float vib_strength = 0.6f;
-	#else
-	const float vib_strength = 0.1f;
-	#endif
-	
-	//Õğ¶¯Ó³Éäµ½ÊÖ±ú
-	if( strength>vib_strength && SysVal.Time_count>CONTROL_DELAY)
-	{
-		if( GamePadInterface->SetVibration!=NULL )
-			GamePadInterface->SetVibration(map_to_vib(strength),0);
-	}
-	last_z = now_z;
 		
-//	//TODO:ÊÊÅäPS2¿ØÖÆ
+//	//TODO:é€‚é…PS2æ§åˆ¶
 //    float LX,LY,RY;
-//    int Yuzhi=20; //Threshold to ignore small movements of the joystick //ãĞÖµ£¬ºöÂÔÒ¡¸ËĞ¡·ù¶È¶¯×÷
+//    int Yuzhi=20; //Threshold to ignore small movements of the joystick //é˜ˆå€¼ï¼Œå¿½ç•¥æ‘‡æ†å°å¹…åº¦åŠ¨ä½œ
 //	
-//	float base_vz = PI/4.0f ;//ZÖáËÙ¶È»ù×¼
+//	float base_vz = PI/4.0f ;//Zè½´é€Ÿåº¦åŸºå‡†
 //	
-//	//Õë¶Ô usbÓĞÏßps2ÊÖ±ú Êı×ÖÄ£Ê½¿ØÖÆ×ª»»
+//	//é’ˆå¯¹ usbæœ‰çº¿ps2æ‰‹æŸ„ æ•°å­—æ¨¡å¼æ§åˆ¶è½¬æ¢
 //	if( SysVal.HardWare_Ver==V1_1 )
 //	{
 //		if( ps2_type == Normal_PS2 )
@@ -2127,34 +1073,34 @@ static void PS2_control(void)
 //	}
 //	
 //    //128 is the median.The definition of X and Y in the PS2 coordinate system is different from that in the ROS coordinate system
-//    //128ÎªÖĞÖµ¡£PS2×ø±êÏµÓëROS×ø±êÏµ¶ÔX¡¢YµÄ¶¨Òå²»Ò»Ñù
-//    LY=-(ps2_val.LX-128);//È¡Öµ[-128,128]
+//    //128ä¸ºä¸­å€¼ã€‚PS2åæ ‡ç³»ä¸ROSåæ ‡ç³»å¯¹Xã€Yçš„å®šä¹‰ä¸ä¸€æ ·
+//    LY=-(ps2_val.LX-128);//å–å€¼[-128,128]
 //    LX=-(ps2_val.LY-128);
 //    RY=-(ps2_val.RX-128);
 
-//    //Ignore small movements of the joystick //ºöÂÔÒ¡¸ËĞ¡·ù¶È¶¯×÷
+//    //Ignore small movements of the joystick //å¿½ç•¥æ‘‡æ†å°å¹…åº¦åŠ¨ä½œ
 //    if(LX>-Yuzhi&&LX<Yuzhi)LX=0;
 //    if(LY>-Yuzhi&&LY<Yuzhi)LY=0;
 //    if(RY>-Yuzhi&&RY<Yuzhi)RY=0;
 //	
 //	static uint8_t low_fre = 0;
-//	if(++low_fre==10)//½µµÍ°´¼üÉ¨ÃèÆµÂÊ
+//	if(++low_fre==10)//é™ä½æŒ‰é”®æ‰«æé¢‘ç‡
 //	{
 //		low_fre = 0;
-//		//PS2ÊÖ±ú,×ó°â»ú1ºÅ¿É¼ÓËÙ,2ºÅ¿É¼õËÙ
+//		//PS2æ‰‹æŸ„,å·¦æ‰³æœº1å·å¯åŠ é€Ÿ,2å·å¯å‡é€Ÿ
 //			 if( Read_PS2_KEY(L1_KEY)==PS2_KEY_ON ) robot_control.rc_speed+=20;
 //		else if( Read_PS2_KEY(L2_KEY)==PS2_KEY_ON ) robot_control.rc_speed-=20;
 //		
-//		//ËÙ¶È×î´ó×îĞ¡ÖµÏŞÖÆ
+//		//é€Ÿåº¦æœ€å¤§æœ€å°å€¼é™åˆ¶
 //		robot_control.rc_speed = target_limit_float(robot_control.rc_speed,0,robot_control.limt_max_speed*1000);
 //	}
 
 //	#if defined AKM_CAR
-//		base_vz = angle_to_rad(30.0f);//°¢¿ËÂüZÖá»ù×¼½Ç¶È
+//		base_vz = angle_to_rad(30.0f);//é˜¿å…‹æ›¼Zè½´åŸºå‡†è§’åº¦
 //	#endif
 //	
 //    //Handle PS2 controller control commands
-//    //¶ÔPS2ÊÖ±ú¿ØÖÆÃüÁî½øĞĞ´¦Àí
+//    //å¯¹PS2æ‰‹æŸ„æ§åˆ¶å‘½ä»¤è¿›è¡Œå¤„ç†
 //	robot_control.Vx = (LX/128.0f) * robot_control.rc_speed;
 //	robot_control.Vy = (LY/128.0f) * robot_control.rc_speed;
 //	robot_control.Vz = base_vz * (RY/128.0f) * ( robot_control.rc_speed/500.0f );
@@ -2164,12 +1110,12 @@ static void PS2_control(void)
 //	#endif
 
 //    //Unit conversion, mm/s -> m/s
-//    //µ¥Î»×ª»»£¬mm/s -> m/s
+//    //å•ä½è½¬æ¢ï¼Œmm/s -> m/s
 //    robot_control.Vx = robot_control.Vx/1000.0f;
 //	robot_control.Vy = robot_control.Vy/1000.0f;
 
 //    //Control target value is obtained and kinematics analysis is performed
-//    //µÃµ½¿ØÖÆÄ¿±êÖµ£¬½øĞĞÔË¶¯Ñ§·ÖÎö
+//    //å¾—åˆ°æ§åˆ¶ç›®æ ‡å€¼ï¼Œè¿›è¡Œè¿åŠ¨å­¦åˆ†æ
 //    Drive_Motor(robot_control.Vx,robot_control.Vy,robot_control.Vz);
 }
 
@@ -2178,66 +1124,32 @@ Functionality: Robot Self-Check Function - Performs a self-check on the robot to
 Input Parameters: None.
 Return Value: None.
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º »úÆ÷ÈË×Ô¼ìº¯Êı,¼ì²é»úÆ÷ÈËµç»ú¡¢±àÂëÆ÷¡¢Çı¶¯Æ÷ÊÇ·ñ´æÔÚ´íÎó½ÓÏß
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼š æœºå™¨äººè‡ªæ£€å‡½æ•°,æ£€æŸ¥æœºå™¨äººç”µæœºã€ç¼–ç å™¨ã€é©±åŠ¨å™¨æ˜¯å¦å­˜åœ¨é”™è¯¯æ¥çº¿
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 static void robot_mode_check(void)
 {
-	//TODO:×Ô¼ì³ÌĞò,Í¬Ïòµç»ú½Ó·´ÄÑÅĞ¶Ï.
+	//TODO:è‡ªæ£€ç¨‹åº,åŒå‘ç”µæœºæ¥åéš¾åˆ¤æ–­.
 	
-	#define OVERLOAD_PWM 8000 //³¬ÔØPWMÔ¤¾¯Öµ
-	#define ENCODER_LOST_PWM 5500 //±àÂëÆ÷Î´½ÓÊ±,PWM±¨´íãĞÖµ
+	#define OVERLOAD_PWM 8000 //è¶…è½½PWMé¢„è­¦å€¼
+	#define ENCODER_LOST_PWM 5500 //ç¼–ç å™¨æœªæ¥æ—¶,PWMæŠ¥é”™é˜ˆå€¼
 	
-    static u8 init=0;//³õÊ¼»¯
+    static u8 init=0;//åˆå§‹åŒ–
     if( 0 == init ) 
 	{
 		ROBOT_SELFCHECK_t_Init(&robot_check);
 		init=1;
 	}
 
-    if( EN==1 && robot_check.errorflag ==0 ) //±£Áô¿ÉÒÔÊ¹ÓÃ¼±Í£¿ª¹ØÌø¹ı×Ô¼ìµÄ¹¦ÄÜ
+    if( EN==1 && robot_check.errorflag ==0 ) //ä¿ç•™å¯ä»¥ä½¿ç”¨æ€¥åœå¼€å…³è·³è¿‡è‡ªæ£€çš„åŠŸèƒ½
     {
-		#if defined OMNI_CAR //È«ÏòÂÖĞ¡³µ½á¹¹ÌØÊâ,¶ÀÁ¢×Ô¼ìÂß¼­
-			
-			//1¡¢È«ÏòÂÖ×Ô¼ìÊ±,½öB¡¢Cµç»ú×ª¶¯.ÈôAÂ·´æÔÚÊıÖµÔòËµÃ÷Çı¶¯Æ÷»ò±àÂëÆ÷Ïß½Ó´í(/4´ú±íËÄ·ÖÒ»È¦)
-			if( robot_check.check_a > robot.HardwareParam.Encoder_precision/4 || \
-				robot_check.check_a < -robot.HardwareParam.Encoder_precision/4	)
-			{
-				Buzzer_AddTask(1,20);
-				robot_check.errorflag = 1;
-			}
-			
-			//2¡¢³µĞÍ²»¶Ô»ò½ÓÏß²»¶Ôµ¼ÖÂµÄµç»ú·´Ïò´íÎó
-			if( robot_check.check_b > robot.HardwareParam.Encoder_precision/4 || \
-				robot_check.check_c < -robot.HardwareParam.Encoder_precision/4 )
-			{
-				Buzzer_AddTask(2,20);
-				robot_check.errorflag = 1;
-			}
-			
-			//3¡¢ÈÎÒâµç»úPWMÊä³öµ½´ïãĞÖµ,¶ÔÓ¦µÄ±àÂëÆ÷Êı¾İºÜĞ¡(ÂÖ×Ó×ª¶¯²»µ½12¡ã)»òÎŞÊı¾İ,ÔòÈÏÎª±àÂëÆ÷ÏßÎ´½Ó
-			if( ( fabs( robot.MOTOR_B.Output ) > ENCODER_LOST_PWM && robot_check.check_b > -robot.HardwareParam.Encoder_precision/30 ) || \
-				( fabs( robot.MOTOR_C.Output ) > ENCODER_LOST_PWM && robot_check.check_c < robot.HardwareParam.Encoder_precision/30 ) )
-			{
-				Buzzer_AddTask(3,20);
-				robot_check.errorflag = 1;
-			}
-			
-			//4¡¢ÈÎÒâµç»úPWMÊä³ö³¬¹ı¸ü´óãĞÖµ,ÔòÈÏÎªĞ¡³µ¹ıÔØ
-			if( fabs( robot.MOTOR_A.Output ) > OVERLOAD_PWM || fabs( robot.MOTOR_B.Output ) > OVERLOAD_PWM || \
-				fabs( robot.MOTOR_C.Output ) > OVERLOAD_PWM )
-			{
-				Buzzer_AddTask(4,20);
-				robot_check.errorflag = 1;
-			}
-			
-		#else
+
 			static int last_a=0,last_b=0,last_c=0,last_d=0;
 			static u8 err_time = 0;
 			
-			//1¡¢ÈÎÒâ³µÂÖ·´×ª 1/4 È¦ ÈÏÎªÊÇ±àÂëÆ÷Ïß»òÇı¶¯Ïß½Ó·´,»òÕßÊÇ³µĞÍÑ¡´í.
+			//1ã€ä»»æ„è½¦è½®åè½¬ 1/4 åœˆ è®¤ä¸ºæ˜¯ç¼–ç å™¨çº¿æˆ–é©±åŠ¨çº¿æ¥å,æˆ–è€…æ˜¯è½¦å‹é€‰é”™.
 			if( robot_check.check_a < -robot.HardwareParam.Encoder_precision/4  || \
 				robot_check.check_b < -robot.HardwareParam.Encoder_precision/4  || \
 				robot_check.check_c < -robot.HardwareParam.Encoder_precision/4  || \
@@ -2247,7 +1159,7 @@ static void robot_mode_check(void)
 				Buzzer_AddTask(1,20);
 			}
 			
-			//2¡¢ÈÎÒâµç»úPWMÊä³öµ½´ïãĞÖµ,¶ÔÓ¦µÄ±àÂëÆ÷Êı¾İºÜĞ¡(ÂÖ×Ó×ª¶¯²»µ½12¡ã)»òÎŞÊı¾İ,ÔòÈÏÎª±àÂëÆ÷ÏßÎ´½Ó
+			//2ã€ä»»æ„ç”µæœºPWMè¾“å‡ºåˆ°è¾¾é˜ˆå€¼,å¯¹åº”çš„ç¼–ç å™¨æ•°æ®å¾ˆå°(è½®å­è½¬åŠ¨ä¸åˆ°12Â°)æˆ–æ— æ•°æ®,åˆ™è®¤ä¸ºç¼–ç å™¨çº¿æœªæ¥
 			if( ( abs( robot.MOTOR_A.Output ) > ENCODER_LOST_PWM && robot_check.check_a < robot.HardwareParam.Encoder_precision/30 ) || \
 				( abs( robot.MOTOR_B.Output ) > ENCODER_LOST_PWM && robot_check.check_b < robot.HardwareParam.Encoder_precision/30 ) || \
 				( abs( robot.MOTOR_C.Output ) > ENCODER_LOST_PWM && robot_check.check_c < robot.HardwareParam.Encoder_precision/30 ) || \
@@ -2257,7 +1169,7 @@ static void robot_mode_check(void)
 				Buzzer_AddTask(2,20);
 			}
 			
-			//3¡¢ÈÎÒâµç»úPWMÊä³ö³¬¹ı¸ü´óãĞÖµ,ÔòÈÏÎªĞ¡³µ¹ıÔØ
+			//3ã€ä»»æ„ç”µæœºPWMè¾“å‡ºè¶…è¿‡æ›´å¤§é˜ˆå€¼,åˆ™è®¤ä¸ºå°è½¦è¿‡è½½
 			if( abs( robot.MOTOR_A.Output ) > OVERLOAD_PWM || abs( robot.MOTOR_B.Output ) > OVERLOAD_PWM || \
 				abs( robot.MOTOR_C.Output ) > OVERLOAD_PWM || abs( robot.MOTOR_D.Output ) > OVERLOAD_PWM	)
 			{
@@ -2265,7 +1177,7 @@ static void robot_mode_check(void)
 				Buzzer_AddTask(3,20);
 			}
 			
-			//4¡¢³öÏÖ¶à´ÎÀÛ¼ÆÖµµ¹ÍË,³ıÁË1ÖĞµÄÒì³£,Ò²¿ÉÄÜÊÇ¶àÖÖ´íÎóÀÛ¼Æµş¼ÓµÄ±íÏÖ.
+			//4ã€å‡ºç°å¤šæ¬¡ç´¯è®¡å€¼å€’é€€,é™¤äº†1ä¸­çš„å¼‚å¸¸,ä¹Ÿå¯èƒ½æ˜¯å¤šç§é”™è¯¯ç´¯è®¡å åŠ çš„è¡¨ç°.
 			if( abs(robot_check.check_a) < abs(last_a) - 50 || abs(robot_check.check_b) < abs(last_b) - 50 || abs(robot_check.check_c) < abs(last_c) - 50|| abs(robot_check.check_d) < abs(last_d) - 50 )
 			{
 				err_time++;
@@ -2276,7 +1188,6 @@ static void robot_mode_check(void)
 			last_b = robot_check.check_b;
 			last_c = robot_check.check_c;
 			last_d = robot_check.check_d;
-		#endif
     }
 }
 
@@ -2285,126 +1196,47 @@ Functionality: Read Feedback Values - Retrieves feedback values from each actuat
 Input Parameters: None.
 Return Value: None.
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º¶ÁÈ¡»úÆ÷¸÷¸öÖ´ĞĞ»ú¹¹µÄ·´À¡Öµ
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šè¯»å–æœºå™¨å„ä¸ªæ‰§è¡Œæœºæ„çš„åé¦ˆå€¼
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 static void Get_Robot_FeedBack(void)
 {
     //Retrieves the original data of the encoder
-    //»ñÈ¡±àÂëÆ÷µÄÔ­Ê¼Êı¾İ
+    //è·å–ç¼–ç å™¨çš„åŸå§‹æ•°æ®
     short Encoder_A_pr,Encoder_B_pr;
 	
-	//±àÂëÆ÷Ô­Ê¼Öµ,¶ÁÈ¡ºóÇå¿Õ.
+	//ç¼–ç å™¨åŸå§‹å€¼,è¯»å–åæ¸…ç©º.
     Encoder_A_pr = -Read_Encoder(Encoder_A);
     Encoder_B_pr = -Read_Encoder(Encoder_B);
 	
-	#if !defined AKM_CAR && !defined DIFF_CAR
-		short Encoder_C_pr;
-		Encoder_C_pr = Read_Encoder(Encoder_C);
-	#endif
-	
-	#if defined MEC_CAR || defined _4WD_CAR
-		short Encoder_D_pr;
-		Encoder_D_pr = Read_Encoder(Encoder_D);
-	#endif
-	
-	//¼ÆËã¾ÀÆ«ÏµÊı
+	short Encoder_C_pr;
+	Encoder_C_pr = Read_Encoder(Encoder_C);
+	short Encoder_D_pr;
+	Encoder_D_pr = Read_Encoder(Encoder_D);
+	//è®¡ç®—çº åç³»æ•°
 	float LeftWheelDiff = wheelCoefficient(robot_control.LineDiffParam,1);
 	float RightWheelDiff = wheelCoefficient(robot_control.LineDiffParam,0);
 	
     //The encoder converts the raw data to wheel speed in m/s
-    //±àÂëÆ÷Ô­Ê¼Êı¾İ×ª»»Îª³µÂÖËÙ¶È£¬µ¥Î»m/s
-	#if defined AKM_CAR
-	
-		//Î´Íê³É×Ô¼ìÊ±²É¼¯±àÂëÆ÷Êı¾İ½øĞĞÅĞ¶Ï
-		if( robot_check.check_end == 0 )
-		{
-			robot_check.check_a +=  Encoder_A_pr;
-			robot_check.check_b += -Encoder_B_pr;
-		}
-		
-		//½«Á½¸öµç»úµÄ±àÂëÆ÷µÄÔ­Ê¼¶ÁÊı×ª»»Îª m/s 
-		robot.MOTOR_A.Encoder =   Encoder_A_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / LeftWheelDiff;
-		robot.MOTOR_B.Encoder = - Encoder_B_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / RightWheelDiff;
-	
-        //Gets the position of the slide, representing the front wheel rotation Angle
-        //»ñÈ¡»¬¹ìÎ»ÖÃ,´ú±íÇ°ÂÖ×ª½Ç½Ç¶È.¸ÃÊıÖµÓÉADC2¸ºÔğ²É¼¯,DMAÍê³É°áÔË,´Ë´¦½öĞè´¦ÀíÊı¾İ¼´¿É
-		robot.SERVO.Encoder = get_DMA_SlideRes();
-		robot.SERVO.Encoder = Slide_Mean_Filter(robot.SERVO.Encoder);//½«²É¼¯½á¹û½øĞĞÆ½»¬ÂË²¨
-	
-	#elif defined DIFF_CAR
-		//Î´Íê³É×Ô¼ìÊ±²É¼¯±àÂëÆ÷Êı¾İ½øĞĞÅĞ¶Ï
-		if( robot_check.check_end == 0 )
-		{
-			robot_check.check_a +=  Encoder_A_pr;
-			robot_check.check_b += -Encoder_B_pr;
-		}
-		
-		robot.MOTOR_A.Encoder =   Encoder_A_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / LeftWheelDiff;
-		robot.MOTOR_B.Encoder = - Encoder_B_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / RightWheelDiff;	
-		
-	#elif defined MEC_CAR || defined _4WD_CAR	
-		//Î´Íê³É×Ô¼ìÊ±²É¼¯±àÂëÆ÷Êı¾İ½øĞĞÅĞ¶Ï
-		if( robot_check.check_end == 0 )
-		{
-            #if defined _4WD_CAR
-			robot_check.check_a += -Encoder_A_pr;
-			robot_check.check_b += -Encoder_B_pr;
-            #else
-			robot_check.check_a +=  Encoder_A_pr;
-			robot_check.check_b +=  Encoder_B_pr;
-            #endif
-			robot_check.check_c += -Encoder_C_pr;
-			robot_check.check_d += -Encoder_D_pr;
-		}
-        #if defined _4WD_CAR
-		robot.MOTOR_A.Encoder = - Encoder_A_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / RightWheelDiff;
-		robot.MOTOR_B.Encoder = - Encoder_B_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / LeftWheelDiff;
-		robot.MOTOR_C.Encoder = - Encoder_C_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / LeftWheelDiff;
-		robot.MOTOR_D.Encoder = - Encoder_D_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / RightWheelDiff;
-        #else
-		robot.MOTOR_A.Encoder =   Encoder_A_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / LeftWheelDiff;
-		robot.MOTOR_B.Encoder =   Encoder_B_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / LeftWheelDiff;
-		robot.MOTOR_C.Encoder = - Encoder_C_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / RightWheelDiff;
-		robot.MOTOR_D.Encoder = - Encoder_D_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / RightWheelDiff;	
-        #endif
-
-		//probe[10..13] = ËÄÂ· Encoder »»Ëã½á¹û¾ø¶ÔÖµÀÛ¼Æ *10000 (×¥·åÖµÓÃ)
-		{
-			int32_t va = (int32_t)(robot.MOTOR_A.Encoder*10000);
-			int32_t vb = (int32_t)(robot.MOTOR_B.Encoder*10000);
-			int32_t vc = (int32_t)(robot.MOTOR_C.Encoder*10000);
-			int32_t vd = (int32_t)(robot.MOTOR_D.Encoder*10000);
-			if( va<0 ) va = -va;
-			if( vb<0 ) vb = -vb;
-			if( vc<0 ) vc = -vc;
-			if( vd<0 ) vd = -vd;
-			if( va > g_enc_probe[10] ) g_enc_probe[10] = va;
-			if( vb > g_enc_probe[11] ) g_enc_probe[11] = vb;
-			if( vc > g_enc_probe[12] ) g_enc_probe[12] = vc;
-			if( vd > g_enc_probe[13] ) g_enc_probe[13] = vd;
-		}
-		
-	#elif defined OMNI_CAR	
-		//Î´Íê³É×Ô¼ìÊ±²É¼¯±àÂëÆ÷Êı¾İ½øĞĞÅĞ¶Ï
-		if( robot_check.check_end == 0 )
-		{
-			robot_check.check_a += -Encoder_A_pr;
-			robot_check.check_b += -Encoder_B_pr;
-			robot_check.check_c += -Encoder_C_pr;
-		}
-		
-		robot.MOTOR_A.Encoder = - Encoder_A_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ;
-		robot.MOTOR_B.Encoder = - Encoder_B_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / LeftWheelDiff;
-		robot.MOTOR_C.Encoder = - Encoder_C_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / RightWheelDiff;	
-		
-	#endif
+	//ç¼–ç å™¨åŸå§‹æ•°æ®è½¬æ¢ä¸ºè½¦è½®é€Ÿåº¦ï¼Œå•ä½m/s (å››é©±åˆ†æ”¯)
+	//æœªå®Œæˆè‡ªæ£€æ—¶é‡‡é›†ç¼–ç å™¨æ•°æ®è¿›è¡Œåˆ¤æ–­
+	if( robot_check.check_end == 0 )
+	{
+		robot_check.check_a += -Encoder_A_pr;
+		robot_check.check_b += -Encoder_B_pr;
+		robot_check.check_c += -Encoder_C_pr;
+		robot_check.check_d += -Encoder_D_pr;
+	}
+	robot.MOTOR_A.Encoder = - Encoder_A_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / RightWheelDiff;
+	robot.MOTOR_B.Encoder = - Encoder_B_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / LeftWheelDiff;
+	robot.MOTOR_C.Encoder = - Encoder_C_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / LeftWheelDiff;
+	robot.MOTOR_D.Encoder = - Encoder_D_pr*BALANCE_TASK_RATE/( robot.HardwareParam.Encoder_precision )* robot.HardwareParam.Wheel_Circ / RightWheelDiff;
 }
 
 /*-------------------------------- Robot state detection related functions ------------------------------------*/
-/*--------------------------------         »úÆ÷ÈË×´Ì¬¼ì²âÏà¹Øº¯Êı          ------------------------------------*/
+/*--------------------------------         æœºå™¨äººçŠ¶æ€æ£€æµ‹ç›¸å…³å‡½æ•°          ------------------------------------*/
 /**************************************************************************
 Function Description: The function clears residual motor control signals when the robot \
   remains stationary on a non-sloping surface for a certain period of time. This helps  \
@@ -2412,70 +1244,70 @@ Function Description: The function clears residual motor control signals when th
 Input Parameters: None
 Return Value: None
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºĞ¡³µÔÚ·ÇĞ±ÆÂÉÏ¾²Ö¹³¬¹ıÒ»¶¨Ê±¼ä,Çå³ıµç»ú²ĞÓàµÄ¿ØÖÆÁ¿.½µµÍ»úÆ÷ÈË¹¦ºÄÒÔ¼°½µµÍµç»úµÄÔëÒô
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šå°è½¦åœ¨éæ–œå¡ä¸Šé™æ­¢è¶…è¿‡ä¸€å®šæ—¶é—´,æ¸…é™¤ç”µæœºæ®‹ä½™çš„æ§åˆ¶é‡.é™ä½æœºå™¨äººåŠŸè€—ä»¥åŠé™ä½ç”µæœºçš„å™ªéŸ³
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 static void Robot_ParkingCheck(void)
 {
-	#define PUSH_PWM 500 //ÍÆ³µÀÛ¼ÆµÄPWMãĞÖµ,³¬³ö½«Ö´ĞĞÇå³ı
+	#define PUSH_PWM 500 //æ¨è½¦ç´¯è®¡çš„PWMé˜ˆå€¼,è¶…å‡ºå°†æ‰§è¡Œæ¸…é™¤
 	
-    //Ğ¡³µ×ËÌ¬¼òÒ×ÅĞ¶Ï
-    float y_accle = (float)(imu.accel.y/1671.84f);//YÖá¼ÓËÙ¶ÈÊµ¼ÊÖµ
-    float z_accle = (float)(imu.accel.z/1671.84f);//ZÖá¼ÓËÙ¶ÈÊµ¼ÊÖµ
+    //å°è½¦å§¿æ€ç®€æ˜“åˆ¤æ–­
+    float y_accle = (float)(imu.accel.y/1671.84f);//Yè½´åŠ é€Ÿåº¦å®é™…å€¼
+    float z_accle = (float)(imu.accel.z/1671.84f);//Zè½´åŠ é€Ÿåº¦å®é™…å€¼
     float diff;
 
-    //¼ÆËãY¡¢Z¼ÓËÙ¶ÈÈÚºÏÖµ£¬¸ÃÖµÔ½½Ó½ü9.8£¬±íÊ¾Ğ¡³µ×ËÌ¬Ô½Ë®Æ½
+    //è®¡ç®—Yã€ZåŠ é€Ÿåº¦èåˆå€¼ï¼Œè¯¥å€¼è¶Šæ¥è¿‘9.8ï¼Œè¡¨ç¤ºå°è½¦å§¿æ€è¶Šæ°´å¹³
     if( y_accle > 0 ) diff  = z_accle - y_accle;
     else diff  = z_accle + y_accle;
 	
 	if( robot.MOTOR_A.Target != 0 || robot.MOTOR_B.Target!=0 || \
 		robot.MOTOR_C.Target != 0 || robot.MOTOR_D.Target!=0)
-	{   //Ğ¡³µ±»¿ØÖÆÖĞ,ÉèÖÃµÈ´ı±êÖ¾Î».¸´Î»ÆäËû¼ì²â±äÁ¿
-		park.wait_check = 1;  //µÈ´ı¼ì²â
-		park.timecore = 0;    //¸´Î»¼ì²âÏà¹Ø±äÁ¿
+	{   //å°è½¦è¢«æ§åˆ¶ä¸­,è®¾ç½®ç­‰å¾…æ ‡å¿—ä½.å¤ä½å…¶ä»–æ£€æµ‹å˜é‡
+		park.wait_check = 1;  //ç­‰å¾…æ£€æµ‹
+		park.timecore = 0;    //å¤ä½æ£€æµ‹ç›¸å…³å˜é‡
 		park.clear_state = 0;
 		park.start_clear = 0;
 	}
 	else 
 	{
-		if( park.wait_check==1 ) //ËÙ¶È·Ç0 -> 0 ´¥·¢¼ì²â
+		if( park.wait_check==1 ) //é€Ÿåº¦é0 -> 0 è§¦å‘æ£€æµ‹
 		{
 			park.timecore++;
-			if( park.timecore >= BALANCE_TASK_RATE*5 ) //Ğ¡³µ¾²Ö¹Ê±¼ä³¬¹ı5Ãë
+			if( park.timecore >= BALANCE_TASK_RATE*5 ) //å°è½¦é™æ­¢æ—¶é—´è¶…è¿‡5ç§’
 			{
 				park.wait_check=0;
 				park.timecore = 0;
 				
-				//Èô»úÆ÷ÈË²»ÔÚĞ±ÃæÉÏ,Ôò½øÈë×¤³µÄ£Ê½,Çå¿Õµç»ú¿ØÖÆÁ¿
+				//è‹¥æœºå™¨äººä¸åœ¨æ–œé¢ä¸Š,åˆ™è¿›å…¥é©»è½¦æ¨¡å¼,æ¸…ç©ºç”µæœºæ§åˆ¶é‡
 				if( diff > 8.8f ) park.start_clear = 1 , park.clear_state = 0;
-				else  park.clear_state |= 1<<7 ; //ÔÚĞ±ÆÂÉÏ,²»¿ÉÇå³ı¿ØÖÆÁ¿.±ê¼ÇÇå³ıÒÑÍê³É
+				else  park.clear_state |= 1<<7 ; //åœ¨æ–œå¡ä¸Š,ä¸å¯æ¸…é™¤æ§åˆ¶é‡.æ ‡è®°æ¸…é™¤å·²å®Œæˆ
 			}
 		}
 	}
 	
-	//¼ì²éÊÇ·ñÒÑÍê³ÉÇå³ı.Íê³ÉÇå³ıºó½«»á¼à²âĞ¡³µÊÇ·ñ±»¶¯»ıÀÛ¿ØÖÆÁ¿(ÍÆ³µĞĞÎª)
+	//æ£€æŸ¥æ˜¯å¦å·²å®Œæˆæ¸…é™¤.å®Œæˆæ¸…é™¤åå°†ä¼šç›‘æµ‹å°è½¦æ˜¯å¦è¢«åŠ¨ç§¯ç´¯æ§åˆ¶é‡(æ¨è½¦è¡Œä¸º)
 	if( ((park.clear_state>>7)&0x01)==1  )
 	{
-		if(diff > 8.8f )//Ğ¡³µ²»ÔÚĞ±ÆÂÉÏ×÷ÎªÇ°Ìá.
+		if(diff > 8.8f )//å°è½¦ä¸åœ¨æ–œå¡ä¸Šä½œä¸ºå‰æ.
 		{
-			//³öÏÖÍÆ³µĞĞÎª
+			//å‡ºç°æ¨è½¦è¡Œä¸º
 			if( abs(robot.MOTOR_A.Output) > PUSH_PWM || abs(robot.MOTOR_B.Output) > PUSH_PWM || \
 				abs(robot.MOTOR_C.Output) > PUSH_PWM || abs(robot.MOTOR_D.Output) > PUSH_PWM)
 			{
 				park.timecore++;
-				if( park.timecore >= BALANCE_TASK_RATE*10 ) //Ğ¡³µpwmÀÛ¼ÆÊ±¼ä³¬¹ı10Ãë
+				if( park.timecore >= BALANCE_TASK_RATE*10 ) //å°è½¦pwmç´¯è®¡æ—¶é—´è¶…è¿‡10ç§’
 				{
 					park.timecore = 0;
-					//½øÈë×¤³µÄ£Ê½Çå³ı¿ØÖÆÁ¿
+					//è¿›å…¥é©»è½¦æ¨¡å¼æ¸…é™¤æ§åˆ¶é‡
 					park.start_clear = 1 , park.clear_state = 0;
 				}
 			}
 		}
 	}
 	
-	//¿ªÆô×¤³µÄ£Ê½,Ö´ĞĞÇå³ıÈÎÎñ
+	//å¼€å¯é©»è½¦æ¨¡å¼,æ‰§è¡Œæ¸…é™¤ä»»åŠ¡
 	if( park.start_clear==1 )
 	{
 		if( 1 == PI_Clear_Output(&PI_MotorA) ) park.clear_state |= 1<<0 ;
@@ -2490,11 +1322,11 @@ static void Robot_ParkingCheck(void)
 		if( 1 == PI_Clear_Output(&PI_MotorD) ) park.clear_state |= 1<<3 ;
 		else                                   park.clear_state &= ~(1<<3);
 		
-		//4¸öµç»úÍê³ÉÇå³ı
+		//4ä¸ªç”µæœºå®Œæˆæ¸…é™¤
 		if( (park.clear_state&0xff)==0x0f ) 
 		{
-			park.start_clear = 0;    //Çå³ıÈÎÎñ½áÊø
-			park.clear_state |= 1<<7;//±ê¼ÇÇå³ıÍê³É
+			park.start_clear = 0;    //æ¸…é™¤ä»»åŠ¡ç»“æŸ
+			park.clear_state |= 1<<7;//æ ‡è®°æ¸…é™¤å®Œæˆ
 		}
 	}
 }
@@ -2504,79 +1336,44 @@ Function function: Scan user buttons and perform different functions through dif
 Entry parameter: Frequency of executing scanning tasks
 Return value: None
 Author: SHEELTEC
-º¯Êı¹¦ÄÜ£ºÉ¨ÃèÓÃ»§°´¼ü,Í¨¹ı²»Í¬µÄ°´¼ü×´Ì¬Ö´ĞĞ²»Í¬µÄ¹¦ÄÜ
-Èë¿Ú²ÎÊı£ºÖ´ĞĞÉ¨ÃèµÄÈÎÎñÆµÂÊ
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šæ‰«æç”¨æˆ·æŒ‰é”®,é€šè¿‡ä¸åŒçš„æŒ‰é”®çŠ¶æ€æ‰§è¡Œä¸åŒçš„åŠŸèƒ½
+å…¥å£å‚æ•°ï¼šæ‰§è¡Œæ‰«æçš„ä»»åŠ¡é¢‘ç‡
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 static void UserKey_Scan(u16 rate)
 {
 	u8 state;
-	
-	//°å×ÓÉÏµÄÓÃ»§°´¼üÉ¨Ãè
+
+	//æ¿å­ä¸Šçš„ç”¨æˆ·æŒ‰é”®æ‰«æ
 	state = KEY_Scan(rate,0);
-	if(state==single_click) //µ¥»÷
+	if( state==double_click )//åŒå‡»é‡æ–°æ ‡å®šimuæ•°å€¼
 	{
-		charger.AllowRecharge = ! charger.AllowRecharge;
-	}
-	else if( state==double_click )//Ë«»÷ÖØĞÂ±ê¶¨imuÊıÖµ
-	{	
 		ImuData_copy(&imu.Deviation_gyro,&imu.Original_gyro);
 		ImuData_copy(&imu.Deviation_accel,&imu.Original_accel);
 	}
-	
-	else if( state==long_click ) //³¤°´
+
+	else if( state==long_click ) //é•¿æŒ‰
 	{
 		oled.page++;
 		if( oled.page > oled.MAX_PAGE ) oled.page = 1;
 	}
-	
+
 }
 
-/**************************************************************************
-Functionality: Check Automatic Recharge Station Status - Verifies the status of the automatic recharge station.
-Input Parameters: None.
-Return Value: None.
-Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º¶Ô×Ô¶¯»Ø³äÉè±¸×´Ì¬½øĞĞ¼ì²é
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
-**************************************************************************/
-static void Charger_DevCheck(void)
-{
-	//ÓÃ»§ÉèÖÃ½øÈë×Ô¶¯»Ø³ä×´Ì¬,´ËÊ±ÏÈÈ·ÈÏÏµÍ³ÉÏÊÇ·ñ´æÔÚ¸ÃÉè±¸
-	if( charger.AllowRecharge==1 )
-		if( SysVal.HardWare_charger==0 ) charger.AllowRecharge=0,Find_Charging_HardWare();//²»´æÔÚ³äµç×°±¸Ó²¼ş,Í¨¹ı·ÃÎÊÌØÕ÷Âë½øĞĞ¶ş´ÎÈ·ÈÏ
-	
-	//ÏµÍ³ÉÏ´æÔÚ¸ÃÉè±¸Ê±,¶Ô×Ô¶¯»Ø³ä½øĞĞÓ²¼şÀëÏß¼à²â
-	if(SysVal.HardWare_charger==1)
-	{   //»Ø³ä×°±¸Ó²¼şÀëÏß,Ö´ĞĞ»Ø³äÉè±¸Èí¼ş¸´Î»
-		charger.OutLine_Check++;
-		if( charger.OutLine_Check>RATE_100_HZ) auto_recharge_reset() , charger.OutLine_Check=BALANCE_TASK_RATE+1;//Á¥ÊôÄÄ¸öÈÎÎñ,¾ÍÓÃÄÄ¸öÈÎÎñÆµÂÊ,ÕâÀïÊÇ¡°BALANCE_TASK_RATE¡±
-	}
-	
-	//º½Ä£Ò£¿ØĞÅºÅ¼ì²â
-	remoter.check_count++;//´Ë±äÁ¿ÔÚº½Ä£ÓÍÃÅ½ÓÊÕÊ±»á±»ÖÃ0
-	if( remoter.check_count > Filter_Threshold )//³¬¹ıÉè¶¨µÄãĞÖµ,ËµÃ÷ÊÇÎŞº½Ä£ĞÅºÅ»òÕßÊÇ¸ÉÈÅĞÅºÅ
-	{
-		remoter.check_count = Filter_Threshold + 1;
-		remoter.ch1 = 1500;remoter.ch2=1500;remoter.ch3=1000;remoter.ch4=1500;//¸ÉÈÅ»òÎŞĞÅºÅ,ËùÓĞÍ¨µÀÊıÖµ¸´Î»
-	}
-}
 
 /*-------------------------------- Function auxiliary type related functions ------------------------------------*/
-/*--------------------------------         ¹¦ÄÜ¸¨ÖúÀàÏà¹Øº¯Êı          ------------------------------------*/
+/*--------------------------------         åŠŸèƒ½è¾…åŠ©ç±»ç›¸å…³å‡½æ•°          ------------------------------------*/
 
 /**************************************************************************
 Function function: Save the steering variables of the Ackermann model's servo to Flash
 Entry parameter: Flag bit for executing save
 Return value: 1: Successfully saved 0: Not saved or failed to save
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º±£´æ°¢¿ËÂü³µĞÍµÄ¶æ»ú×ªÏò±äÁ¿µ½Flash
-Èë¿Ú²ÎÊı£ºÊÇ·ñÖ´ĞĞ±£´æµÄ±êÖ¾Î»
-·µ»Ø  Öµ£º1:±£´æ³É¹¦ 0:²»´æÔÚ±£´æĞèÇó >1:flashĞ´Èë´íÎó
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šä¿å­˜é˜¿å…‹æ›¼è½¦å‹çš„èˆµæœºè½¬å‘å˜é‡åˆ°Flash
+å…¥å£å‚æ•°ï¼šæ˜¯å¦æ‰§è¡Œä¿å­˜çš„æ ‡å¿—ä½
+è¿”å›  å€¼ï¼š1:ä¿å­˜æˆåŠŸ 0:ä¸å­˜åœ¨ä¿å­˜éœ€æ±‚ >1:flashå†™å…¥é”™è¯¯
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 static uint8_t FlashParam_Save(uint8_t *flag)
 {
@@ -2586,7 +1383,7 @@ static uint8_t FlashParam_Save(uint8_t *flag)
 	{
 		*flag = 0;
 		check = 1;
-		taskENTER_CRITICAL();//²Ù×÷FLash½øÈëÁÙ½ç£¬±£Ö¤Êı¾İ°²È«
+		taskENTER_CRITICAL();//æ“ä½œFLashè¿›å…¥ä¸´ç•Œï¼Œä¿è¯æ•°æ®å®‰å…¨
 		int buf[7]={0};
 		buf[0] = Akm_Servo.Min;
 		buf[1] = Akm_Servo.Mid;
@@ -2597,8 +1394,8 @@ static uint8_t FlashParam_Save(uint8_t *flag)
 		buf[6] = robot.V_KI;
 		check += Write_Flash( (u32*)buf , 7);
 		
-		taskEXIT_CRITICAL();//ÍË³öÁÙ½ç
-		//ÈôÈ«²¿Ğ´Èë³É¹¦,check==1
+		taskEXIT_CRITICAL();//é€€å‡ºä¸´ç•Œ
+		//è‹¥å…¨éƒ¨å†™å…¥æˆåŠŸ,check==1
 	}
 
 	return check;
@@ -2607,32 +1404,32 @@ static uint8_t FlashParam_Save(uint8_t *flag)
 void FlashParam_Read(void)
 {
 	int read;
-	read = Read_Flash(0);//¶ÁÈ¡ÏÂ±êÎª0µÄÊı¾İ
+	read = Read_Flash(0);//è¯»å–ä¸‹æ ‡ä¸º0çš„æ•°æ®
 	if( read!=0xffffffff ) Akm_Servo.Min = read;
 	
-	read = Read_Flash(1);//¶ÁÈ¡ÏÂ±êÎª1µÄÊı¾İ
+	read = Read_Flash(1);//è¯»å–ä¸‹æ ‡ä¸º1çš„æ•°æ®
 	if( read!=0xffffffff ) Akm_Servo.Mid = read;
 	
-	read = Read_Flash(2);//¶ÁÈ¡ÏÂ±êÎª2µÄÊı¾İ
+	read = Read_Flash(2);//è¯»å–ä¸‹æ ‡ä¸º2çš„æ•°æ®
 	if( read!=0xffffffff ) Akm_Servo.Max = read;
 	
-	read = Read_Flash(3); //¾ÀÆ«ÏµÊı
+	read = Read_Flash(3); //çº åç³»æ•°
 	if( read!=0xffffffff ) robot_control.LineDiffParam = read;
 	
 	
-	read = Read_Flash(4);//ËÙ¶È
+	read = Read_Flash(4);//é€Ÿåº¦
 	if( read!=0xffffffff ) robot_control.rc_speed = *((float*)&read);
-	if( robot_control.rc_speed < 0 || robot_control.rc_speed > 10000 )//Òì³£ËÙ¶ÈÊı¾İ¹ıÂË
+	if( robot_control.rc_speed < 0 || robot_control.rc_speed > 10000 )//å¼‚å¸¸é€Ÿåº¦æ•°æ®è¿‡æ»¤
 		robot_control.rc_speed = 500;
 	
 	
-	read = Read_Flash(5);//KP²ÎÊı
+	read = Read_Flash(5);//KPå‚æ•°
 	if( read!=0xffffffff ) 
 	{
 		Set_Robot_PI_Param(read,-1);
 	}
 	
-	read = Read_Flash(6);//KI²ÎÊı
+	read = Read_Flash(6);//KIå‚æ•°
 	if( read!=0xffffffff ) 
 	{
 		Set_Robot_PI_Param(-1,read);
@@ -2647,11 +1444,11 @@ void FlashParam_Read(void)
 //	{
 //		*flag = 0;
 //		check = 1;
-//		taskENTER_CRITICAL();//²Ù×÷FLash½øÈëÁÙ½ç£¬±£Ö¤Êı¾İ°²È«
+//		taskENTER_CRITICAL();//æ“ä½œFLashè¿›å…¥ä¸´ç•Œï¼Œä¿è¯æ•°æ®å®‰å…¨
 //		int buf[4]={Akm_Servo.Min,Akm_Servo.Mid,Akm_Servo.Max,robot_control.LineDiffParam};
 //		check += Write_Flash( (u32*)buf , 4);
-//		taskEXIT_CRITICAL();//ÍË³öÁÙ½ç
-//		//ÈôÈ«²¿Ğ´Èë³É¹¦,check==1
+//		taskEXIT_CRITICAL();//é€€å‡ºä¸´ç•Œ
+//		//è‹¥å…¨éƒ¨å†™å…¥æˆåŠŸ,check==1
 //	}
 
 //	return check;
@@ -2660,16 +1457,16 @@ void FlashParam_Read(void)
 //void Akm_ReadServo_Param(void)
 //{
 //	int read;
-//	read = Read_Flash(0);//¶ÁÈ¡ÏÂ±êÎª0µÄÊı¾İ
+//	read = Read_Flash(0);//è¯»å–ä¸‹æ ‡ä¸º0çš„æ•°æ®
 //	if( read!=0xffffffff ) Akm_Servo.Min = read;
 //	
-//	read = Read_Flash(1);//¶ÁÈ¡ÏÂ±êÎª1µÄÊı¾İ
+//	read = Read_Flash(1);//è¯»å–ä¸‹æ ‡ä¸º1çš„æ•°æ®
 //	if( read!=0xffffffff ) Akm_Servo.Mid = read;
 //	
-//	read = Read_Flash(2);//¶ÁÈ¡ÏÂ±êÎª2µÄÊı¾İ
+//	read = Read_Flash(2);//è¯»å–ä¸‹æ ‡ä¸º2çš„æ•°æ®
 //	if( read!=0xffffffff ) Akm_Servo.Max = read;
 //	
-//	read = Read_Flash(3); //¾ÀÆ«ÏµÊı
+//	read = Read_Flash(3); //çº åç³»æ•°
 //	if( read!=0xffffffff ) robot_control.LineDiffParam = read;
 //	
 //}
@@ -2679,10 +1476,10 @@ Functionality: Velocity Smoothing Function - Gradually adjusts the speed to the 
 Input Parameters: Current speed, target speed, smoothing step value.
 Return Value: Smoothed speed.
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºËÙ¶ÈÆ½»¬º¯Êı,ÈÃËÙ¶ÈÒÔÉèÖÃµÄ²½½øÖµµ½´ïÄ¿±êËÙ¶È
-Èë¿Ú²ÎÊı£ºµ±Ç°ËÙ¶È¡¢Ä¿±êËÙ¶È¡¢Æ½»¬µÄ²½½øÖµ
-·µ»Ø  Öµ£ºÆ½»¬ºóµÄËÙ¶È
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šé€Ÿåº¦å¹³æ»‘å‡½æ•°,è®©é€Ÿåº¦ä»¥è®¾ç½®çš„æ­¥è¿›å€¼åˆ°è¾¾ç›®æ ‡é€Ÿåº¦
+å…¥å£å‚æ•°ï¼šå½“å‰é€Ÿåº¦ã€ç›®æ ‡é€Ÿåº¦ã€å¹³æ»‘çš„æ­¥è¿›å€¼
+è¿”å›  å€¼ï¼šå¹³æ»‘åçš„é€Ÿåº¦
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 static float Vel_SmoothControl(float now_speed,float targetSpeed,float step)
 {
@@ -2704,9 +1501,9 @@ static float Vel_SmoothControl(float now_speed,float targetSpeed,float step)
 Function: Limiting function
 Input   : Value
 Output  : none
-º¯Êı¹¦ÄÜ£ºÏŞ·ùº¯Êı
-Èë¿Ú²ÎÊı£º·ùÖµ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šé™å¹…å‡½æ•°
+å…¥å£å‚æ•°ï¼šå¹…å€¼
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 float target_limit_float(float insert,float low,float high)
 {
@@ -2728,45 +1525,14 @@ static int target_limit_int(int insert,int low,int high)
         return insert;
 }
 
-/**************************************************************************
-Function: Data sliding filtering
-Input   : data
-Output  : Filtered data
-º¯Êı¹¦ÄÜ£º°¢¿ËÂü»¬¹ìÊı¾İ ÂË²¨
-Èë¿Ú²ÎÊı£ºĞÂ²É¼¯µÄÊı¾İ
-·µ»Ø  Öµ£ºÂË²¨ºóµÄÊı¾İ
-×÷    Õß£ºWHEELTEC
-**************************************************************************/
-#if defined AKM_CAR
-#define FILTERING_TIMES 20
-static int Slide_Mean_Filter(int data)
-{
-    u8 i;
-    s32 Sum_Speed = 0;
-    s16 Filter_Speed;
-    static  s16 Speed_Buf[FILTERING_TIMES]= {0};
-    for(i = 1 ; i<FILTERING_TIMES; i++)
-    {
-        Speed_Buf[i - 1] = Speed_Buf[i];
-    }
-    Speed_Buf[FILTERING_TIMES - 1] =data;
-
-    for(i = 0 ; i < FILTERING_TIMES; i++)
-    {
-        Sum_Speed += Speed_Buf[i];
-    }
-    Filter_Speed = (s16)(Sum_Speed / FILTERING_TIMES);
-    return Filter_Speed;
-}
-#endif
 
 ///**************************************************************************
 //Function: Smoothing the front wheel steering speed to prevent excessive steering gear current
 //Input   : Current servo PWM, Target servo PWM, Smooth value
 //Output  : none
-//º¯Êı¹¦ÄÜ£º¶ÔÇ°ÂÖ×ªÏòËÙ¶È×öÆ½»¬´¦Àí£¬·ÀÖ¹¶æ»úµçÁ÷¹ı´ó
-//Èë¿Ú²ÎÊı£ºµ±Ç°¶æ»ú¿ØÖÆPWMÖµ Ä¿±ê¶æ»ú¿ØÖÆPWMÖµ Æ½»¬Öµ
-//·µ»Ø  Öµ£ºÎŞ
+//å‡½æ•°åŠŸèƒ½ï¼šå¯¹å‰è½®è½¬å‘é€Ÿåº¦åšå¹³æ»‘å¤„ç†ï¼Œé˜²æ­¢èˆµæœºç”µæµè¿‡å¤§
+//å…¥å£å‚æ•°ï¼šå½“å‰èˆµæœºæ§åˆ¶PWMå€¼ ç›®æ ‡èˆµæœºæ§åˆ¶PWMå€¼ å¹³æ»‘å€¼
+//è¿”å›  å€¼ï¼šæ— 
 //**************************************************************************/
 //int Smooth_steering(int currentPWM, int targetPWM, float step)
 //{
@@ -2784,10 +1550,10 @@ Functionality: Radian to Degree Conversion - Converts a given radian value to it
 Input Parameters: Radian value.
 Return Value: Degree value corresponding to the input radian.
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º»¡¶È×ª½Ç¶È
-Èë¿Ú²ÎÊı£º»¡¶È
-·µ»Ø  Öµ£ºÊäÈë»¡¶È¶ÔÓ¦µÄ½Ç¶È
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šå¼§åº¦è½¬è§’åº¦
+å…¥å£å‚æ•°ï¼šå¼§åº¦
+è¿”å›  å€¼ï¼šè¾“å…¥å¼§åº¦å¯¹åº”çš„è§’åº¦
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 float rad_to_angle(const float rad)
 {
@@ -2799,10 +1565,10 @@ Functionality: Degree to Radian Conversion - Converts a given degree value to it
 Input Parameters: Degree value.
 Return Value: Radian value corresponding to the input degree.
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£º½Ç¶È×ª»¡¶È
-Èë¿Ú²ÎÊı£º½Ç¶È
-·µ»Ø  Öµ£ºÊäÈë½Ç¶È¶ÔÓ¦µÄ»¡¶È
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šè§’åº¦è½¬å¼§åº¦
+å…¥å£å‚æ•°ï¼šè§’åº¦
+è¿”å›  å€¼ï¼šè¾“å…¥è§’åº¦å¯¹åº”çš„å¼§åº¦
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 float angle_to_rad(const float angle)
 {
@@ -2811,17 +1577,17 @@ float angle_to_rad(const float angle)
 
 
 /*-------------------------------- Software initialization related functions ------------------------------------*/
-/*--------------------------------        Èí¼ş³õÊ¼»¯Ïà¹Øº¯Êı          ------------------------------------*/
+/*--------------------------------        è½¯ä»¶åˆå§‹åŒ–ç›¸å…³å‡½æ•°          ------------------------------------*/
 /**************************************************************************
 Functionality: Incremental PI Controller Initialization - Initializes an incremental PI 
                (Proportional-Integral) controller with specified parameters.
 Input Parameters: PI controller, kp value (proportional gain), ki value (integral gain).
 Return Value: None.
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºÔöÁ¿Ê½PI¿ØÖÆÆ÷³õÊ¼»¯
-Èë¿Ú²ÎÊı£ºPI¿ØÖÆÆ÷¡¢kpÖµ¡¢kiÖµ
-·µ»Ø  Öµ£ºÎŞ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šå¢é‡å¼PIæ§åˆ¶å™¨åˆå§‹åŒ–
+å…¥å£å‚æ•°ï¼šPIæ§åˆ¶å™¨ã€kpå€¼ã€kiå€¼
+è¿”å›  å€¼ï¼šæ— 
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 void PI_Controller_Init(PI_CONTROLLER* p,int kp,int ki)
 {
@@ -2832,23 +1598,17 @@ void PI_Controller_Init(PI_CONTROLLER* p,int kp,int ki)
 	p->ki = ki;
 }
 
-//»úÆ÷ÈË¿ØÖÆÏà¹Ø±äÁ¿³õÊ¼»¯
+//æœºå™¨äººæ§åˆ¶ç›¸å…³å˜é‡åˆå§‹åŒ–
 void ROBOT_CONTROL_t_Init(ROBOT_CONTROL_t* p)
 {
-	//¿Éµ÷²ÎÊı
-	p->limt_max_speed = 3.5f;    //»úÆ÷ÈËÏŞÖÆ×î´óµÄÔË¶¯ËÙ¶È m/s
-	p->rc_speed = 500;           //»úÆ÷ÈËÒ£¿ØËÙ¶È»ù×¼,µ¥Î» mm/s
-	p->smooth_MotorStep = 0.02f; //»úÆ÷ÈËµç»úËÙ¶ÈÆ½»¬²½½øÖµ
-	p->smooth_ServoStep = 20;    //»úÆ÷ÈË¶æ»úËÙ¶ÈÆ½»¬²½½øÖµ
-	p->SoftWare_Stop = 0;        //»úÆ÷ÈËÈí¼şÊ§ÄÜÎ»
+	//å¯è°ƒå‚æ•°
+	p->limt_max_speed = 3.5f;    //æœºå™¨äººé™åˆ¶æœ€å¤§çš„è¿åŠ¨é€Ÿåº¦ m/s
+	p->rc_speed = 500;           //æœºå™¨äººé¥æ§é€Ÿåº¦åŸºå‡†,å•ä½ mm/s
+	p->smooth_MotorStep = 0.02f; //æœºå™¨äººç”µæœºé€Ÿåº¦å¹³æ»‘æ­¥è¿›å€¼
+	p->smooth_ServoStep = 20;    //æœºå™¨äººèˆµæœºé€Ÿåº¦å¹³æ»‘æ­¥è¿›å€¼
+	p->SoftWare_Stop = 0;        //æœºå™¨äººè½¯ä»¶å¤±èƒ½ä½
 	
-	//¸ßËÙ°¢¿ËÂü³µĞÍ,½«×î´óÔË¶¯ËÙ¶ÈÏŞÖÆÉèÖÃÎª 6 m/s
-	#if defined AKM_CAR
-		if(robot.type==9) p->limt_max_speed = 6.0f;
-		p->ServoLow_flag = 0;//µÍËÙ¶æ»úÄ£Ê½Ä¬ÈÏ¹Ø±Õ
-	#endif
-	
-	//Ö»¶Á²ÎÊı,±£³ÖÄ¬ÈÏ
+	//åªè¯»å‚æ•°,ä¿æŒé»˜è®¤
 	p->Vx = 0;
 	p->Vy = 0;
 	p->Vz = 0;
@@ -2859,11 +1619,11 @@ void ROBOT_CONTROL_t_Init(ROBOT_CONTROL_t* p)
 	p->ControlMode = 1;
 	p->FlagStop = 0;
 	
-	//¾ÀÆ«ÏµÊı
+	//çº åç³»æ•°
 	p->LineDiffParam = 50;
 }
 
-//×Ô¼ì±äÁ¿³õÊ¼»¯
+//è‡ªæ£€å˜é‡åˆå§‹åŒ–
 static void ROBOT_SELFCHECK_t_Init(ROBOT_SELFCHECK_t* p)
 {
 	p->check_a = 0;
@@ -2875,21 +1635,21 @@ static void ROBOT_SELFCHECK_t_Init(ROBOT_SELFCHECK_t* p)
 	p->DeepCheck = 0;
 }
 
-//¼ì²éÄ³¸ö±äÁ¿ÊÇ·ñ·¢Éú¸Ä±ä
-//Èë¿Ú²ÎÊı:Ö´ĞĞ¸Ãº¯ÊıµÄÆµÂÊ¡¢ĞèÒª¼ì²éµÄÊı¾İ¡¢±ä»¯·ù¶È³¬¹ı¶àÉÙ±íÊ¾±ä»¯
-//·µ»ØÖµ£º1·¢ÉúÁË¸Ä±ä 0:Î´¸Ä±ä
+//æ£€æŸ¥æŸä¸ªå˜é‡æ˜¯å¦å‘ç”Ÿæ”¹å˜
+//å…¥å£å‚æ•°:æ‰§è¡Œè¯¥å‡½æ•°çš„é¢‘ç‡ã€éœ€è¦æ£€æŸ¥çš„æ•°æ®ã€å˜åŒ–å¹…åº¦è¶…è¿‡å¤šå°‘è¡¨ç¤ºå˜åŒ–
+//è¿”å›å€¼ï¼š1å‘ç”Ÿäº†æ”¹å˜ 0:æœªæ”¹å˜
 uint8_t ValChangeCheck(const uint16_t rate,const short checkval,const uint8_t changeEva)
 {
 	static uint16_t timecore;
 	static short lastval;
 	
-	const uint8_t DivisionFac = 2;     //·ÖÆµÏµÊı
-	if( rate < DivisionFac ) return 0;//ÆµÂÊ¹ıĞ¡£¬ÎŞ·¨¼ì²â
+	const uint8_t DivisionFac = 2;     //åˆ†é¢‘ç³»æ•°
+	if( rate < DivisionFac ) return 0;//é¢‘ç‡è¿‡å°ï¼Œæ— æ³•æ£€æµ‹
 	
-	uint8_t changeflag = 0;//±íÊ¾ÊÇ·ñÓĞ¸Ä±ä
+	uint8_t changeflag = 0;//è¡¨ç¤ºæ˜¯å¦æœ‰æ”¹å˜
 
 	timecore++;
-	if( timecore >= rate/DivisionFac ) // 500ms¼ì²â1´Î
+	if( timecore >= rate/DivisionFac ) // 500msæ£€æµ‹1æ¬¡
 	{
 		timecore = 0;
 		if( abs( lastval - checkval ) > changeEva )  changeflag = 1;
@@ -2903,35 +1663,35 @@ uint8_t ValChangeCheck(const uint16_t rate,const short checkval,const uint8_t ch
 	return changeflag ;
 }
 
-//Éî¶È×Ô¼ì³ÌĞò,ĞèÒª°ÑĞ¡³µ¼ÜÆğÀ´ºóÔËĞĞ¼ì²é
+//æ·±åº¦è‡ªæ£€ç¨‹åº,éœ€è¦æŠŠå°è½¦æ¶èµ·æ¥åè¿è¡Œæ£€æŸ¥
 static uint8_t Deep_SelfCheck( u16 RATE )
 {	
 	static uint32_t timecore = 0;
 	static uint8_t errflag = 0;
 	uint8_t check_ready = 0;
 	
-	//²âÁ¿·½·¨£º¸ø¶¨µ¥¸öÂÖ×ÓµÄ±àÂëÆ÷Ä¿±êÖµ,¹Û²ì¸÷¸öÊı¾İÇé¿ö.
+	//æµ‹é‡æ–¹æ³•ï¼šç»™å®šå•ä¸ªè½®å­çš„ç¼–ç å™¨ç›®æ ‡å€¼,è§‚å¯Ÿå„ä¸ªæ•°æ®æƒ…å†µ.
 	
 	/*
-	±¨´íÓÅÏÈ¼¶£º
-	1.³öÏÖ¸ºÊı,ËµÃ÷ÊÇ³µĞÍÑ¡´í,»òÕß±àÂëÆ÷ABÏà½Ó·´»òÕßÊÇµç»úÊä³ö¶ËµÄÕı¸º½Ó·´
-	2.ÆäËû±àÂëÆ÷ÓĞÖµ,ËµÃ÷ÊÇµç»úÇı¶¯Êä³ö¿Ú½Ó´í,»òÕßÊÇ±àÂëÆ÷½Ó¿Ú½Ó´í.
-	3.±àÂëÆ÷Ã»ÓĞÖµ+PWM¹ı´ó,ÔòÊÇ±àÂëÆ÷Î´½Ó»òÕßÊÇµç»ú½Ó¿ÚÎ´½Ó
+	æŠ¥é”™ä¼˜å…ˆçº§ï¼š
+	1.å‡ºç°è´Ÿæ•°,è¯´æ˜æ˜¯è½¦å‹é€‰é”™,æˆ–è€…ç¼–ç å™¨ABç›¸æ¥åæˆ–è€…æ˜¯ç”µæœºè¾“å‡ºç«¯çš„æ­£è´Ÿæ¥å
+	2.å…¶ä»–ç¼–ç å™¨æœ‰å€¼,è¯´æ˜æ˜¯ç”µæœºé©±åŠ¨è¾“å‡ºå£æ¥é”™,æˆ–è€…æ˜¯ç¼–ç å™¨æ¥å£æ¥é”™.
+	3.ç¼–ç å™¨æ²¡æœ‰å€¼+PWMè¿‡å¤§,åˆ™æ˜¯ç¼–ç å™¨æœªæ¥æˆ–è€…æ˜¯ç”µæœºæ¥å£æœªæ¥
 	*/
 
 	timecore++;
 
 	if( timecore==1 )
 	{
-		if( data_TaskHandle!=NULL ) vTaskSuspend(data_TaskHandle);//ÔÚÉî¶È×Ô¼ì³ÌĞòÔËĞĞÊ±,¹ÒÆğÊı¾İ·¢ËÍÈÎÎñ(¸ÃÈÎÎñÕ¼ÓÃ´®¿Ú1),ÒÔÃâ×ÊÔ´³åÍ»
-		any_printf(USART1,"\r\nĞ¡³µ½øÈëÉî¶È×Ô¼ìÄ£Ê½,µç»úµÄ×ª¶¯Ë³ĞòÎªA¡¢B¡¢C¡¢D.Çë¹Û²ì×ª¶¯Çé¿öÓë±¨´íÈÕÖ¾.\r\n");
-		Buzzer_AddTask(1,20);//·äÃùÆ÷ÌáÊ¾±íÊ¾ÒÑ½øÈëÉî¶È×Ô¼ìÄ£Ê½
+		if( data_TaskHandle!=NULL ) vTaskSuspend(data_TaskHandle);//åœ¨æ·±åº¦è‡ªæ£€ç¨‹åºè¿è¡Œæ—¶,æŒ‚èµ·æ•°æ®å‘é€ä»»åŠ¡(è¯¥ä»»åŠ¡å ç”¨ä¸²å£1),ä»¥å…èµ„æºå†²çª
+		any_printf(USART1,"\r\nå°è½¦è¿›å…¥æ·±åº¦è‡ªæ£€æ¨¡å¼,ç”µæœºçš„è½¬åŠ¨é¡ºåºä¸ºAã€Bã€Cã€D.è¯·è§‚å¯Ÿè½¬åŠ¨æƒ…å†µä¸æŠ¥é”™æ—¥å¿—.\r\n");
+		Buzzer_AddTask(1,20);//èœ‚é¸£å™¨æç¤ºè¡¨ç¤ºå·²è¿›å…¥æ·±åº¦è‡ªæ£€æ¨¡å¼
 	}
 	
-	//µÚ0~1ÃëÇ°¸ø¶¨AÂÖËÙ¶È
+	//ç¬¬0~1ç§’å‰ç»™å®šAè½®é€Ÿåº¦
 	if( timecore<RATE*2)
 	{
-		//Ö±½ÓÖ¸¶¨µç»úµÄÄ¿±êÖµ²¢ÔÊĞíÏìÓ¦
+		//ç›´æ¥æŒ‡å®šç”µæœºçš„ç›®æ ‡å€¼å¹¶å…è®¸å“åº”
 		robot.MOTOR_A.Target = 0.5f;
 		robot.MOTOR_B.Target = 0.0f;
 		robot.MOTOR_C.Target = 0.0f;
@@ -2939,115 +1699,115 @@ static uint8_t Deep_SelfCheck( u16 RATE )
 		ResponseControl();
 		PWMB = 0;PWMC = 0;PWMD = 0;
 	}
-	else if( timecore==RATE*2 ) //¼ì²éAÂÖÊÇ·ñ´æÔÚÒì³£
+	else if( timecore==RATE*2 ) //æ£€æŸ¥Aè½®æ˜¯å¦å­˜åœ¨å¼‚å¸¸
 	{
-		any_printf(USART1,"================= µç»úA ================\r\n");
+		any_printf(USART1,"================= ç”µæœºA ================\r\n");
 		
-		//¿ªÊ¼¼ì²éÊı¾İ
+		//å¼€å§‹æ£€æŸ¥æ•°æ®
 		if( robot.MOTOR_A.Encoder > 0.4f && robot.MOTOR_A.Encoder < 0.6f )
 		{
-			any_printf(USART1,"µç»úAÕı³£.\r\n");
-			//Õı³£Çé¿ö
-			//AÂÖÕı³£
+			any_printf(USART1,"ç”µæœºAæ­£å¸¸.\r\n");
+			//æ­£å¸¸æƒ…å†µ
+			//Aè½®æ­£å¸¸
 		}
 		else
 		{
-			errflag = 1; //³öÏÖ´íÎó
+			errflag = 1; //å‡ºç°é”™è¯¯
 			
-			//°´±¨´íÓÅÏÈ¼¶¼ì²é´íÎóÇé¿ö
+			//æŒ‰æŠ¥é”™ä¼˜å…ˆçº§æ£€æŸ¥é”™è¯¯æƒ…å†µ
 			if( robot.MOTOR_A.Encoder < - 0.2f ) 
 			{
-				any_printf(USART1,"¼ì²âµ½Aµç»ú±àÂëÆ÷¼«ĞÔ´íÎó.\r\n");
-				any_printf(USART1,"Çë¼ì²é£º\r\n1.³µĞÍÑ¡ÔñÊÇ·ñÕıÈ·\r\n2.µç»úAµÄÕı¸º¼«ÊÇ·ñ´æÔÚÏßĞò´íÎó\r\n3.µç»úAµÄ±àÂëÆ÷ABÏàÏßĞòÊÇ·ñ´íÎó\r\n");
-				//¶ÔÓ¦½Ó¿Ú³öÏÖ¸ºÖµ,Çë¼ì²é£º1.³µĞÍÊÇ·ñÕıÈ· 2.µç»úµÄÕı¸º¼¶ÊÇ·ñ·´½Ó 3.±àÂëÆ÷ABÏàµÄÏßĞòÊÇ·ñÕıÈ·
+				any_printf(USART1,"æ£€æµ‹åˆ°Aç”µæœºç¼–ç å™¨ææ€§é”™è¯¯.\r\n");
+				any_printf(USART1,"è¯·æ£€æŸ¥ï¼š\r\n1.è½¦å‹é€‰æ‹©æ˜¯å¦æ­£ç¡®\r\n2.ç”µæœºAçš„æ­£è´Ÿææ˜¯å¦å­˜åœ¨çº¿åºé”™è¯¯\r\n3.ç”µæœºAçš„ç¼–ç å™¨ABç›¸çº¿åºæ˜¯å¦é”™è¯¯\r\n");
+				//å¯¹åº”æ¥å£å‡ºç°è´Ÿå€¼,è¯·æ£€æŸ¥ï¼š1.è½¦å‹æ˜¯å¦æ­£ç¡® 2.ç”µæœºçš„æ­£è´Ÿçº§æ˜¯å¦åæ¥ 3.ç¼–ç å™¨ABç›¸çš„çº¿åºæ˜¯å¦æ­£ç¡®
 			}
 			else if( fabs(robot.MOTOR_B.Encoder) > 0.2f ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úAÊ±,¼ì²âµ½±àÂëÆ÷½Ó¿ÚBµÄĞÅºÅ.\r\n×Ô¼ìÊ±µç»úAÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚA¡¢BÊÇ·ñ´æÔÚµ÷»»\r\n·ñ: 1.¼ì²éÇı¶¯Æ÷µÄA¡¢B½Ó¿ÚÊÇ·ñ´æÔÚµ÷»»\r\n");
-				//±àÂëÆ÷BÓĞÖµ,Çë¼ì²é£º1.±àÂëÆ÷½Ó¿ÚAÓë½Ó¿ÚB½ÓÏßÊÇ·ñµ÷»»ÁË 2.Çı¶¯Æ÷µÄA¡¢B½Ó¿ÚÊÇ·ñ´æÔÚµ÷»»
+				any_printf(USART1,"é©±åŠ¨ç”µæœºAæ—¶,æ£€æµ‹åˆ°ç¼–ç å™¨æ¥å£Bçš„ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºAæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Aã€Bæ˜¯å¦å­˜åœ¨è°ƒæ¢\r\nå¦: 1.æ£€æŸ¥é©±åŠ¨å™¨çš„Aã€Bæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢\r\n");
+				//ç¼–ç å™¨Bæœ‰å€¼,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨æ¥å£Aä¸æ¥å£Bæ¥çº¿æ˜¯å¦è°ƒæ¢äº† 2.é©±åŠ¨å™¨çš„Aã€Bæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢
 			}
 			else if( fabs(robot.MOTOR_C.Encoder) > 0.2f ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úAÊ±,¼ì²âµ½±àÂëÆ÷½Ó¿ÚCµÄĞÅºÅ.\r\n×Ô¼ìÊ±µç»úAÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚA¡¢CÊÇ·ñ´æÔÚµ÷»»\r\n·ñ: 1.¼ì²éÇı¶¯Æ÷µÄA¡¢C½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 2.¼ì²é°å×ÓÓÒÏÂ½ÇµÄÁ½¸öÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»\r\n");
-				//±àÂëÆ÷CÓĞÖµ,Çë¼ì²é£º1.±àÂëÆ÷AÓëC½Ó¿Ú½ÓÏßÊÇ·ñµ÷»»ÁË 2.Çı¶¯Æ÷A¡¢C½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 3.°å×ÓµÄÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»
+				any_printf(USART1,"é©±åŠ¨ç”µæœºAæ—¶,æ£€æµ‹åˆ°ç¼–ç å™¨æ¥å£Cçš„ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºAæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Aã€Cæ˜¯å¦å­˜åœ¨è°ƒæ¢\r\nå¦: 1.æ£€æŸ¥é©±åŠ¨å™¨çš„Aã€Cæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 2.æ£€æŸ¥æ¿å­å³ä¸‹è§’çš„ä¸¤ä¸ªç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢\r\n");
+				//ç¼–ç å™¨Cæœ‰å€¼,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨Aä¸Cæ¥å£æ¥çº¿æ˜¯å¦è°ƒæ¢äº† 2.é©±åŠ¨å™¨Aã€Cæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 3.æ¿å­çš„ç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢
 			}
 			else if( fabs(robot.MOTOR_D.Encoder) > 0.2f ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úAÊ±,¼ì²âµ½±àÂëÆ÷½Ó¿ÚDµÄĞÅºÅ.\r\n×Ô¼ìÊ±µç»úAÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚA¡¢DÊÇ·ñ´æÔÚµ÷»»\r\n·ñ: 1.¼ì²éÇı¶¯Æ÷µÄA¡¢D½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 2.¼ì²é°å×ÓÓÒÏÂ½ÇµÄÁ½¸öÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»\r\n");
-				//±àÂëÆ÷DÓĞÖµ,Çë¼ì²é£º1.±àÂëÆ÷AÓëD½Ó¿Ú½ÓÏßÊÇ·ñµ÷»»ÁË 2.Çı¶¯Æ÷A¡¢D½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 3.°å×ÓµÄÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»
+				any_printf(USART1,"é©±åŠ¨ç”µæœºAæ—¶,æ£€æµ‹åˆ°ç¼–ç å™¨æ¥å£Dçš„ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºAæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Aã€Dæ˜¯å¦å­˜åœ¨è°ƒæ¢\r\nå¦: 1.æ£€æŸ¥é©±åŠ¨å™¨çš„Aã€Dæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 2.æ£€æŸ¥æ¿å­å³ä¸‹è§’çš„ä¸¤ä¸ªç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢\r\n");
+				//ç¼–ç å™¨Dæœ‰å€¼,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨Aä¸Dæ¥å£æ¥çº¿æ˜¯å¦è°ƒæ¢äº† 2.é©±åŠ¨å™¨Aã€Dæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 3.æ¿å­çš„ç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢
 			}
 			else if( fabs(robot.MOTOR_A.Encoder) < 0.05f && PI_MotorA.Output > 5000 ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úAÊ±,Î´¼ì²âµ½±àÂëÆ÷ĞÅºÅ.\r\n×Ô¼ìÊ±µç»úAÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚAÊÇ·ñ´æÔÚËÉ¶¯»òÎ´½Ó\r\n·ñ: 1.¼ì²éµç»úAµÄµçÔ´ÏßÊÇ·ñ´æÔÚËÉ¶¯»òÎ´½Ó 2.¼ì²é°å×ÓÓÒÏÂ½Ç×ó±ßµÄÅ£½Ç×ùÊÇ·ñËÉ¶¯»òÎ´½Ó\r\n");
-				//±àÂëÆ÷Ã»ÓĞÖµ,¶ÔÓ¦½Ó¿ÚPWMÖµ½Ï´ó,Çë¼ì²é£º1.±àÂëÆ÷½Ó¿ÚÊÇ·ñËÉ¶¯»òÎ´½Ó 2.µç»úÕı¸º¼«½ÓÍ·ÊÇ·ñËÉ¶¯»òÕßÎ´½Ó
+				any_printf(USART1,"é©±åŠ¨ç”µæœºAæ—¶,æœªæ£€æµ‹åˆ°ç¼–ç å™¨ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºAæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Aæ˜¯å¦å­˜åœ¨æ¾åŠ¨æˆ–æœªæ¥\r\nå¦: 1.æ£€æŸ¥ç”µæœºAçš„ç”µæºçº¿æ˜¯å¦å­˜åœ¨æ¾åŠ¨æˆ–æœªæ¥ 2.æ£€æŸ¥æ¿å­å³ä¸‹è§’å·¦è¾¹çš„ç‰›è§’åº§æ˜¯å¦æ¾åŠ¨æˆ–æœªæ¥\r\n");
+				//ç¼–ç å™¨æ²¡æœ‰å€¼,å¯¹åº”æ¥å£PWMå€¼è¾ƒå¤§,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨æ¥å£æ˜¯å¦æ¾åŠ¨æˆ–æœªæ¥ 2.ç”µæœºæ­£è´Ÿææ¥å¤´æ˜¯å¦æ¾åŠ¨æˆ–è€…æœªæ¥
 			}
 			
 		}
 		
-		any_printf(USART1,"================= µç»úA ================\r\n\r\n");
+		any_printf(USART1,"================= ç”µæœºA ================\r\n\r\n");
 		
-		//¼ì²éÍê±Ï,¸´Î»PI¿ØÖÆÆ÷,·ÀÖ¹ÏÂÒ»¸öµç»ú¼ì²éÊÜµ½¸ÉÈÅ
+		//æ£€æŸ¥å®Œæ¯•,å¤ä½PIæ§åˆ¶å™¨,é˜²æ­¢ä¸‹ä¸€ä¸ªç”µæœºæ£€æŸ¥å—åˆ°å¹²æ‰°
 		PI_Controller_Reset(&PI_MotorA);
 		PI_Controller_Reset(&PI_MotorB);
 		PI_Controller_Reset(&PI_MotorC);
 		PI_Controller_Reset(&PI_MotorD);
 	}
-	else if( timecore>RATE*2 && timecore<RATE*4 ) //BÂÖ¿ØÖÆ
+	else if( timecore>RATE*2 && timecore<RATE*4 ) //Bè½®æ§åˆ¶
 	{
 		robot.MOTOR_A.Target = 0.0f;robot.MOTOR_B.Target = 0.5f;
 		robot.MOTOR_C.Target = 0.0f;robot.MOTOR_D.Target = 0.0f;
 		ResponseControl();
 		PWMA = 0;PWMC = 0;PWMD = 0;
 	} 
-	else if( timecore==RATE*4 )  //BÂÖ¼ì²é
+	else if( timecore==RATE*4 )  //Bè½®æ£€æŸ¥
 	{
-		any_printf(USART1,"================= µç»úB ================\r\n");
+		any_printf(USART1,"================= ç”µæœºB ================\r\n");
 		
 		if( robot.MOTOR_B.Encoder > 0.4f && robot.MOTOR_B.Encoder < 0.6f )
 		{
-			any_printf(USART1,"µç»úBÕı³£.\r\n");
+			any_printf(USART1,"ç”µæœºBæ­£å¸¸.\r\n");
 		}
 		else
 		{
-			errflag = 1; //³öÏÖ´íÎó
+			errflag = 1; //å‡ºç°é”™è¯¯
 			
 			if( robot.MOTOR_B.Encoder < - 0.2f ) 
 			{
-				any_printf(USART1,"¼ì²âµ½Bµç»ú±àÂëÆ÷¼«ĞÔ´íÎó.\r\n");
-				any_printf(USART1,"Çë¼ì²é£º\r\n1.³µĞÍÑ¡ÔñÊÇ·ñÕıÈ·\r\n2.µç»úBµÄÕı¸º¼«ÊÇ·ñ´æÔÚÏßĞò´íÎó\r\n3.µç»úBµÄ±àÂëÆ÷ABÏàÏßĞòÊÇ·ñ´íÎó\r\n");
-				//¶ÔÓ¦½Ó¿Ú³öÏÖ¸ºÖµ,Çë¼ì²é£º1.³µĞÍÊÇ·ñÕıÈ· 2.µç»úµÄÕı¸º¼¶ÊÇ·ñ·´½Ó 3.±àÂëÆ÷ABÏàµÄÏßĞòÊÇ·ñÕıÈ·
+				any_printf(USART1,"æ£€æµ‹åˆ°Bç”µæœºç¼–ç å™¨ææ€§é”™è¯¯.\r\n");
+				any_printf(USART1,"è¯·æ£€æŸ¥ï¼š\r\n1.è½¦å‹é€‰æ‹©æ˜¯å¦æ­£ç¡®\r\n2.ç”µæœºBçš„æ­£è´Ÿææ˜¯å¦å­˜åœ¨çº¿åºé”™è¯¯\r\n3.ç”µæœºBçš„ç¼–ç å™¨ABç›¸çº¿åºæ˜¯å¦é”™è¯¯\r\n");
+				//å¯¹åº”æ¥å£å‡ºç°è´Ÿå€¼,è¯·æ£€æŸ¥ï¼š1.è½¦å‹æ˜¯å¦æ­£ç¡® 2.ç”µæœºçš„æ­£è´Ÿçº§æ˜¯å¦åæ¥ 3.ç¼–ç å™¨ABç›¸çš„çº¿åºæ˜¯å¦æ­£ç¡®
 			}
 			else if( fabs(robot.MOTOR_A.Encoder) > 0.2f ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úBÊ±,¼ì²âµ½±àÂëÆ÷½Ó¿ÚAµÄĞÅºÅ.\r\n×Ô¼ìÊ±µç»úBÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚA¡¢BÊÇ·ñ´æÔÚµ÷»»\r\n·ñ: 1.¼ì²éÇı¶¯Æ÷µÄA¡¢B½Ó¿ÚÊÇ·ñ´æÔÚµ÷»»\r\n");
-				//±àÂëÆ÷BÓĞÖµ,Çë¼ì²é£º1.±àÂëÆ÷½Ó¿ÚBÓë½Ó¿ÚA½ÓÏßÊÇ·ñµ÷»»ÁË 2.Çı¶¯Æ÷µÄB¡¢A½Ó¿ÚÊÇ·ñ´æÔÚµ÷»»
+				any_printf(USART1,"é©±åŠ¨ç”µæœºBæ—¶,æ£€æµ‹åˆ°ç¼–ç å™¨æ¥å£Açš„ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºBæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Aã€Bæ˜¯å¦å­˜åœ¨è°ƒæ¢\r\nå¦: 1.æ£€æŸ¥é©±åŠ¨å™¨çš„Aã€Bæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢\r\n");
+				//ç¼–ç å™¨Bæœ‰å€¼,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨æ¥å£Bä¸æ¥å£Aæ¥çº¿æ˜¯å¦è°ƒæ¢äº† 2.é©±åŠ¨å™¨çš„Bã€Aæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢
 			}
 			else if( fabs(robot.MOTOR_C.Encoder) > 0.2f ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úBÊ±,¼ì²âµ½±àÂëÆ÷½Ó¿ÚCµÄĞÅºÅ.\r\n×Ô¼ìÊ±µç»úBÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚB¡¢CÊÇ·ñ´æÔÚµ÷»»\r\n·ñ: 1.¼ì²éÇı¶¯Æ÷µÄB¡¢C½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 2.¼ì²é°å×ÓÓÒÏÂ½ÇµÄÁ½¸öÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»\r\n");
-				//±àÂëÆ÷CÓĞÖµ,Çë¼ì²é£º1.±àÂëÆ÷BÓëC½Ó¿Ú½ÓÏßÊÇ·ñµ÷»»ÁË 2.Çı¶¯Æ÷B¡¢C½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 3.°å×ÓµÄÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»
+				any_printf(USART1,"é©±åŠ¨ç”µæœºBæ—¶,æ£€æµ‹åˆ°ç¼–ç å™¨æ¥å£Cçš„ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºBæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Bã€Cæ˜¯å¦å­˜åœ¨è°ƒæ¢\r\nå¦: 1.æ£€æŸ¥é©±åŠ¨å™¨çš„Bã€Cæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 2.æ£€æŸ¥æ¿å­å³ä¸‹è§’çš„ä¸¤ä¸ªç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢\r\n");
+				//ç¼–ç å™¨Cæœ‰å€¼,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨Bä¸Cæ¥å£æ¥çº¿æ˜¯å¦è°ƒæ¢äº† 2.é©±åŠ¨å™¨Bã€Cæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 3.æ¿å­çš„ç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢
 			}
 			else if( fabs(robot.MOTOR_D.Encoder) > 0.2f ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úBÊ±,¼ì²âµ½±àÂëÆ÷½Ó¿ÚDµÄĞÅºÅ.\r\n×Ô¼ìÊ±µç»úBÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚB¡¢DÊÇ·ñ´æÔÚµ÷»»\r\n·ñ: 1.¼ì²éÇı¶¯Æ÷µÄB¡¢D½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 2.¼ì²é°å×ÓÓÒÏÂ½ÇµÄÁ½¸öÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»\r\n");
-				//±àÂëÆ÷DÓĞÖµ,Çë¼ì²é£º1.±àÂëÆ÷BÓëD½Ó¿Ú½ÓÏßÊÇ·ñµ÷»»ÁË 2.Çı¶¯Æ÷B¡¢D½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 3.°å×ÓµÄÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»
+				any_printf(USART1,"é©±åŠ¨ç”µæœºBæ—¶,æ£€æµ‹åˆ°ç¼–ç å™¨æ¥å£Dçš„ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºBæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Bã€Dæ˜¯å¦å­˜åœ¨è°ƒæ¢\r\nå¦: 1.æ£€æŸ¥é©±åŠ¨å™¨çš„Bã€Dæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 2.æ£€æŸ¥æ¿å­å³ä¸‹è§’çš„ä¸¤ä¸ªç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢\r\n");
+				//ç¼–ç å™¨Dæœ‰å€¼,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨Bä¸Dæ¥å£æ¥çº¿æ˜¯å¦è°ƒæ¢äº† 2.é©±åŠ¨å™¨Bã€Dæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 3.æ¿å­çš„ç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢
 			}
 			else if( fabs(robot.MOTOR_B.Encoder) < 0.05f && PI_MotorB.Output > 5000 ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úBÊ±,Î´¼ì²âµ½±àÂëÆ÷ĞÅºÅ.\r\n×Ô¼ìÊ±µç»úBÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚBÊÇ·ñ´æÔÚËÉ¶¯»òÎ´½Ó\r\n·ñ: 1.¼ì²éµç»úBµÄµçÔ´ÏßÊÇ·ñ´æÔÚËÉ¶¯»òÎ´½Ó 2.¼ì²é°å×ÓÓÒÏÂ½Ç×ó±ßµÄÅ£½Ç×ùÊÇ·ñËÉ¶¯»òÎ´½Ó\r\n");
-				//±àÂëÆ÷Ã»ÓĞÖµ,¶ÔÓ¦½Ó¿ÚPWMÖµ½Ï´ó,Çë¼ì²é£º1.±àÂëÆ÷½Ó¿ÚÊÇ·ñËÉ¶¯»òÎ´½Ó 2.µç»úÕı¸º¼«½ÓÍ·ÊÇ·ñËÉ¶¯»òÕßÎ´½Ó
+				any_printf(USART1,"é©±åŠ¨ç”µæœºBæ—¶,æœªæ£€æµ‹åˆ°ç¼–ç å™¨ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºBæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Bæ˜¯å¦å­˜åœ¨æ¾åŠ¨æˆ–æœªæ¥\r\nå¦: 1.æ£€æŸ¥ç”µæœºBçš„ç”µæºçº¿æ˜¯å¦å­˜åœ¨æ¾åŠ¨æˆ–æœªæ¥ 2.æ£€æŸ¥æ¿å­å³ä¸‹è§’å·¦è¾¹çš„ç‰›è§’åº§æ˜¯å¦æ¾åŠ¨æˆ–æœªæ¥\r\n");
+				//ç¼–ç å™¨æ²¡æœ‰å€¼,å¯¹åº”æ¥å£PWMå€¼è¾ƒå¤§,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨æ¥å£æ˜¯å¦æ¾åŠ¨æˆ–æœªæ¥ 2.ç”µæœºæ­£è´Ÿææ¥å¤´æ˜¯å¦æ¾åŠ¨æˆ–è€…æœªæ¥
 			}
 		}
-		any_printf(USART1,"================= µç»úB ================\r\n\r\n");
-		//¼ì²éÍê±Ï,¸´Î»PI¿ØÖÆÆ÷,·ÀÖ¹ÏÂÒ»¸öµç»ú¼ì²éÊÜµ½¸ÉÈÅ
+		any_printf(USART1,"================= ç”µæœºB ================\r\n\r\n");
+		//æ£€æŸ¥å®Œæ¯•,å¤ä½PIæ§åˆ¶å™¨,é˜²æ­¢ä¸‹ä¸€ä¸ªç”µæœºæ£€æŸ¥å—åˆ°å¹²æ‰°
 		PI_Controller_Reset(&PI_MotorA);
 		PI_Controller_Reset(&PI_MotorB);
 		PI_Controller_Reset(&PI_MotorC);
@@ -3056,58 +1816,58 @@ static uint8_t Deep_SelfCheck( u16 RATE )
 	
 	#if defined OMNI_CAR || defined _4WD_CAR || defined MEC_CAR
 	
-	else if( timecore>RATE*4 && timecore<RATE*6 )//CÂÖ¿ØÖÆ
+	else if( timecore>RATE*4 && timecore<RATE*6 )//Cè½®æ§åˆ¶
 	{
 		robot.MOTOR_A.Target = 0.0f;robot.MOTOR_B.Target = 0.0f;
 		robot.MOTOR_C.Target = 0.5f;robot.MOTOR_D.Target = 0.0f;
 		ResponseControl();
 		PWMA = 0;PWMB = 0;PWMD = 0;
 	} 
-	else if( timecore==RATE*6 )//CÂÖ¼ì²é
+	else if( timecore==RATE*6 )//Cè½®æ£€æŸ¥
 	{
-		any_printf(USART1,"================= µç»úC ================\r\n");
+		any_printf(USART1,"================= ç”µæœºC ================\r\n");
 		
 		if( robot.MOTOR_C.Encoder > 0.4f && robot.MOTOR_C.Encoder < 0.6f )
 		{
-			any_printf(USART1,"µç»úCÕı³£.\r\n");
+			any_printf(USART1,"ç”µæœºCæ­£å¸¸.\r\n");
 		}
 		else
 		{
-			errflag = 1; //³öÏÖ´íÎó
+			errflag = 1; //å‡ºç°é”™è¯¯
 			
 			if( robot.MOTOR_C.Encoder < - 0.2f ) 
 			{
-				any_printf(USART1,"¼ì²âµ½Cµç»ú±àÂëÆ÷¼«ĞÔ´íÎó.\r\n");
-				any_printf(USART1,"Çë¼ì²é£º\r\n1.³µĞÍÑ¡ÔñÊÇ·ñÕıÈ·\r\n2.µç»úCµÄÕı¸º¼«ÊÇ·ñ´æÔÚÏßĞò´íÎó\r\n3.µç»úCµÄ±àÂëÆ÷ABÏàÏßĞòÊÇ·ñ´íÎó\r\n");
-				//¶ÔÓ¦½Ó¿Ú³öÏÖ¸ºÖµ,Çë¼ì²é£º1.³µĞÍÊÇ·ñÕıÈ· 2.µç»úµÄÕı¸º¼¶ÊÇ·ñ·´½Ó 3.±àÂëÆ÷ABÏàµÄÏßĞòÊÇ·ñÕıÈ·
+				any_printf(USART1,"æ£€æµ‹åˆ°Cç”µæœºç¼–ç å™¨ææ€§é”™è¯¯.\r\n");
+				any_printf(USART1,"è¯·æ£€æŸ¥ï¼š\r\n1.è½¦å‹é€‰æ‹©æ˜¯å¦æ­£ç¡®\r\n2.ç”µæœºCçš„æ­£è´Ÿææ˜¯å¦å­˜åœ¨çº¿åºé”™è¯¯\r\n3.ç”µæœºCçš„ç¼–ç å™¨ABç›¸çº¿åºæ˜¯å¦é”™è¯¯\r\n");
+				//å¯¹åº”æ¥å£å‡ºç°è´Ÿå€¼,è¯·æ£€æŸ¥ï¼š1.è½¦å‹æ˜¯å¦æ­£ç¡® 2.ç”µæœºçš„æ­£è´Ÿçº§æ˜¯å¦åæ¥ 3.ç¼–ç å™¨ABç›¸çš„çº¿åºæ˜¯å¦æ­£ç¡®
 			}
 			else if( fabs(robot.MOTOR_A.Encoder) > 0.2f ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úCÊ±,¼ì²âµ½±àÂëÆ÷½Ó¿ÚAµÄĞÅºÅ.\r\n×Ô¼ìÊ±µç»úCÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚA¡¢CÊÇ·ñ´æÔÚµ÷»»\r\n·ñ: 1.¼ì²éÇı¶¯Æ÷µÄA¡¢C½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 2.¼ì²é°å×ÓÓÒÏÂ½ÇµÄÁ½¸öÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»\r\n");
-				//±àÂëÆ÷BÓĞÖµ,Çë¼ì²é£º1.±àÂëÆ÷½Ó¿ÚCÓë½Ó¿ÚA½ÓÏßÊÇ·ñµ÷»»ÁË 2.Çı¶¯Æ÷µÄC¡¢A½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 3.°å×ÓµÄÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»
+				any_printf(USART1,"é©±åŠ¨ç”µæœºCæ—¶,æ£€æµ‹åˆ°ç¼–ç å™¨æ¥å£Açš„ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºCæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Aã€Cæ˜¯å¦å­˜åœ¨è°ƒæ¢\r\nå¦: 1.æ£€æŸ¥é©±åŠ¨å™¨çš„Aã€Cæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 2.æ£€æŸ¥æ¿å­å³ä¸‹è§’çš„ä¸¤ä¸ªç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢\r\n");
+				//ç¼–ç å™¨Bæœ‰å€¼,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨æ¥å£Cä¸æ¥å£Aæ¥çº¿æ˜¯å¦è°ƒæ¢äº† 2.é©±åŠ¨å™¨çš„Cã€Aæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 3.æ¿å­çš„ç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢
 			}
 			else if( fabs(robot.MOTOR_B.Encoder) > 0.2f ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úCÊ±,¼ì²âµ½±àÂëÆ÷½Ó¿ÚBµÄĞÅºÅ.\r\n×Ô¼ìÊ±µç»úCÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚB¡¢CÊÇ·ñ´æÔÚµ÷»»\r\n·ñ: 1.¼ì²éÇı¶¯Æ÷µÄB¡¢C½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 2.¼ì²é°å×ÓÓÒÏÂ½ÇµÄÁ½¸öÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»\r\n");
-				//±àÂëÆ÷CÓĞÖµ,Çë¼ì²é£º1.±àÂëÆ÷CÓëB½Ó¿Ú½ÓÏßÊÇ·ñµ÷»»ÁË 2.Çı¶¯Æ÷C¡¢B½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 3.°å×ÓµÄÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»
+				any_printf(USART1,"é©±åŠ¨ç”µæœºCæ—¶,æ£€æµ‹åˆ°ç¼–ç å™¨æ¥å£Bçš„ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºCæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Bã€Cæ˜¯å¦å­˜åœ¨è°ƒæ¢\r\nå¦: 1.æ£€æŸ¥é©±åŠ¨å™¨çš„Bã€Cæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 2.æ£€æŸ¥æ¿å­å³ä¸‹è§’çš„ä¸¤ä¸ªç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢\r\n");
+				//ç¼–ç å™¨Cæœ‰å€¼,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨Cä¸Bæ¥å£æ¥çº¿æ˜¯å¦è°ƒæ¢äº† 2.é©±åŠ¨å™¨Cã€Bæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 3.æ¿å­çš„ç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢
 			}
 			else if( fabs(robot.MOTOR_D.Encoder) > 0.2f ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úCÊ±,¼ì²âµ½±àÂëÆ÷½Ó¿ÚDµÄĞÅºÅ.\r\n×Ô¼ìÊ±µç»úCÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚC¡¢DÊÇ·ñ´æÔÚµ÷»»\r\n·ñ: 1.¼ì²éÇı¶¯Æ÷µÄC¡¢D½Ó¿ÚÊÇ·ñ´æÔÚµ÷»»\r\n");
-				//±àÂëÆ÷DÓĞÖµ,Çë¼ì²é£º1.±àÂëÆ÷CÓëD½Ó¿Ú½ÓÏßÊÇ·ñµ÷»»ÁË 2.Çı¶¯Æ÷C¡¢D½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 
+				any_printf(USART1,"é©±åŠ¨ç”µæœºCæ—¶,æ£€æµ‹åˆ°ç¼–ç å™¨æ¥å£Dçš„ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºCæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Cã€Dæ˜¯å¦å­˜åœ¨è°ƒæ¢\r\nå¦: 1.æ£€æŸ¥é©±åŠ¨å™¨çš„Cã€Dæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢\r\n");
+				//ç¼–ç å™¨Dæœ‰å€¼,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨Cä¸Dæ¥å£æ¥çº¿æ˜¯å¦è°ƒæ¢äº† 2.é©±åŠ¨å™¨Cã€Dæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 
 			}
 			else if( fabs(robot.MOTOR_C.Encoder) < 0.05f && PI_MotorC.Output > 5000 ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úCÊ±,Î´¼ì²âµ½±àÂëÆ÷ĞÅºÅ.\r\n×Ô¼ìÊ±µç»úCÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚCÊÇ·ñ´æÔÚËÉ¶¯»òÎ´½Ó\r\n·ñ: 1.¼ì²éµç»úCµÄµçÔ´ÏßÊÇ·ñ´æÔÚËÉ¶¯»òÎ´½Ó 2.¼ì²é°å×ÓÓÒÏÂ½ÇÓÒ±ßµÄÅ£½Ç×ùÊÇ·ñËÉ¶¯»òÎ´½Ó\r\n");
-				//±àÂëÆ÷Ã»ÓĞÖµ,¶ÔÓ¦½Ó¿ÚPWMÖµ½Ï´ó,Çë¼ì²é£º1.±àÂëÆ÷½Ó¿ÚÊÇ·ñËÉ¶¯»òÎ´½Ó 2.µç»úÕı¸º¼«½ÓÍ·ÊÇ·ñËÉ¶¯»òÕßÎ´½Ó
+				any_printf(USART1,"é©±åŠ¨ç”µæœºCæ—¶,æœªæ£€æµ‹åˆ°ç¼–ç å™¨ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºCæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Cæ˜¯å¦å­˜åœ¨æ¾åŠ¨æˆ–æœªæ¥\r\nå¦: 1.æ£€æŸ¥ç”µæœºCçš„ç”µæºçº¿æ˜¯å¦å­˜åœ¨æ¾åŠ¨æˆ–æœªæ¥ 2.æ£€æŸ¥æ¿å­å³ä¸‹è§’å³è¾¹çš„ç‰›è§’åº§æ˜¯å¦æ¾åŠ¨æˆ–æœªæ¥\r\n");
+				//ç¼–ç å™¨æ²¡æœ‰å€¼,å¯¹åº”æ¥å£PWMå€¼è¾ƒå¤§,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨æ¥å£æ˜¯å¦æ¾åŠ¨æˆ–æœªæ¥ 2.ç”µæœºæ­£è´Ÿææ¥å¤´æ˜¯å¦æ¾åŠ¨æˆ–è€…æœªæ¥
 			}
 		}
-		any_printf(USART1,"================= µç»úC ================\r\n\r\n");
-		//¼ì²éÍê±Ï,¸´Î»PI¿ØÖÆÆ÷,·ÀÖ¹ÏÂÒ»¸öµç»ú¼ì²éÊÜµ½¸ÉÈÅ
+		any_printf(USART1,"================= ç”µæœºC ================\r\n\r\n");
+		//æ£€æŸ¥å®Œæ¯•,å¤ä½PIæ§åˆ¶å™¨,é˜²æ­¢ä¸‹ä¸€ä¸ªç”µæœºæ£€æŸ¥å—åˆ°å¹²æ‰°
 		PI_Controller_Reset(&PI_MotorA);
 		PI_Controller_Reset(&PI_MotorB);
 		PI_Controller_Reset(&PI_MotorC);
@@ -3118,60 +1878,60 @@ static uint8_t Deep_SelfCheck( u16 RATE )
 	
 	#if defined _4WD_CAR || defined MEC_CAR
 	
-	else if( timecore>RATE*6 && timecore<RATE*8 )//DÂÖ¿ØÖÆ
+	else if( timecore>RATE*6 && timecore<RATE*8 )//Dè½®æ§åˆ¶
 	{
 		robot.MOTOR_A.Target = 0.0f;robot.MOTOR_B.Target = 0.0f;
 		robot.MOTOR_C.Target = 0.0f;robot.MOTOR_D.Target = 0.5f;
 		ResponseControl();
 		PWMA = 0;PWMB = 0;PWMC = 0;
 	}
-	else if( timecore==RATE*8  )//DÂÖ¼ì²é
+	else if( timecore==RATE*8  )//Dè½®æ£€æŸ¥
 	{
-		any_printf(USART1,"================= µç»úD ================\r\n");
+		any_printf(USART1,"================= ç”µæœºD ================\r\n");
 		
 		if( robot.MOTOR_D.Encoder > 0.4f && robot.MOTOR_D.Encoder < 0.6f )
 		{
-			any_printf(USART1,"µç»úDÕı³£.\r\n");
+			any_printf(USART1,"ç”µæœºDæ­£å¸¸.\r\n");
 		}
 		else
 		{
-			errflag = 1; //³öÏÖ´íÎó
+			errflag = 1; //å‡ºç°é”™è¯¯
 			
 			if( robot.MOTOR_D.Encoder < - 0.2f ) 
 			{
-				any_printf(USART1,"¼ì²âµ½Dµç»ú±àÂëÆ÷¼«ĞÔ´íÎó.\r\n");
-				any_printf(USART1,"Çë¼ì²é£º\r\n1.³µĞÍÑ¡ÔñÊÇ·ñÕıÈ·\r\n2.µç»úDµÄÕı¸º¼«ÊÇ·ñ´æÔÚÏßĞò´íÎó\r\n3.µç»úDµÄ±àÂëÆ÷ABÏàÏßĞòÊÇ·ñ´íÎó\r\n");
-				//¶ÔÓ¦½Ó¿Ú³öÏÖ¸ºÖµ,Çë¼ì²é£º1.³µĞÍÊÇ·ñÕıÈ· 2.µç»úµÄÕı¸º¼¶ÊÇ·ñ·´½Ó 3.±àÂëÆ÷ABÏàµÄÏßĞòÊÇ·ñÕıÈ·
+				any_printf(USART1,"æ£€æµ‹åˆ°Dç”µæœºç¼–ç å™¨ææ€§é”™è¯¯.\r\n");
+				any_printf(USART1,"è¯·æ£€æŸ¥ï¼š\r\n1.è½¦å‹é€‰æ‹©æ˜¯å¦æ­£ç¡®\r\n2.ç”µæœºDçš„æ­£è´Ÿææ˜¯å¦å­˜åœ¨çº¿åºé”™è¯¯\r\n3.ç”µæœºDçš„ç¼–ç å™¨ABç›¸çº¿åºæ˜¯å¦é”™è¯¯\r\n");
+				//å¯¹åº”æ¥å£å‡ºç°è´Ÿå€¼,è¯·æ£€æŸ¥ï¼š1.è½¦å‹æ˜¯å¦æ­£ç¡® 2.ç”µæœºçš„æ­£è´Ÿçº§æ˜¯å¦åæ¥ 3.ç¼–ç å™¨ABç›¸çš„çº¿åºæ˜¯å¦æ­£ç¡®
 			}
 			else if( fabs(robot.MOTOR_A.Encoder) > 0.2f ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úDÊ±,¼ì²âµ½±àÂëÆ÷½Ó¿ÚAµÄĞÅºÅ.\r\n×Ô¼ìÊ±µç»úDÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚA¡¢DÊÇ·ñ´æÔÚµ÷»»\r\n·ñ: 1.¼ì²éÇı¶¯Æ÷µÄA¡¢D½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 2.¼ì²é°å×ÓÓÒÏÂ½ÇµÄÁ½¸öÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»\r\n");
-				//±àÂëÆ÷BÓĞÖµ,Çë¼ì²é£º1.±àÂëÆ÷½Ó¿ÚDÓë½Ó¿ÚA½ÓÏßÊÇ·ñµ÷»»ÁË 2.Çı¶¯Æ÷µÄD¡¢A½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 3.°å×ÓµÄÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»
+				any_printf(USART1,"é©±åŠ¨ç”µæœºDæ—¶,æ£€æµ‹åˆ°ç¼–ç å™¨æ¥å£Açš„ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºDæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Aã€Dæ˜¯å¦å­˜åœ¨è°ƒæ¢\r\nå¦: 1.æ£€æŸ¥é©±åŠ¨å™¨çš„Aã€Dæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 2.æ£€æŸ¥æ¿å­å³ä¸‹è§’çš„ä¸¤ä¸ªç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢\r\n");
+				//ç¼–ç å™¨Bæœ‰å€¼,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨æ¥å£Dä¸æ¥å£Aæ¥çº¿æ˜¯å¦è°ƒæ¢äº† 2.é©±åŠ¨å™¨çš„Dã€Aæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 3.æ¿å­çš„ç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢
 			}
 			else if( fabs(robot.MOTOR_B.Encoder) > 0.2f ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úDÊ±,¼ì²âµ½±àÂëÆ÷½Ó¿ÚBµÄĞÅºÅ.\r\n×Ô¼ìÊ±µç»úDÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚB¡¢DÊÇ·ñ´æÔÚµ÷»»\r\n·ñ: 1.¼ì²éÇı¶¯Æ÷µÄB¡¢D½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 2.¼ì²é°å×ÓÓÒÏÂ½ÇµÄÁ½¸öÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»\r\n");
-				//±àÂëÆ÷CÓĞÖµ,Çë¼ì²é£º1.±àÂëÆ÷DÓëB½Ó¿Ú½ÓÏßÊÇ·ñµ÷»»ÁË 2.Çı¶¯Æ÷D¡¢B½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 3.°å×ÓµÄÅ£½Ç×ùÊÇ·ñ´æÔÚµ÷»»
+				any_printf(USART1,"é©±åŠ¨ç”µæœºDæ—¶,æ£€æµ‹åˆ°ç¼–ç å™¨æ¥å£Bçš„ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºDæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Bã€Dæ˜¯å¦å­˜åœ¨è°ƒæ¢\r\nå¦: 1.æ£€æŸ¥é©±åŠ¨å™¨çš„Bã€Dæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 2.æ£€æŸ¥æ¿å­å³ä¸‹è§’çš„ä¸¤ä¸ªç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢\r\n");
+				//ç¼–ç å™¨Cæœ‰å€¼,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨Dä¸Bæ¥å£æ¥çº¿æ˜¯å¦è°ƒæ¢äº† 2.é©±åŠ¨å™¨Dã€Bæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 3.æ¿å­çš„ç‰›è§’åº§æ˜¯å¦å­˜åœ¨è°ƒæ¢
 			}
 			else if( fabs(robot.MOTOR_C.Encoder) > 0.2f ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úDÊ±,¼ì²âµ½±àÂëÆ÷½Ó¿ÚCµÄĞÅºÅ.\r\n×Ô¼ìÊ±µç»úDÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚC¡¢DÊÇ·ñ´æÔÚµ÷»»\r\n·ñ: 1.¼ì²éÇı¶¯Æ÷µÄC¡¢D½Ó¿ÚÊÇ·ñ´æÔÚµ÷»»\r\n");
-				//±àÂëÆ÷DÓĞÖµ,Çë¼ì²é£º1.±àÂëÆ÷CÓëD½Ó¿Ú½ÓÏßÊÇ·ñµ÷»»ÁË 2.Çı¶¯Æ÷C¡¢D½Ó¿ÚÊÇ·ñ´æÔÚµ÷»» 
+				any_printf(USART1,"é©±åŠ¨ç”µæœºDæ—¶,æ£€æµ‹åˆ°ç¼–ç å™¨æ¥å£Cçš„ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºDæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Cã€Dæ˜¯å¦å­˜åœ¨è°ƒæ¢\r\nå¦: 1.æ£€æŸ¥é©±åŠ¨å™¨çš„Cã€Dæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢\r\n");
+				//ç¼–ç å™¨Dæœ‰å€¼,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨Cä¸Dæ¥å£æ¥çº¿æ˜¯å¦è°ƒæ¢äº† 2.é©±åŠ¨å™¨Cã€Dæ¥å£æ˜¯å¦å­˜åœ¨è°ƒæ¢ 
 			}
 			else if( fabs(robot.MOTOR_D.Encoder) < 0.05f && PI_MotorD.Output > 5000 ) 
 			{
-				any_printf(USART1,"Çı¶¯µç»úDÊ±,Î´¼ì²âµ½±àÂëÆ÷ĞÅºÅ.\r\n×Ô¼ìÊ±µç»úDÊÇ·ñ×ª¶¯?\r\n");
-				any_printf(USART1,"ÊÇ: 1.¼ì²é±àÂëÆ÷½Ó¿ÚDÊÇ·ñ´æÔÚËÉ¶¯»òÎ´½Ó\r\n·ñ: 1.¼ì²éµç»úDµÄµçÔ´ÏßÊÇ·ñ´æÔÚËÉ¶¯»òÎ´½Ó 2.¼ì²é°å×ÓÓÒÏÂ½ÇÓÒ±ßµÄÅ£½Ç×ùÊÇ·ñËÉ¶¯»òÎ´½Ó\r\n");
-				//±àÂëÆ÷Ã»ÓĞÖµ,¶ÔÓ¦½Ó¿ÚPWMÖµ½Ï´ó,Çë¼ì²é£º1.±àÂëÆ÷½Ó¿ÚÊÇ·ñËÉ¶¯»òÎ´½Ó 2.µç»úÕı¸º¼«½ÓÍ·ÊÇ·ñËÉ¶¯»òÕßÎ´½Ó
+				any_printf(USART1,"é©±åŠ¨ç”µæœºDæ—¶,æœªæ£€æµ‹åˆ°ç¼–ç å™¨ä¿¡å·.\r\nè‡ªæ£€æ—¶ç”µæœºDæ˜¯å¦è½¬åŠ¨?\r\n");
+				any_printf(USART1,"æ˜¯: 1.æ£€æŸ¥ç¼–ç å™¨æ¥å£Dæ˜¯å¦å­˜åœ¨æ¾åŠ¨æˆ–æœªæ¥\r\nå¦: 1.æ£€æŸ¥ç”µæœºDçš„ç”µæºçº¿æ˜¯å¦å­˜åœ¨æ¾åŠ¨æˆ–æœªæ¥ 2.æ£€æŸ¥æ¿å­å³ä¸‹è§’å³è¾¹çš„ç‰›è§’åº§æ˜¯å¦æ¾åŠ¨æˆ–æœªæ¥\r\n");
+				//ç¼–ç å™¨æ²¡æœ‰å€¼,å¯¹åº”æ¥å£PWMå€¼è¾ƒå¤§,è¯·æ£€æŸ¥ï¼š1.ç¼–ç å™¨æ¥å£æ˜¯å¦æ¾åŠ¨æˆ–æœªæ¥ 2.ç”µæœºæ­£è´Ÿææ¥å¤´æ˜¯å¦æ¾åŠ¨æˆ–è€…æœªæ¥
 			}
 		}
 		
-		any_printf(USART1,"================= µç»úD ================\r\n");
+		any_printf(USART1,"================= ç”µæœºD ================\r\n");
 		
-		//¼ì²éÍê±Ï,¸´Î»PI¿ØÖÆÆ÷,·ÀÖ¹ÏÂÒ»¸öµç»ú¼ì²éÊÜµ½¸ÉÈÅ
+		//æ£€æŸ¥å®Œæ¯•,å¤ä½PIæ§åˆ¶å™¨,é˜²æ­¢ä¸‹ä¸€ä¸ªç”µæœºæ£€æŸ¥å—åˆ°å¹²æ‰°
 		PI_Controller_Reset(&PI_MotorA);
 		PI_Controller_Reset(&PI_MotorB);
 		PI_Controller_Reset(&PI_MotorC);
@@ -3188,9 +1948,9 @@ static uint8_t Deep_SelfCheck( u16 RATE )
 		robot.MOTOR_D.Target = 0.0f;
 		Set_Pwm(0,0,0,0,0);
 		any_printf(USART1,"\r\n\r\n");
-		Buzzer_AddTask(1,20);//·äÃùÆ÷ÌáÊ¾±íÊ¾ÒÑÍê³ÉÉî¶È×Ô¼ì
+		Buzzer_AddTask(1,20);//èœ‚é¸£å™¨æç¤ºè¡¨ç¤ºå·²å®Œæˆæ·±åº¦è‡ªæ£€
 		
-		//Éî¶È×Ô¼ì½áÊøÇÒÎŞ±¨´í,»Ö¸´¹ÒÆğµÄÈÎÎñ.
+		//æ·±åº¦è‡ªæ£€ç»“æŸä¸”æ— æŠ¥é”™,æ¢å¤æŒ‚èµ·çš„ä»»åŠ¡.
 		if( 0 == errflag  )
 			if( data_TaskHandle!=NULL ) vTaskResume(data_TaskHandle);
 		

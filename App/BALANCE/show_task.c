@@ -3,7 +3,6 @@
 #include "rear_odom.h"
 #include "rear_oled.h"
 #endif
-#include "bsp_gamepad.h"
 
 OLED_t oled;
 
@@ -12,7 +11,7 @@ void OLED_ShowGamePadState(void)
 	oled.page = 0;
 }
 
-//OLED½á¹¹Ìå³õÊ¼»¯
+//OLEDç»“æ„ä½“åˆå§‹åŒ–
 void OLED_Param_Init(OLED_t* p)
 {
 	p->page = 1;
@@ -25,9 +24,9 @@ void OLED_Param_Init(OLED_t* p)
 Function: Read the battery voltage, buzzer alarm, start the self-test, send data to APP, OLED display task
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£º¶ÁÈ¡µç³ØµçÑ¹¡¢·äÃùÆ÷±¨¾¯¡¢¿ªÆô×Ô¼ì¡¢ÏòAPP·¢ËÍÊı¾İ¡¢OLEDÏÔÊ¾ÆÁÏÔÊ¾ÈÎÎñ
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šè¯»å–ç”µæ± ç”µå‹ã€èœ‚é¸£å™¨æŠ¥è­¦ã€å¼€å¯è‡ªæ£€ã€å‘APPå‘é€æ•°æ®ã€OLEDæ˜¾ç¤ºå±æ˜¾ç¤ºä»»åŠ¡
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 TaskHandle_t show_TaskHandle = NULL;
 void show_task(void *pvParameters)
@@ -35,12 +34,12 @@ void show_task(void *pvParameters)
     u32 lastWakeTime = getSysTickCnt();
     while(1)
     {
-        vTaskDelayUntil(&lastWakeTime, F2T(SHOW_TASK_RATE));//This task runs at 10Hz //´ËÈÎÎñÒÔ10HzµÄÆµÂÊÔËĞĞ
+        vTaskDelayUntil(&lastWakeTime, F2T(SHOW_TASK_RATE));//This task runs at 10Hz //æ­¤ä»»åŠ¡ä»¥10Hzçš„é¢‘ç‡è¿è¡Œ
 
-        //·äÃùÆ÷ÈÎÎñ,Ê¹ÓÃ Buzzer_AddTask(a,b) º¯Êı¿ÉÌí¼Ó·äÃùÆ÷ÈÎÎñ
+        //èœ‚é¸£å™¨ä»»åŠ¡,ä½¿ç”¨ Buzzer_AddTask(a,b) å‡½æ•°å¯æ·»åŠ èœ‚é¸£å™¨ä»»åŠ¡
 		Buzzer_task(SHOW_TASK_RATE);
 		
-        //¶ÁÈ¡µç³ØµçÑ¹ÈÎÎñ
+        //è¯»å–ç”µæ± ç”µå‹ä»»åŠ¡
 		uint8_t i=0;
 		float tmp = 0;
         for(i=0; i<100; i++)
@@ -51,32 +50,27 @@ void show_task(void *pvParameters)
         robot.voltage = VolMean_Filter(robot.voltage);
 		
 		
-		/* µÍÑ¹ãĞÖµÍ³Ò»ÏÂµ÷µ½ 3.3V£º±¾³µÃ»ÓĞµç³ØµçÑ¹¼ì²â£¬20V µÄÃÅÏŞ»áÎó´¥·¢ */
+		/* ä½å‹é˜ˆå€¼ç»Ÿä¸€ä¸‹è°ƒåˆ° 3.3Vï¼šæœ¬è½¦æ²¡æœ‰ç”µæ± ç”µå‹æ£€æµ‹ï¼Œ20V çš„é—¨é™ä¼šè¯¯è§¦å‘ */
 		if( robot.voltage<3.3f && robot.LowPower==0 ) robot.LowPower=1;
 		if( robot.voltage>3.5f ) robot.LowPower = 0;
 		
-		//µÍµçÁ¿1hzÆµÂÊ·äÃù
+		//ä½ç”µé‡1hzé¢‘ç‡èœ‚é¸£
 		if(robot.LowPower && robot.voltage > 3.0f && robot.voltage < 3.3f)
 		{
 			static uint16_t buzzer_timer = 0;
 			buzzer_timer++;
-			if( buzzer_timer >= 10 )  // ±£³Ö1ÃëÌí¼ÓÒ»´Î
+			if( buzzer_timer >= 10 )  // ä¿æŒ1ç§’æ·»åŠ ä¸€æ¬¡
 			{
-				Buzzer_AddTask(1,50);  // Ïì1´Î 50*10ms=500ms
+				Buzzer_AddTask(1,50);  // å“1æ¬¡ 50*10ms=500ms
 				buzzer_timer = 0;
 			}
 		}
-		//µçÁ¿µÍ,´æÔÚ»Ø³ä×°±¸ÇÒÊÕµ½³äµç×®µÄºìÍâĞÅºÅ,×Ô¶¯¿ªÆô»Ø³ä¹¦ÄÜ
-		if( 1 == robot.LowPower && 1 == SysVal.HardWare_charger && charger.RED_STATE>=2 )
-		{
-			if( SysVal.Time_count>CONTROL_DELAY ) charger.AllowRecharge = 1;
-		}
-		
-        //APPÏÔÊ¾Êı¾İÈÎÎñ
+
+        //APPæ˜¾ç¤ºæ•°æ®ä»»åŠ¡
 		if( Debug_Flag == 0 )
 			APP_ShowTask();
 		
-		//OLEDÏÔÊ¾Êı¾İÈÎÎñ
+		//OLEDæ˜¾ç¤ºæ•°æ®ä»»åŠ¡
 		OLED_ShowTask();
     }
 }
@@ -86,22 +80,22 @@ void show_task(void *pvParameters)
 Function: Send data to the APP
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£ºÏòAPP·¢ËÍÊı¾İ
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šå‘APPå‘é€æ•°æ®
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
-//µçÁ¿
+//ç”µé‡
 int voltage_to_percentage(float voltage) {
-    /* ±¾³µÎŞµç³ØµçÑ¹¼ì²â£¬°Ù·Ö±È°´ 3.0~3.6V Ó³Éä£¬±ÜÃâºãÏÔÊ¾ 0% */
-    const float V_MIN = 3.0f;   // ×îĞ¡µçÑ¹ (0%)
-    const float V_MAX = 3.6f;   // ×î´óµçÑ¹ (100%)
+    /* æœ¬è½¦æ— ç”µæ± ç”µå‹æ£€æµ‹ï¼Œç™¾åˆ†æ¯”æŒ‰ 3.0~3.6V æ˜ å°„ï¼Œé¿å…æ’æ˜¾ç¤º 0% */
+    const float V_MIN = 3.0f;   // æœ€å°ç”µå‹ (0%)
+    const float V_MAX = 3.6f;   // æœ€å¤§ç”µå‹ (100%)
     
-    // È·±£µçÑ¹ÔÚÓĞĞ§·¶Î§ÄÚ
+    // ç¡®ä¿ç”µå‹åœ¨æœ‰æ•ˆèŒƒå›´å†…
     if (voltage < V_MIN) return 0;
     if (voltage > V_MAX) return 100;
     
-    // ÏßĞÔ²åÖµ¼ÆËã°Ù·Ö±È²¢È¡Õû
-    int percentage = (int)(((voltage - V_MIN) / (V_MAX - V_MIN)) * 100.0f + 0.5f); // ËÄÉáÎåÈë
+    // çº¿æ€§æ’å€¼è®¡ç®—ç™¾åˆ†æ¯”å¹¶å–æ•´
+    int percentage = (int)(((voltage - V_MIN) / (V_MAX - V_MIN)) * 100.0f + 0.5f); // å››èˆäº”å…¥
 	
 	if( percentage > 100 ) percentage = 100;
 	if( percentage <= 0 ) percentage = 0;
@@ -115,7 +109,7 @@ static void APP_ShowTask(void)
     int Left_Figure,Right_Figure;
 
     //The battery voltage is processed as a percentage
-    //¶Ôµç³ØµçÑ¹´¦Àí³É°Ù·Ö±ÈĞÎÊ½
+    //å¯¹ç”µæ± ç”µå‹å¤„ç†æˆç™¾åˆ†æ¯”å½¢å¼
 	static int Voltage_Show=100;
 	static uint32_t delayshowVol=0;
 	
@@ -127,32 +121,20 @@ static void APP_ShowTask(void)
 	}
 
     //Wheel speed unit is converted to 0.01m/s for easy display in APP
-    //³µÂÖËÙ¶Èµ¥Î»×ª»»Îª0.01m/s£¬·½±ãÔÚAPPÏÔÊ¾
-	#if defined AKM_CAR || defined DIFF_CAR //°¢¿ËÂü¡¢²îËÙÏÔÊ¾A¡¢BÂÖ
-		Left_Figure=robot.MOTOR_A.Encoder*100;
-		if(Left_Figure<0)Left_Figure=-Left_Figure;
-		Right_Figure=robot.MOTOR_B.Encoder*100;
-		if(Right_Figure<0)Right_Figure=-Right_Figure;
-	#elif defined MEC_CAR || defined _4WD_CAR //ÂóÂÖ¡¢ËÄÇıÏÔÊ¾A¡¢DÂÖ
-		Left_Figure=robot.MOTOR_A.Encoder*100;
-		if(Left_Figure<0)Left_Figure=-Left_Figure;
-		Right_Figure=robot.MOTOR_D.Encoder*100;
-		if(Right_Figure<0)Right_Figure=-Right_Figure;
-	#else                                      //È«ÏòÂÖÏÔÊ¾B¡¢CÂÖ
-		Left_Figure=robot.MOTOR_B.Encoder*100;
-		if(Left_Figure<0)Left_Figure=-Left_Figure;
-		Right_Figure=robot.MOTOR_C.Encoder*100;
-		if(Right_Figure<0)Right_Figure=-Right_Figure;
-	#endif
+    //è½¦è½®é€Ÿåº¦å•ä½è½¬æ¢ä¸º0.01m/sï¼Œæ–¹ä¾¿åœ¨APPæ˜¾ç¤º
+	Left_Figure=robot.MOTOR_A.Encoder*100;
+	if(Left_Figure<0)Left_Figure=-Left_Figure;
+	Right_Figure=robot.MOTOR_D.Encoder*100;
+	if(Right_Figure<0)Right_Figure=-Right_Figure;
 
     //Used to alternately print APP data and display waveform
-    //ÓÃÓÚ½»Ìæ´òÓ¡APPÊı¾İºÍÏÔÊ¾²¨ĞÎ
+    //ç”¨äºäº¤æ›¿æ‰“å°APPæ•°æ®å’Œæ˜¾ç¤ºæ³¢å½¢
     flag_show=!flag_show;
 
     if(appkey.ParamSendflag==1)
     {
         //Send parameters to the APP, the APP is displayed in the debug screen
-        //·¢ËÍ²ÎÊıµ½APP£¬APPÔÚµ÷ÊÔ½çÃæÏÔÊ¾
+        //å‘é€å‚æ•°åˆ°APPï¼ŒAPPåœ¨è°ƒè¯•ç•Œé¢æ˜¾ç¤º
         printf("{C%d:%d:%d:%d:%d:%d:%d:%d:%d}$",
                (int)robot_control.rc_speed,
                (int)robot.V_KP,
@@ -170,22 +152,22 @@ static void APP_ShowTask(void)
     else if(flag_show==0)
     {
         //Send parameters to the APP and the APP will be displayed on the front page
-        //·¢ËÍ²ÎÊıµ½APP£¬APPÔÚÊ×Ò³ÏÔÊ¾
+        //å‘é€å‚æ•°åˆ°APPï¼ŒAPPåœ¨é¦–é¡µæ˜¾ç¤º
         printf("{A%d:%d:%d:%d}$",(u8)Left_Figure,(u8)Right_Figure,Voltage_Show,(int)imu.gyro.z);
 
     }
     else
     {
         //Send parameters to the APP, the APP is displayed in the waveform interface
-        //·¢ËÍ²ÎÊıµ½APP£¬APPÔÚ²¨ĞÎ½çÃæÏÔÊ¾
+        //å‘é€å‚æ•°åˆ°APPï¼ŒAPPåœ¨æ³¢å½¢ç•Œé¢æ˜¾ç¤º
         printf("{B%d:%d:%d}$",(int)(imu.accel.x),(int)(imu.accel.y),(int)(imu.accel.z));
     }
 	
 //	if(Debug_Flag)
 //	{
-//		if(IP_Frame_Valid)//ipÇëÇóÒÑ¹Ø±ÕÇÒipÒÔÈ·ÈÏ
-//			printf("{#IP:%d.%d.%d.%d}$",(u8)Received_IP[0],(u8)Received_IP[1],(u8)Received_IP[2],(u8)Received_IP[3]);//ÉÏ·¢IP
-//		else printf("{#IP:unknow..}$");//ipÎ´Öª
+//		if(IP_Frame_Valid)//ipè¯·æ±‚å·²å…³é—­ä¸”ipä»¥ç¡®è®¤
+//			printf("{#IP:%d.%d.%d.%d}$",(u8)Received_IP[0],(u8)Received_IP[1],(u8)Received_IP[2],(u8)Received_IP[3]);//ä¸Šå‘IP
+//		else printf("{#IP:unknow..}$");//ipæœªçŸ¥
 //		Debug_Flag=0;
 //	}
 }
@@ -195,10 +177,10 @@ Functionality: Battery voltage sliding filter function.
 Input Parameters: Collected battery voltage data.
 Return Value: Filtered battery voltage data.
 Author: WHEELTEC
-º¯Êı¹¦ÄÜ£ºµç³ØµçÑ¹»¬¶¯ÂË²¨º¯Êı
-Èë¿Ú²ÎÊı£º²É¼¯µ½µÄµç³ØµçÑ¹Êı¾İ
-·µ»Ø  Öµ£º¾­¹ıÂË²¨ºóµÄµç³ØµçÑ¹Êı¾İ
-×÷    Õß£ºWHEELTEC
+å‡½æ•°åŠŸèƒ½ï¼šç”µæ± ç”µå‹æ»‘åŠ¨æ»¤æ³¢å‡½æ•°
+å…¥å£å‚æ•°ï¼šé‡‡é›†åˆ°çš„ç”µæ± ç”µå‹æ•°æ®
+è¿”å›  å€¼ï¼šç»è¿‡æ»¤æ³¢åçš„ç”µæ± ç”µå‹æ•°æ®
+ä½œ    è€…ï¼šWHEELTEC
 **************************************************************************/
 #define VOL_COUNT 100
 static float VolMean_Filter(float data)
@@ -208,7 +190,7 @@ static float VolMean_Filter(float data)
     float Filter_Speed;
     static  float Speed_Buf[VOL_COUNT]= {0};
 
-    /*----------- Êı×é³õÊ¼»¯ -----------*/
+    /*----------- æ•°ç»„åˆå§‹åŒ– -----------*/
     static u8 once=1;
     if(once)
     {
@@ -236,13 +218,13 @@ static float VolMean_Filter(float data)
 Function: The OLED display displays tasks
 Input   : none
 Output  : none
-º¯Êı¹¦ÄÜ£ºOLEDÏÔÊ¾ÆÁÏÔÊ¾ÈÎÎñ
-Èë¿Ú²ÎÊı£ºÎŞ
-·µ»Ø  Öµ£ºÎŞ
+å‡½æ•°åŠŸèƒ½ï¼šOLEDæ˜¾ç¤ºå±æ˜¾ç¤ºä»»åŠ¡
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›  å€¼ï¼šæ— 
 **************************************************************************/
 static void OLED_ShowTask(void)
 {
-	//¼ì²âOLEDÒ³ÃæÊÇ·ñĞèÒªË¢ĞÂ
+	//æ£€æµ‹OLEDé¡µé¢æ˜¯å¦éœ€è¦åˆ·æ–°
 	if( oled.page!=oled.last_page ) 
 	{
 		OLED_Clear(),OLED_Refresh_Gram();
@@ -251,29 +233,28 @@ static void OLED_ShowTask(void)
 	}
 	oled.last_page = oled.page;
 	
-	//Ê×Ò³ÏÔÊ¾Ğ¡³µµÄ¸÷¸ö´«¸ĞÆ÷ĞÅÏ¢
+	//é¦–é¡µæ˜¾ç¤ºå°è½¦çš„å„ä¸ªä¼ æ„Ÿå™¨ä¿¡æ¯
 	if( 1 == oled.page ) 
 	{
-		//¹«¹²ÏÔÊ¾ĞÅÏ¢,Ê×ĞĞ³µĞÍ,Ä©ĞĞµç³ØµçÑ¹Óë¿ØÖÆ·½Ê½
+		//å…¬å…±æ˜¾ç¤ºä¿¡æ¯,é¦–è¡Œè½¦å‹,æœ«è¡Œç”µæ± ç”µå‹ä¸æ§åˆ¶æ–¹å¼
 		uint16_t TypeNum = 4096/CAR_NUMBER;
 		TypeNum = Get_ADC1_Average(CarMode_Ch,10)/TypeNum;
 		
-		//µÚÒ»ĞĞ×ó°ë²¿·Ö,ÏÔÊ¾µçÎ»Æ÷³µĞÍ.Í¬Ê±´øÏÔÊ¾ÊÇ·ñÕıÔÚ×Ô¶¯»Ø³ä¹¦ÄÜ
-		if( 0 == charger.AllowRecharge) OLED_ShowString(0,0,"TYPE:");
-		else                           OLED_ShowString(0,0,"RCM :");
+		//ç¬¬ä¸€è¡Œå·¦åŠéƒ¨åˆ†,æ˜¾ç¤ºç”µä½å™¨è½¦å‹
+		OLED_ShowString(0,0,"TYPE:");
 		
-		//³µĞÍºÅ,±¨´íÔòÏÔÊ¾X
+		//è½¦å‹å·,æŠ¥é”™åˆ™æ˜¾ç¤ºX
 		if( 0 == robot_check.errorflag) OLED_ShowNumber(40,0,TypeNum,2,12);
 		else                           OLED_ShowString(38,0," X");
 		
-		//µÚÒ»ĞĞÓÒ°ë²¿·Ö,ZÖá½ÇËÙ¶È
+		//ç¬¬ä¸€è¡Œå³åŠéƒ¨åˆ†,Zè½´è§’é€Ÿåº¦
 		OLED_ShowString(60,0,"GZ");
 		if( imu.gyro.z < 0)  OLED_ShowString(80,0,"-"),OLED_ShowNumber(90,0,-imu.gyro.z,5,12);
 		else                 OLED_ShowString(80,0,"+"),OLED_ShowNumber(90,0, imu.gyro.z,5,12);
 		//oled_showfloat(debug.u8_val,80,0,3,2);
 		
 		
-		//×îºóÒ»ĞĞ×ó°ë²¿·Ö,ÏÔÊ¾¿ØÖÆÀàĞÍ ºÍ ÏÔÊ¾Ğ¡³µÊÇ·ñÔÊĞí±»¿ØÖÆ
+		//æœ€åä¸€è¡Œå·¦åŠéƒ¨åˆ†,æ˜¾ç¤ºæ§åˆ¶ç±»å‹ å’Œ æ˜¾ç¤ºå°è½¦æ˜¯å¦å…è®¸è¢«æ§åˆ¶
 			  if( Get_Control_Mode(_ROS_Control) )    OLED_ShowString(0,50,"ROS  ");
 		else if(  Get_Control_Mode(_PS2_Control) )   OLED_ShowString(0,50,"PS2  ");
 		else if(  Get_Control_Mode(_APP_Control) )   OLED_ShowString(0,50,"APP  ");
@@ -281,71 +262,40 @@ static void OLED_ShowTask(void)
 		else if(  Get_Control_Mode(_CAN_Control) )   OLED_ShowString(0,50,"CAN  ");
 		else if(  Get_Control_Mode(_USART_Control) ) OLED_ShowString(0,50,"USART");
 		
-		//ÏÔÊ¾Ğ¡³µÊÇ·ñÔÊĞí±»¿ØÖÆ
+		//æ˜¾ç¤ºå°è½¦æ˜¯å¦å…è®¸è¢«æ§åˆ¶
 		if( 0 == robot_control.FlagStop ) OLED_ShowString(45,50," ON");
 		else                              OLED_ShowString(45,50,"OFF");
 			
-		//ÓÒ°ë²¿·ÖÏÔÊ¾µç³ØµçÑ¹
+		//å³åŠéƒ¨åˆ†æ˜¾ç¤ºç”µæ± ç”µå‹
 		oled_showfloat(robot.voltage,75,50,2,2);
 		OLED_ShowString(75,50," ");
 		OLED_ShowString(120,50,"V");
 		
-		//µÚ2¡¢3¡¢4¡¢5ĞĞ·Ç¹«¹²ÇøÓò,¸ù¾İ³µĞÍ²»Í¬ÏÔÊ¾µÄÌØ¶¨ĞÅÏ¢
-		#if defined AKM_CAR
-		oled_akm_show();
-		#elif defined DIFF_CAR
-			oled_diff_show();
-		#elif defined _4WD_CAR
-			oled_4wd_debug_show();
-		#elif defined MEC_CAR || defined OMNI_CAR
-			oled_mec_4wd_omni_show();
-		#endif
+		//ç¬¬2ã€3ã€4ã€5è¡Œéå…¬å…±åŒºåŸŸ,æ ¹æ®è½¦å‹ä¸åŒæ˜¾ç¤ºçš„ç‰¹å®šä¿¡æ¯
+		//å››é©±è½¦å‹ä¸“ç”¨æ˜¾ç¤ºé¡µ(å¼‚è½¦å‹åˆ†æ”¯å·²åˆ )
+		oled_4wd_debug_show();
 	}
 	
-	//µÚ¶şÒ³ÏÔÊ¾×Ô¶¯»Ø³äµ÷ÊÔĞÅÏ¢
-	else if( 2 == oled.page ) 
+	//ç¬¬äºŒé¡µæ˜¾ç¤ºå°è½¦çš„ç‰ˆæœ¬
+	else if( 2 == oled.page )
 	{
-		//×Ô¶¯»Ø³äÌ×¼şDebugĞÅÏ¢
-		OLED_ShowString(07,00,"LA  LB  RB  RA");
-		OLED_ShowNumber(0+9,10,charger.L_A,1,12);
-		OLED_ShowNumber(30+9,10,charger.L_B,1,12);
-		OLED_ShowNumber(60+9,10,charger.R_B,1,12);
-		OLED_ShowNumber(90+9,10,charger.R_A,1,12);
-		OLED_ShowString(0,30,"cur:"); 
-		OLED_ShowString(75,30,"A"); 
-		oled_showfloat(charger.ChargingCurrent/1000.0f,30,30,2,2);
-	}
-	
-	//µÚÈıÒ³ÏÔÊ¾Ğ¡³µµÄ°æ±¾
-	else if( 3 == oled.page )
-	{
-		//µÚ1ĞĞ ÏÔÊ¾ÊÇÄÄÖÖ³µ
+		//ç¬¬1è¡Œ æ˜¾ç¤ºæ˜¯å“ªç§è½¦
 		OLED_ShowString(0,0,"CarMode:");
-		#if defined AKM_CAR
-			OLED_ShowString(66,0,"AKM");
-		#elif defined DIFF_CAR
-			OLED_ShowString(66,0,"DIFF");
-		#elif defined MEC_CAR
-			OLED_ShowString(66,0,"MEC");
-		#elif defined _4WD_CAR
-			OLED_ShowString(66,0,"4WD");
-		#elif defined OMNI_CAR
-			OLED_ShowString(66,0,"OMNI");
-		#endif
+		OLED_ShowString(66,0,"4WD");
 		
-		//µÚ¶şĞĞÏÔÊ¾³µĞÍ´úºÅ
+		//ç¬¬äºŒè¡Œæ˜¾ç¤ºè½¦å‹ä»£å·
 		OLED_ShowString(0,12,"CarType:");
 		OLED_ShowNumber(66,12,robot.type,2,12);
 		
-		//µÚÈıĞĞÏÔÊ¾Ó²¼ş°æ±¾
+		//ç¬¬ä¸‰è¡Œæ˜¾ç¤ºç¡¬ä»¶ç‰ˆæœ¬
 		OLED_ShowString(0,24,"HW_Ver:");
 		OLED_ShowString(66,24,getHW_Ver(SysVal.HardWare_Ver));
 		
-		//µÚËÄĞĞÏÔÊ¾Èí¼ş°æ±¾
+		//ç¬¬å››è¡Œæ˜¾ç¤ºè½¯ä»¶ç‰ˆæœ¬
 		OLED_ShowString(0,36,"SW_Ver:");
 		OLED_ShowString(66,36,getSW_Ver(SysVal.SoftWare_Ver));
 		
-		//IPÏÔÊ¾
+		//IPæ˜¾ç¤º
 		OLED_ShowString(0,48,"IP:");
 		OLED_ShowNumber(24,48,Received_IP[0],3,12);
 		OLED_ShowNumber(48,48,Received_IP[1],3,12);
@@ -353,7 +303,7 @@ static void OLED_ShowTask(void)
 		OLED_ShowNumber(96,48,Received_IP[3],3,12);
 	}
 	
-	else if( 4 == oled.page )
+	else if( 3 == oled.page )
 	{
 		OLED_ShowString(0,0,"A:");
 		OLED_ShowString(0,10,"B:");
@@ -369,73 +319,14 @@ static void OLED_ShowTask(void)
 		oled_showfloat(s21c_board.rangerF,20,50,2,2);
 	}
 	
-	//0Ò³,ÓÃ»§ÎŞ·¨×ÔĞĞ·ÃÎÊµÄÒ³,ÓÃÓÚÌáÊ¾ usb ps2 ÊÖ±ú×´Ì¬
-	else if( 0 == oled.page )
-	{
-		if( GamePadDebug.enmu_state == EnumWait ) //Ã¶¾ÙµÈ´ıÖĞ
-		{
-			OLED_DrawBMP(32,1,96,7,gImage_usb_bmp);//²åÈëusbÌáÊ¾
-			OLED_ShowString(12,50,"USB Init..");
-			OLED_Refresh_Line();
-			return;
-		}
-		else if( GamePadDebug.enmu_state == EnumNULL )
-		{
-			OLED_ClearBuf();
-			oled.page = 1;
-		}
-		else if( GamePadDebug.enmu_state == EnumDone ) //Ã¶¾ÙÍê³É
-		{
-			//Ã¶¾ÙÍê±Ï,ÏÔÊ¾Ã¶¾Ù½á¹ûºó,µÈ´ıÒ»¶ÎÊ±¼ä»Ö¸´Õı³£ÏÔÊ¾
-			static uint16_t showtime=0;
-			if(++showtime >= SHOW_TASK_RATE*3 )
-			{
-				showtime = 0;
-				oled.page = 1;
-			}
-			
-			//Çå¿Õ»º³åÇøµ«²»Ë¢ĞÂ,µÈ´ıĞ´ÈëĞÂµÄÄÚÈİ
-			OLED_ClearBuf();
-			
-			//ps2³õÊ¼»¯Çé¿ö
-			OLED_ShowString(0,0,"USB Init OK.");
-			OLED_ShowString(0,15,"PS2 Info:");
-			
-			if( GamePadDebug.type == PS2_USB_Wired || GamePadDebug.type == PS2_USB_WiredV2 )
-			{
-				OLED_ShowString(0,30,"Wired USBPS2");
-			}
-			else if( GamePadDebug.type == PS2_USB_Wiredless )
-			{
-				OLED_ShowString(0,30,"2.4G USBPS2 ");
-			}
-			else if( GamePadDebug.type == Xbox360 )
-			{
-				OLED_ShowString(0,30,"xbox 360    ");
-			}
-			else OLED_ShowString(0,30,"UnKnown Dev ");
-			
-			//ÊÇ·ñ³É¹¦»ñÈ¡µ½ps2µÄÊı¾İ
-			OLED_ShowString(0,45,"Data Ready:");
-			if( 1 == GamePadDebug.ready ) //³É¹¦»ñÈ¡ps2Êı¾İ
-			{
-				OLED_ShowString(90,45,"Yes");
-			}
-			else //ÎŞÊı¾İ
-			{
-				OLED_ShowString(90,45,"No ");
-			}
-			
-		}
-	}
 	
-	//oledË¢ĞÂ
+	//oledåˆ·æ–°
 	OLED_Refresh_Gram();
 }
 
 extern int PengZhuang;
 
-//ËÄÇıµ÷ÊÔÒ³: ËÄÂÖÎ»ÖÃ + Ä¿±ê/Êµ¼Ê/PWM
+//å››é©±è°ƒè¯•é¡µ: å››è½®ä½ç½® + ç›®æ ‡/å®é™…/PWM
 #if defined _4WD_CAR
 static void oled_4wd_debug_show(void)
 {
@@ -474,10 +365,10 @@ static void oled_4wd_debug_show(void)
 	char b1[6], b2[6];
 	int  t, e, i;
 
-	//Ã¿ÂÖÒ»ĞĞ: ³µ±ê + Ä¿±êËÙ¶È + Êµ¼ÊËÙ¶È(µ¥Î» cm/s, È¡Õû)
-	//³µ±ê°´Êµ³µÎ»ÖÃ±ê×¢. Êµ³µ¶ÔÓ¦¹ØÏµ(ÓÃ»§Êµ²â):
-	//  MOTOR_A = ÓÒÇ° FR,  MOTOR_B = ÓÒºó RR
-	//  MOTOR_C = ×óºó RL,  MOTOR_D = ×óÇ° FL
+	//æ¯è½®ä¸€è¡Œ: è½¦æ ‡ + ç›®æ ‡é€Ÿåº¦ + å®é™…é€Ÿåº¦(å•ä½ cm/s, å–æ•´)
+	//è½¦æ ‡æŒ‰å®è½¦ä½ç½®æ ‡æ³¨. å®è½¦å¯¹åº”å…³ç³»(ç”¨æˆ·å®æµ‹):
+	//  MOTOR_A = å³å‰ FR,  MOTOR_B = å³å RR
+	//  MOTOR_C = å·¦å RL,  MOTOR_D = å·¦å‰ FL
 	for( i = 0; i < 4; i++ )
 	{
 		uint8_t    row = (uint8_t)(10 + i*10);
@@ -500,10 +391,10 @@ static void oled_4wd_debug_show(void)
 		OLED_ShowString(16, row, (const u8*)b1);
 		OLED_ShowString(56, row, (const u8*)b2);
 	}
-	//×îºóÒ»ĞĞ: Ò¡¸ËÊäÈë / ±¨´í±êÖ¾
+	//æœ€åä¸€è¡Œ: æ‘‡æ†è¾“å…¥ / æŠ¥é”™æ ‡å¿—
 	{
-		int ly = GamePadInterface ? (int)GamePadInterface->LY : -1;
-		int lx = GamePadInterface ? (int)GamePadInterface->LX : -1;
+		int ly = (int)Classic_PS2Gamepad.LY;
+		int lx = (int)Classic_PS2Gamepad.LX;
 		OLED_ShowString(0, 50, "L");
 		snprintf(b1, sizeof(b1), "%3d", ly);
 		OLED_ShowString(8, 50, (const u8*)b1);
@@ -517,201 +408,7 @@ static void oled_4wd_debug_show(void)
 #endif
 }
 #endif
-//²»Í¬³µĞÍ¶ÔÓ¦µÄÏÔÊ¾Ò³Ãæ
-#if defined AKM_CAR
-static void oled_akm_show(void)
-{
-	//¹¤³Ì²âÊÔÄ£Ê½,ÓÃÓÚ»úĞµ°²×°Ê¹ÓÃ
-	if( robot.type==7 || robot.type==8 )
-	{
-		OLED_ShowString(00,10,"SLID:");
-		if( robot.SERVO.Encoder < 0 )	OLED_ShowString(60,10,"-"),
-								OLED_ShowNumber(80,10,-(int)robot.SERVO.Encoder,4,12);
-		else                 	OLED_ShowString(60,10,"+"),
-								OLED_ShowNumber(80,10, (int)robot.SERVO.Encoder,4,12); 
-	}
-	else
-	{
-		OLED_ShowString(00,10,"PZ");
-		oled_showfloat(PengZhuang*1.0f,80,10,3,1);
-	}
-	
-	 //The third line of the display displays the content//
-	 //ÏÔÊ¾ÆÁµÚ3ĞĞÏÔÊ¾ÄÚÈİ//		
-	 //Display the target speed and current speed of motor A
-	 //ÏÔÊ¾µç»úAµÄÄ¿±êËÙ¶ÈºÍµ±Ç°ËÙ¶È
-	 OLED_ShowString(0,20,"L:");
-	 if( robot.MOTOR_A.Target<0)	OLED_ShowString(15,20,"-"),
-									OLED_ShowNumber(20,20,-robot.MOTOR_A.Target*1000,5,12);
-	 else                 	        OLED_ShowString(15,20,"+"),
-									OLED_ShowNumber(20,20, robot.MOTOR_A.Target*1000,5,12); 
-		
-	 if( robot.MOTOR_A.Encoder<0)	OLED_ShowString(60,20,"-"),
-									OLED_ShowNumber(75,20,-robot.MOTOR_A.Encoder*1000,5,12);
-	 else                 	        OLED_ShowString(60,20,"+"),
-									OLED_ShowNumber(75,20, robot.MOTOR_A.Encoder*1000,5,12);
-	
-	 //The fourth line of the display displays the content//
-	 //ÏÔÊ¾ÆÁµÚ4ĞĞÏÔÊ¾ÄÚÈİ//
-	 //Display the target speed and current speed of motor B
-	 //ÏÔÊ¾µç»úBµÄÄ¿±êËÙ¶ÈºÍµ±Ç°ËÙ¶È
-	 OLED_ShowString(0,30,"R:");
-	 if( robot.MOTOR_B.Target<0)	OLED_ShowString(15,30,"-"),
-									OLED_ShowNumber(20,30,-robot.MOTOR_B.Target*1000,5,12);
-	 else                 	        OLED_ShowString(15,30,"+"),
-									OLED_ShowNumber(20,30,  robot.MOTOR_B.Target*1000,5,12); 
-			
-	 if( robot.MOTOR_B.Encoder<0)	OLED_ShowString(60,30,"-"),
-									OLED_ShowNumber(75,30,-robot.MOTOR_B.Encoder*1000,5,12);
-     else                 	        OLED_ShowString(60,30,"+"),
-									OLED_ShowNumber(75,30, robot.MOTOR_B.Encoder*1000,5,12);
-
-	 //ÏÔÊ¾µ±Ç°¶æ»úPWM¿ØÖÆÖµ
-	 //Displays the current steering gear PWM control value
-	 OLED_ShowString(00,40,"SERVO:");
-	 
-	 if( 1 == ServoState.UnLock ) //·Ç×ÔËøÄ£Ê½ÏÔÊ¾×îºóÒ»´ÎÊä³öµ½¶æ»úµÄPWMÖµ
-	 {
-		OLED_ShowString(60,40," "),
-		OLED_ShowNumber(80,40, ServoState.UnLock_Output,4,12); 
-	 }
-	 else //×ÔËøÄ£Ê½ÏÂÏÔÊ¾ÊµÊ±PWMÖµ
-	 {
-		 if( robot.SERVO.Output<0)	OLED_ShowString(60,40,"-"),
-									OLED_ShowNumber(80,40,-robot.SERVO.Output,4,12);
-		 else                 	    OLED_ShowString(60,40,"+"),
-									OLED_ShowNumber(80,40, robot.SERVO.Output,4,12); 
-	 }
-
-}
-
-
-#elif defined DIFF_CAR
-static void oled_diff_show(void)
-{
-	//ÏÔÊ¾¼ÓËÙ¶ÈzÖáÊı¾İ
-	OLED_ShowString(00,10,"ACCEL ");
-	oled_showfloat(imu.accel.z/1671.84f,80,10,2,2);
-	
-	//The third line of the display displays the content//
-	//ÏÔÊ¾ÆÁµÚ3ĞĞÏÔÊ¾ÄÚÈİ//
-	//Display the target speed and current speed of motor A
-	//ÏÔÊ¾µç»úAµÄÄ¿±êËÙ¶ÈºÍµ±Ç°ËÙ¶È	 
-	OLED_ShowString(0,20,"DL:");
-	if( robot.MOTOR_A.Target<0)	OLED_ShowString(15,20,"-"),
-	                            OLED_ShowNumber(20,20,-robot.MOTOR_A.Target*1000,5,12);
-	else                 	    OLED_ShowString(15,20,"+"),
-	                            OLED_ShowNumber(20,20, robot.MOTOR_A.Target*1000,5,12); 
-
-	if( robot.MOTOR_A.Encoder<0) OLED_ShowString(60,20,"-"),
-	                             OLED_ShowNumber(75,20,-robot.MOTOR_A.Encoder*1000,5,12);
-	else                 	     OLED_ShowString(60,20,"+"),
-	                             OLED_ShowNumber(75,20, robot.MOTOR_A.Encoder*1000,5,12);
-
-	//The fourth line of the display displays the content//
-	//ÏÔÊ¾ÆÁµÚ4ĞĞÏÔÊ¾ÄÚÈİ//	
-	//Display the target speed and current speed of motor B
-	//ÏÔÊ¾µç»úBµÄÄ¿±êËÙ¶ÈºÍµ±Ç°ËÙ¶È
-	OLED_ShowString(0,30,"DR:");
-	if( robot.MOTOR_B.Target<0)	OLED_ShowString(15,30,"-"),
-	                            OLED_ShowNumber(20,30,- robot.MOTOR_B.Target*1000,5,12);
-	else                 	    OLED_ShowString(15,30,"+"),
-	                            OLED_ShowNumber(20,30,  robot.MOTOR_B.Target*1000,5,12); 
-
-	if( robot.MOTOR_B.Encoder<0)OLED_ShowString(60,30,"-"),
-	                            OLED_ShowNumber(75,30,-robot.MOTOR_B.Encoder*1000,5,12);
-	else                 	    OLED_ShowString(60,30,"+"),
-	                            OLED_ShowNumber(75,30, robot.MOTOR_B.Encoder*1000,5,12);
-	
-	OLED_ShowString(00,40,"MA");
-	if( robot.MOTOR_A.Output < 0 )   OLED_ShowString(20,40,"-"),
-	                                 OLED_ShowNumber(30,40,-robot.MOTOR_A.Output,4,12);
-	else                 	         OLED_ShowString(20,40,"+"),
-	                                 OLED_ShowNumber(30,40, robot.MOTOR_A.Output,4,12); 
-	OLED_ShowString(60,40,"MB");
-	if(robot.MOTOR_B.Output<0)       OLED_ShowString(80,40,"-"),
-	                                 OLED_ShowNumber(90,40,-robot.MOTOR_B.Output,4,12);
-	else                 	         OLED_ShowString(80,40,"+"),
-	                                 OLED_ShowNumber(90,40, robot.MOTOR_B.Output,4,12);
-	
-}
-
-
-#elif defined MEC_CAR || defined _4WD_CAR || defined OMNI_CAR
-static void oled_mec_4wd_omni_show(void)
-{
-	//The second line of the display displays the content//
-	//ÏÔÊ¾ÆÁµÚ2ĞĞÏÔÊ¾ÄÚÈİ//	
-	//Display the target speed and current speed of motor A
-	//ÏÔÊ¾µç»úAµÄÄ¿±êËÙ¶ÈºÍµ±Ç°ËÙ¶È
-	OLED_ShowString(0,10,"A");
-	if( robot.MOTOR_A.Target<0)	OLED_ShowString(15,10,"-"),
-								OLED_ShowNumber(20,10,-robot.MOTOR_A.Target*1000,5,12);
-	else                 	    OLED_ShowString(15,10,"+"),
-								OLED_ShowNumber(20,10, robot.MOTOR_A.Target*1000,5,12); 
-	
-	if( robot.MOTOR_A.Encoder<0)OLED_ShowString(60,10,"-"),
-								OLED_ShowNumber(75,10,-robot.MOTOR_A.Encoder*1000,5,12);
-	else                 	    OLED_ShowString(60,10,"+"),
-								OLED_ShowNumber(75,10, robot.MOTOR_A.Encoder*1000,5,12);
-	
-	//The third line of the display displays the content//
-	//ÏÔÊ¾ÆÁµÚ3ĞĞÏÔÊ¾ÄÚÈİ//	
-	//Display the target speed and current speed of motor B
-	//ÏÔÊ¾µç»úBµÄÄ¿±êËÙ¶ÈºÍµ±Ç°ËÙ¶È
-	OLED_ShowString(0,20,"B");		
-	if( robot.MOTOR_B.Target<0)	OLED_ShowString(15,20,"-"),
-								OLED_ShowNumber(20,20,-robot.MOTOR_B.Target*1000,5,12);
-	else                 	    OLED_ShowString(15,20,"+"),
-								OLED_ShowNumber(20,20, robot.MOTOR_B.Target*1000,5,12); 
-	
-	if( robot.MOTOR_B.Encoder<0)OLED_ShowString(60,20,"-"),
-								OLED_ShowNumber(75,20,-robot.MOTOR_B.Encoder*1000,5,12);
-	else                 	    OLED_ShowString(60,20,"+"),
-								OLED_ShowNumber(75,20, robot.MOTOR_B.Encoder*1000,5,12);
-	
-	//The fourth line of the display displays the content//
-	//ÏÔÊ¾ÆÁµÚ4ĞĞÏÔÊ¾ÄÚÈİ//
-	//Display the target speed and current speed of motor C
-	//ÏÔÊ¾µç»úCµÄÄ¿±êËÙ¶ÈºÍµ±Ç°ËÙ¶È
-	OLED_ShowString(0,30,"C");
-	if( robot.MOTOR_C.Target<0)	OLED_ShowString(15,30,"-"),
-								OLED_ShowNumber(20,30,- robot.MOTOR_C.Target*1000,5,12);
-	else                 	    OLED_ShowString(15,30,"+"),
-								OLED_ShowNumber(20,30,  robot.MOTOR_C.Target*1000,5,12); 
-		
-	if( robot.MOTOR_C.Encoder<0)OLED_ShowString(60,30,"-"),
-								OLED_ShowNumber(75,30,-robot.MOTOR_C.Encoder*1000,5,12);
-	else                     	OLED_ShowString(60,30,"+"),
-								OLED_ShowNumber(75,30, robot.MOTOR_C.Encoder*1000,5,12);
-	
-	
-	//ÂóÂÖ¡¢ËÄÇıÏÔÊ¾Dµç»ú
-	#if !defined OMNI_CAR
-	
-	//Line 5 of the display displays the content//
-	//ÏÔÊ¾ÆÁµÚ5ĞĞÏÔÊ¾ÄÚÈİ//
-	OLED_ShowString(0,40,"D");
-	if( robot.MOTOR_D.Target<0)	OLED_ShowString(15,40,"-"),
-								OLED_ShowNumber(20,40,- robot.MOTOR_D.Target*1000,5,12);
-	else                 	    OLED_ShowString(15,40,"+"),
-								OLED_ShowNumber(20,40,  robot.MOTOR_D.Target*1000,5,12); 
-		
-	if( robot.MOTOR_D.Encoder<0)OLED_ShowString(60,40,"-"),
-								OLED_ShowNumber(75,40,-robot.MOTOR_D.Encoder*1000,5,12);
-	else                 	    OLED_ShowString(60,40,"+"),
-								OLED_ShowNumber(75,40, robot.MOTOR_D.Encoder*1000,5,12);
-	
-	//È«ÏòÂÖÃ»ÓĞDµç»ú,ÏÔÊ¾ZÖáµÄËÙ¶È
-	#else
-	
-	OLED_ShowString(0,40,"MOVE_Z"); 
-	oled_showfloat(robot_control.Vz,60,40,3,2);
-	
-	#endif
-}
-
-
-#endif
+//ä¸åŒè½¦å‹å¯¹åº”çš„æ˜¾ç¤ºé¡µé¢
+//å¼‚è½¦å‹(AKM/DIFF/MEC/OMNI)æ˜¾ç¤ºé¡µå·²éšè½¦å‹è£å‰ªåˆ é™¤
 
 

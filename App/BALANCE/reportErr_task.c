@@ -1,13 +1,13 @@
 /**
  * @file    reportErr_task.c
- * @brief   Ğ¡³µ×Ô¼ìµ÷ÊÔÎÄ¼ş
+ * @brief   å°è½¦è‡ªæ£€è°ƒè¯•æ–‡ä»¶
  * @author  WHEELTEC
  * @date    2025-08-08
  * @version 1.0.0
  *
  * @details
- * - ±¾ÎÄ¼şÊÇĞ¡³µµ÷ÊÔÏà¹ØÄÚÈİ£¬ÓÉÈÎÎñ ReportErrTask ¹ÜÀí.µ±ÓÃ»§ÔÚ´®¿Ú»òÕßÀ¶ÑÀ¶ËÊäÈë "LOG1~3"ÉèÖÃµ÷ÊÔµÈ¼¶ºó£¬
- * µ÷ÊÔÈÎÎñ²Å»á±»´¥·¢£¬Ğ¡³µ½«×ÔÖ÷ÉÏ±¨±¨´íĞÅÏ¢£¬µ×ÅÌµÄ×´Ì¬µÈÄÚÈİ.
+ * - æœ¬æ–‡ä»¶æ˜¯å°è½¦è°ƒè¯•ç›¸å…³å†…å®¹ï¼Œç”±ä»»åŠ¡ ReportErrTask ç®¡ç†.å½“ç”¨æˆ·åœ¨ä¸²å£æˆ–è€…è“ç‰™ç«¯è¾“å…¥ "LOG1~3"è®¾ç½®è°ƒè¯•ç­‰çº§åï¼Œ
+ * è°ƒè¯•ä»»åŠ¡æ‰ä¼šè¢«è§¦å‘ï¼Œå°è½¦å°†è‡ªä¸»ä¸ŠæŠ¥æŠ¥é”™ä¿¡æ¯ï¼Œåº•ç›˜çš„çŠ¶æ€ç­‰å†…å®¹.
  * @note
  * 
  * 
@@ -24,7 +24,7 @@ void Bluetooth_Transmit(uint8_t* buffer,uint8_t size,uint16_t timeout)
 	}
 }
 
-//¶ÔÍâÊı¾İ»ã±¨µÄ½Ó¿Ú£¬ÓÃÓÚµ÷ÊÔ
+//å¯¹å¤–æ•°æ®æ±‡æŠ¥çš„æ¥å£ï¼Œç”¨äºè°ƒè¯•
 static void report_interface(char* buffer,uint16_t size)
 {
 	for(uint32_t k=0;k<size;k+=2)
@@ -39,7 +39,7 @@ static void report_interface(char* buffer,uint16_t size)
 
 
 
-//ÓÃÓÚÁÙÊ±±£´æÊä³öµÄÊı¾İ
+//ç”¨äºä¸´æ—¶ä¿å­˜è¾“å‡ºçš„æ•°æ®
 static char err_info[512] = { 0 };
 
 void ReportErrTask(void* param)
@@ -47,7 +47,7 @@ void ReportErrTask(void* param)
 
 	while(1)
 	{
-		//×èÈûµÈ´ıÈÎÎñÍ¨Öª
+		//é˜»å¡ç­‰å¾…ä»»åŠ¡é€šçŸ¥
 //		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 		
 		vTaskDelay(500);
@@ -56,17 +56,17 @@ void ReportErrTask(void* param)
 		{
 			extern uint8_t Received_IP[4];       
 			extern uint8_t IP_Frame_Valid;   
-			//ÈôĞ¡³µÓĞÖ÷¶¯Ê§ÄÜµÄÇé¿ö,ÔòÓÅÏÈ½øĞĞÔ­ÒòÌáÊ¾
+			//è‹¥å°è½¦æœ‰ä¸»åŠ¨å¤±èƒ½çš„æƒ…å†µ,åˆ™ä¼˜å…ˆè¿›è¡ŒåŸå› æç¤º
 			const char* head = "{#\r\n";
 			const char* end = "}$";
 			
-			// IPÉÏ±¨Âß¼­ÒÆÖ²
-			if(IP_Frame_Valid)  // IPÇëÇóÒÑ¹Ø±ÕÇÒIPÖ¡ÓĞĞ§
+			// IPä¸ŠæŠ¥é€»è¾‘ç§»æ¤
+			if(IP_Frame_Valid)  // IPè¯·æ±‚å·²å…³é—­ä¸”IPå¸§æœ‰æ•ˆ
 			{
-				// µÚÒ»²½£º·¢ËÍÍ³Ò»µÄhead£¨{#\r\n£©
+				// ç¬¬ä¸€æ­¥ï¼šå‘é€ç»Ÿä¸€çš„headï¼ˆ{#\r\nï¼‰
 				Bluetooth_Transmit((uint8_t*)head,3,500);
 				vTaskDelay(2);
-				// µÚ¶ş²½£º·¢ËÍIPÄÚÈİ£¨½ö±£ÁôºËĞÄĞÅÏ¢£¬²»´øhead/end£©
+				// ç¬¬äºŒæ­¥ï¼šå‘é€IPå†…å®¹ï¼ˆä»…ä¿ç•™æ ¸å¿ƒä¿¡æ¯ï¼Œä¸å¸¦head/endï¼‰
 				sprintf(err_info,"IP:%d.%d.%d.%d\r\n", 
 						(uint8_t)Received_IP[0], 
 						(uint8_t)Received_IP[1], 
@@ -74,13 +74,13 @@ void ReportErrTask(void* param)
 						(uint8_t)Received_IP[3]);
 				report_interface(err_info, strlen(err_info));
 				vTaskDelay(2);
-				// µÚÈı²½£º·¢ËÍÍ³Ò»µÄend£¨}$£©
+				// ç¬¬ä¸‰æ­¥ï¼šå‘é€ç»Ÿä¸€çš„endï¼ˆ}$ï¼‰
 				Bluetooth_Transmit((uint8_t*)end,2,500);
 				vTaskDelay(500);
 			}
-			else  // IPÎ´Öª
+			else  // IPæœªçŸ¥
 			{
-				// Í¬Ñù¶ÔÆë¸ñÊ½£ºhead + ÄÚÈİ + end
+				// åŒæ ·å¯¹é½æ ¼å¼ï¼šhead + å†…å®¹ + end
 				Bluetooth_Transmit((uint8_t*)head,3,500);
 				vTaskDelay(2);
 				sprintf(err_info,"IP:unknow.\r\n");
@@ -92,13 +92,13 @@ void ReportErrTask(void* param)
 			
 			if( robot.LowPower )
 			{
-				sprintf(err_info,"%s","{#Ğ¡³µµçÁ¿µÍ£¬Çë³äµç}$");
+				sprintf(err_info,"%s","{#å°è½¦ç”µé‡ä½ï¼Œè¯·å……ç”µ}$");
 				report_interface(err_info,strlen(err_info));
 				vTaskDelay(500);
 				if( Debug_Flag==0 ) break;
 			}
 			
-//			//Ê¹ÄÜ¿ª¹Ø
+//			//ä½¿èƒ½å¼€å…³
 //			if( RobotControlParam.ErrNum!=0 )
 //			{
 //				Bluetooth_Transmit(&huart2,(uint8_t*)head,3,500);
@@ -116,33 +116,23 @@ void ReportErrTask(void* param)
 //				if( Debug_Flag==0 ) break;
 //			}
 //			else if( RobotControlParam.ErrNum==0 && RobotControlParam.DebugLevel == 1 )
-//			{	//½öÔÚµ÷ÊÔµÈ¼¶Îª1Ê±ÌáÊ¾×´Ì¬Õı³£µÄÇé¿ö
-//				sprintf(err_info,"%s","{#\r\nĞ¡³µÊ¹ÄÜ×´Ì¬Õı³£}$");
+//			{	//ä»…åœ¨è°ƒè¯•ç­‰çº§ä¸º1æ—¶æç¤ºçŠ¶æ€æ­£å¸¸çš„æƒ…å†µ
+//				sprintf(err_info,"%s","{#\r\nå°è½¦ä½¿èƒ½çŠ¶æ€æ­£å¸¸}$");
 //				report_interface(err_info,strlen(err_info));
 //				vTaskDelay(3000);
 //				if( RobotControlParam.DebugLevel==0 ) break;
 //			}
 
-			//Ğ¡³µµÄÏêÏ¸×Ô¼ì²ÎÊı»ã±¨
+			//å°è½¦çš„è¯¦ç»†è‡ªæ£€å‚æ•°æ±‡æŠ¥
 			if( Debug_Flag !=0 )
 			{
 				Bluetooth_Transmit((uint8_t*)head,3,500);
 				
-				sprintf(err_info,"Ğ¡³µ×´Ì¬\r\n");
+				sprintf(err_info,"å°è½¦çŠ¶æ€\r\n");
 				report_interface(err_info,strlen(err_info));
 				
-				//³µĞÍĞÅÏ¢
-				#if defined AKM_CAR
-				sprintf(err_info,"    µ±Ç°³µĞÍ£ºAkm £¬%02d\r\n",robot.type);
-				#elif  defined DIFF_CAR
-				sprintf(err_info,"    µ±Ç°³µĞÍ£ºDiff£¬%02d\r\n",robot.type);
-				#elif  defined MEC_CAR
-				sprintf(err_info,"    µ±Ç°³µĞÍ£ºMec £¬%02d\r\n",robot.type);
-				#elif  defined _4WD_CAR
-				sprintf(err_info,"    µ±Ç°³µĞÍ£º4WD £¬%02d\r\n",robot.type);
-				#elif  defined OMNI_CAR
-				sprintf(err_info,"    µ±Ç°³µĞÍ£ºOMNI£¬%02d\r\n",robot.type);
-				#endif
+				//è½¦å‹ä¿¡æ¯
+				sprintf(err_info,"    å½“å‰è½¦å‹ï¼š4WD ï¼Œ%02d\r\n",robot.type);
 				
 				report_interface(err_info,strlen(err_info));
 				
@@ -157,67 +147,58 @@ void ReportErrTask(void* param)
 //				}
 //				report_interface(err_info,strlen(err_info));
 				
-				//Ó²¼ş°æ±¾ĞÅÏ¢
-				sprintf(err_info,"    C50C°æ±¾£º");
+				//ç¡¬ä»¶ç‰ˆæœ¬ä¿¡æ¯
+				sprintf(err_info,"    C50Cç‰ˆæœ¬ï¼š");
 				report_interface(err_info,strlen(err_info));
 				sprintf(err_info,(char*)getHW_Ver(SysVal.HardWare_Ver));
 				report_interface(err_info,strlen(err_info));
 				sprintf(err_info,"\r\n");
 				report_interface(err_info,strlen(err_info));
 				
-				//µçÑ¹ĞÅÏ¢
-				sprintf(err_info,"    µ±Ç°µçÑ¹£º%.2f V",robot.voltage);
+				//ç”µå‹ä¿¡æ¯
+				sprintf(err_info,"    å½“å‰ç”µå‹ï¼š%.2f V",robot.voltage);
 				size_t len = strlen(err_info);
 				if (len % 2 != 0) {
-					strcat(err_info, " \r\n"); // Èç¹û³¤¶ÈÎªÆæÊı£¬×·¼ÓÒ»¸ö¿Õ¸ñ
+					strcat(err_info, " \r\n"); // å¦‚æœé•¿åº¦ä¸ºå¥‡æ•°ï¼Œè¿½åŠ ä¸€ä¸ªç©ºæ ¼
 				}
 				else strcat(err_info, "\r\n");
 				report_interface(err_info,strlen(err_info));
 				
-				//¼±Í£¿ª¹ØĞÅÏ¢
-				sprintf(err_info,"    ¼±Í£¿ª¹Ø£º");
+				//æ€¥åœå¼€å…³ä¿¡æ¯
+				sprintf(err_info,"    æ€¥åœå¼€å…³ï¼š");
 				report_interface(err_info,strlen(err_info));
 				if( EN == 0 ) 
-					sprintf(err_info,"°´ÏÂ\r\n");
+					sprintf(err_info,"æŒ‰ä¸‹\r\n");
 				else
-					sprintf(err_info,"µ¯Æğ\r\n");
+					sprintf(err_info,"å¼¹èµ·\r\n");
 				report_interface(err_info,strlen(err_info));
 				
-				//Ê¹ÄÜ×´Ì¬ĞÅÏ¢
-				sprintf(err_info,"    Ê¹ÄÜ×´Ì¬£º");
+				//ä½¿èƒ½çŠ¶æ€ä¿¡æ¯
+				sprintf(err_info,"    ä½¿èƒ½çŠ¶æ€ï¼š");
 				report_interface(err_info,strlen(err_info));
 				if( robot_control.FlagStop == 0 )
-					sprintf(err_info,"Ê¹ÄÜ\r\n");
+					sprintf(err_info,"ä½¿èƒ½\r\n");
 				else
-					sprintf(err_info,"Ê§ÄÜ\r\n");
+					sprintf(err_info,"å¤±èƒ½\r\n");
 				report_interface(err_info,strlen(err_info));
 				
-				//³¬Éù²¨±ÜÕÏĞÅÏ¢
-				sprintf(err_info,"    ³¬Éù²¨´«¸ĞÆ÷£º");
+				//è¶…å£°æ³¢é¿éšœä¿¡æ¯
+				sprintf(err_info,"    è¶…å£°æ³¢ä¼ æ„Ÿå™¨ï¼š");
 				report_interface(err_info,strlen(err_info));
 				if( SysVal.HardWare_Ranger==0 )
-					sprintf(err_info,"ÎŞÉè±¸\r\n");
+					sprintf(err_info,"æ— è®¾å¤‡\r\n");
 				else
-					sprintf(err_info,"Éè±¸´æÔÚ\r\n");
+					sprintf(err_info,"è®¾å¤‡å­˜åœ¨\r\n");
 				report_interface(err_info,strlen(err_info));
-				
-				//×Ô¶¯»Ø³äÄ£Ê½
-				sprintf(err_info,"    ×Ô¶¯»Ø³äÄ£Ê½£º");
-				report_interface(err_info,strlen(err_info));
-				if( charger.AllowRecharge == 0 )
-					sprintf(err_info,"¹Ø±Õ\r\n");
-				else
-					sprintf(err_info,"ÆôÓÃ\r\n");
-				report_interface(err_info,strlen(err_info));
-				
-				//¿ØÖÆ×´Ì¬
-				sprintf(err_info,"    ¿ØÖÆ·½Ê½£º");
+
+				//æ§åˆ¶çŠ¶æ€
+				sprintf(err_info,"    æ§åˆ¶æ–¹å¼ï¼š");
 				report_interface(err_info,strlen(err_info));
 				
 				if( Get_Control_Mode(_APP_Control) )
 					sprintf(err_info," APP\r\n");
 				else if( Get_Control_Mode(_RC_Control) )
-					sprintf(err_info," R-Cº½Ä£\r\n");
+					sprintf(err_info," R-Cèˆªæ¨¡\r\n");
 				else if( Get_Control_Mode(_PS2_Control) )
 					sprintf(err_info,"PS2 \r\n");
 				else if( Get_Control_Mode(_ROS_Control) )
@@ -225,71 +206,13 @@ void ReportErrTask(void* param)
 				else if( Get_Control_Mode(_CAN_Control) )
 					sprintf(err_info," CAN\r\n");
 				else if( Get_Control_Mode(_USART_Control) )
-					sprintf(err_info,"´®¿Ú1 \r\n");
+					sprintf(err_info,"ä¸²å£1 \r\n");
 				report_interface(err_info,strlen(err_info));
 				
 				vTaskDelay(2);
 				Bluetooth_Transmit((uint8_t*)end,2,500);
 				vTaskDelay(1500);
 				if( Debug_Flag==0 ) break;
-				
-				Bluetooth_Transmit((uint8_t*)head,3,500);
-				sprintf(err_info,"×Ô¶¯»Ø³äÉè±¸×´Ì¬\r\n");
-				report_interface(err_info,strlen(err_info));
-				
-				if( SysVal.HardWare_charger==0 )
-				{
-					sprintf(err_info,"    Éè±¸ÒÑÀëÏß\r\n");
-					report_interface(err_info,strlen(err_info));
-				}
-				else
-				{
-					//ÔÚÏß×´Ì¬
-					sprintf(err_info,"    ÔÚÏß×´Ì¬£º");
-					report_interface(err_info,strlen(err_info));
-					if( SysVal.HardWare_charger == 1 )
-						sprintf(err_info,"ÔÚÏß\r\n");
-					else
-						sprintf(err_info,"ÀëÏß\r\n");
-					report_interface(err_info,strlen(err_info));
-					
-					//³äµç×´Ì¬
-					sprintf(err_info,"    ³äµç×´Ì¬£º");
-					report_interface(err_info,strlen(err_info));
-					if( charger.Charging==1 )
-						sprintf(err_info,"³äµçÖĞ\r\n");
-					else
-						sprintf(err_info,"Î´³äµç\r\n");
-					report_interface(err_info,strlen(err_info));
-					
-					//µçÁ÷Öµ
-					sprintf(err_info,"    ²âÁ¿µçÁ÷Öµ£º%.2fA",(float)charger.ChargingCurrent/1000.0f);
-					len = strlen(err_info);
-					if (len % 2 != 0) {
-						strcat(err_info, " \r\n"); // Èç¹û³¤¶ÈÎªÆæÊı£¬×·¼ÓÒ»¸ö¿Õ¸ñ
-					}
-					else strcat(err_info, "\r\n");
-					report_interface(err_info,strlen(err_info));
-					
-					//µçÑ¹Öµ
-//					sprintf(err_info,"    ²âÁ¿µçÑ¹Öµ£º%.2fV",ChargeDev.ChargingVol);
-//					len = strlen(err_info);
-//					if (len % 2 != 0) {
-//						strcat(err_info, " \r\n"); // Èç¹û³¤¶ÈÎªÆæÊı£¬×·¼ÓÒ»¸ö¿Õ¸ñ
-//					}
-//					else strcat(err_info, "\r\n");
-//					report_interface(err_info,strlen(err_info));
-					
-					//ºìÍâĞÅºÅ×´Ì¬
-					sprintf(err_info,"    ºìÍâĞÅºÅ×´Ì¬£º%d ¸öĞÅºÅ£¬%d %d %d %d ",charger.RED_STATE,
-						charger.L_A,charger.L_B,charger.R_B,charger.R_A);
-					len = strlen(err_info);
-					if (len % 2 != 0) {
-						strcat(err_info, " \r\n"); // Èç¹û³¤¶ÈÎªÆæÊı£¬×·¼ÓÒ»¸ö¿Õ¸ñ
-					}
-					else strcat(err_info, "\r\n");
-					report_interface(err_info,strlen(err_info));
-				}
 
 				vTaskDelay(2);
 				Bluetooth_Transmit((uint8_t*)end,2,500);

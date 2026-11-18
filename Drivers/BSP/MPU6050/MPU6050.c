@@ -6,28 +6,28 @@
 Function: Initialize TIM2 as the encoder interface mode
 Input   : Ax, Ay, Az: The original reading of the accelerometer on the x,y, and z axes (plus or minus)
 Output  : 0: success, others: error code
-º¯Êý¹¦ÄÜ£ºµÃµ½¼ÓËÙ¶ÈÖµ(Ô­Ê¼Öµ)
+å‡½æ•°åŠŸèƒ½ï¼šå¾—åˆ°åŠ é€Ÿåº¦å€¼(åŽŸå§‹å€¼)
 **************************************************************************/
 void MPU6050_Get_Accelscope(void)
 {
-    imu.accel.x =(I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_XOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_XOUT_L); //¶ÁÈ¡XÖá¼ÓËÙ¶È¼Æ
-    imu.accel.y =(I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_YOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_YOUT_L); //¶ÁÈ¡XÖá¼ÓËÙ¶È¼Æ
-    imu.accel.z =(I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_ZOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_ZOUT_L); //¶ÁÈ¡ZÖá¼ÓËÙ¶È¼Æ
+    imu.accel.x =(I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_XOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_XOUT_L); //è¯»å–Xè½´åŠ é€Ÿåº¦è®¡
+    imu.accel.y =(I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_YOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_YOUT_L); //è¯»å–Xè½´åŠ é€Ÿåº¦è®¡
+    imu.accel.z =(I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_ZOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_ACCEL_ZOUT_L); //è¯»å–Zè½´åŠ é€Ÿåº¦è®¡
 
-    if(SysVal.Time_count<CONTROL_DELAY) // 10 seconds before starting //¿ª»úÇ°10Ãë
+    if(SysVal.Time_count<CONTROL_DELAY) // 10 seconds before starting //å¼€æœºå‰10ç§’
     {
 		
     }
-    else //10 seconds after starting //¿ª»ú10Ãëºó
+    else //10 seconds after starting //å¼€æœº10ç§’åŽ
     {
         //Save the raw data to update zero by clicking the user button
-        //±£´æÔ­Ê¼Êý¾ÝÓÃÓÚµ¥»÷ÓÃ»§°´¼ü¸üÐÂÁãµã
+        //ä¿å­˜åŽŸå§‹æ•°æ®ç”¨äºŽå•å‡»ç”¨æˆ·æŒ‰é”®æ›´æ–°é›¶ç‚¹
 		imu.Original_accel.x = imu.accel.x;
 		imu.Original_accel.y = imu.accel.y;
 		imu.Original_accel.z = imu.accel.z;
 
         //Removes zero drift data
-        //È¥³ýÁãµãÆ¯ÒÆµÄÊý¾Ý
+        //åŽ»é™¤é›¶ç‚¹æ¼‚ç§»çš„æ•°æ®
         imu.accel.x = imu.Original_accel.x - imu.Deviation_accel.x ;
         imu.accel.y = imu.Original_accel.y - imu.Deviation_accel.y ;
         imu.accel.z = imu.Original_accel.z - imu.Deviation_accel.z + 16384;
@@ -39,29 +39,29 @@ void MPU6050_Get_Accelscope(void)
 Function: Initialize TIM2 as the encoder interface mode
 Input   : Gx, Gy, Gz: raw readings (plus or minus) of the x,y, and z axes of the gyroscope
 Output  : 0: success, others: error code
-º¯Êý¹¦ÄÜ£º»ñµÃÍÓÂÝÒÇÖµ(Ô­Ê¼Öµ)
+å‡½æ•°åŠŸèƒ½ï¼šèŽ·å¾—é™€èžºä»ªå€¼(åŽŸå§‹å€¼)
 **************************************************************************/
 void MPU6050_Get_Gyroscope(void)
 {
-    imu.gyro.x = (I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_XOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_XOUT_L);    //¶ÁÈ¡XÖáÍÓÂÝÒÇ
-    imu.gyro.y = (I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_YOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_YOUT_L);    //¶ÁÈ¡YÖáÍÓÂÝÒÇ
-    imu.gyro.z = (I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_ZOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_ZOUT_L);    //¶ÁÈ¡ZÖáÍÓÂÝÒÇ
+    imu.gyro.x = (I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_XOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_XOUT_L);    //è¯»å–Xè½´é™€èžºä»ª
+    imu.gyro.y = (I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_YOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_YOUT_L);    //è¯»å–Yè½´é™€èžºä»ª
+    imu.gyro.z = (I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_ZOUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_GYRO_ZOUT_L);    //è¯»å–Zè½´é™€èžºä»ª
 
-    if(SysVal.Time_count<CONTROL_DELAY) // 10 seconds before starting //¿ª»úÇ°10Ãë
+    if(SysVal.Time_count<CONTROL_DELAY) // 10 seconds before starting //å¼€æœºå‰10ç§’
     {
 
     }
-    else //10 seconds after starting //¿ª»ú10Ãëºó
+    else //10 seconds after starting //å¼€æœº10ç§’åŽ
     {
 
         //Save the raw data to update zero by clicking the user button
-        //±£´æÔ­Ê¼Êý¾ÝÓÃÓÚµ¥»÷ÓÃ»§°´¼ü¸üÐÂÁãµã
+        //ä¿å­˜åŽŸå§‹æ•°æ®ç”¨äºŽå•å‡»ç”¨æˆ·æŒ‰é”®æ›´æ–°é›¶ç‚¹
 		imu.Original_gyro.x = imu.gyro.x;
 		imu.Original_gyro.y = imu.gyro.y;
 		imu.Original_gyro.z = imu.gyro.z;
 
         //Removes zero drift data
-        //È¥³ýÁãµãÆ¯ÒÆµÄÊý¾Ý
+        //åŽ»é™¤é›¶ç‚¹æ¼‚ç§»çš„æ•°æ®
 		imu.gyro.x = imu.Original_gyro.x - imu.Deviation_gyro.x;
 		imu.gyro.y = imu.Original_gyro.y - imu.Deviation_gyro.y;
 		imu.gyro.z = imu.Original_gyro.z - imu.Deviation_gyro.z;
@@ -70,18 +70,18 @@ void MPU6050_Get_Gyroscope(void)
 
 /**************************************************************************
 Function: The new ADC data is updated to FIFO array for filtering
-Input   : ax£¬ay£¬az£ºx£¬y, z-axis acceleration data£»gx£¬gy£¬gz£ºx. Y, z-axis angular acceleration data
+Input   : axï¼Œayï¼Œazï¼šxï¼Œy, z-axis acceleration dataï¼›gxï¼Œgyï¼Œgzï¼šx. Y, z-axis angular acceleration data
 Output  : none
-º¯Êý¹¦ÄÜ£º½«ÐÂµÄADCÊý¾Ý¸üÐÂµ½ FIFOÊý×é£¬½øÐÐÂË²¨´¦Àí
-Èë¿Ú²ÎÊý£ºax£¬ay£¬az£ºx£¬y£¬zÖá¼ÓËÙ¶ÈÊý¾Ý£»gx£¬gy£¬gz£ºx£¬y£¬zÖá½Ç¼ÓËÙ¶ÈÊý¾Ý
-·µ»Ø  Öµ£ºÎÞ
+å‡½æ•°åŠŸèƒ½ï¼šå°†æ–°çš„ADCæ•°æ®æ›´æ–°åˆ° FIFOæ•°ç»„ï¼Œè¿›è¡Œæ»¤æ³¢å¤„ç†
+å…¥å£å‚æ•°ï¼šaxï¼Œayï¼Œazï¼šxï¼Œyï¼Œzè½´åŠ é€Ÿåº¦æ•°æ®ï¼›gxï¼Œgyï¼Œgzï¼šxï¼Œyï¼Œzè½´è§’åŠ é€Ÿåº¦æ•°æ®
+è¿”å›ž  å€¼ï¼šæ— 
 **************************************************************************/
 int16_t  MPU6050_FIFO[6][11];
 void  MPU6050_newValues(int16_t ax,int16_t ay,int16_t az,int16_t gx,int16_t gy,int16_t gz)
 {
     unsigned char i ;
     int32_t sum=0;
-    for(i=1; i<10; i++) {	//FIFO ²Ù×÷
+    for(i=1; i<10; i++) {	//FIFO æ“ä½œ
         MPU6050_FIFO[0][i-1]=MPU6050_FIFO[0][i];
         MPU6050_FIFO[1][i-1]=MPU6050_FIFO[1][i];
         MPU6050_FIFO[2][i-1]=MPU6050_FIFO[2][i];
@@ -89,7 +89,7 @@ void  MPU6050_newValues(int16_t ax,int16_t ay,int16_t az,int16_t gx,int16_t gy,i
         MPU6050_FIFO[4][i-1]=MPU6050_FIFO[4][i];
         MPU6050_FIFO[5][i-1]=MPU6050_FIFO[5][i];
     }
-    MPU6050_FIFO[0][9]=ax;//½«ÐÂµÄÊý¾Ý·ÅÖÃµ½ Êý¾ÝµÄ×îºóÃæ
+    MPU6050_FIFO[0][9]=ax;//å°†æ–°çš„æ•°æ®æ”¾ç½®åˆ° æ•°æ®çš„æœ€åŽé¢
     MPU6050_FIFO[1][9]=ay;
     MPU6050_FIFO[2][9]=az;
     MPU6050_FIFO[3][9]=gx;
@@ -97,7 +97,7 @@ void  MPU6050_newValues(int16_t ax,int16_t ay,int16_t az,int16_t gx,int16_t gy,i
     MPU6050_FIFO[5][9]=gz;
 
     sum=0;
-    for(i=0; i<10; i++) {	//Çóµ±Ç°Êý×éµÄºÏ£¬ÔÙÈ¡Æ½¾ùÖµ
+    for(i=0; i<10; i++) {	//æ±‚å½“å‰æ•°ç»„çš„åˆï¼Œå†å–å¹³å‡å€¼
         sum+=MPU6050_FIFO[0][i];
     }
     MPU6050_FIFO[0][10]=sum/10;
@@ -135,11 +135,11 @@ void  MPU6050_newValues(int16_t ax,int16_t ay,int16_t az,int16_t gx,int16_t gy,i
 
 /**************************************************************************
 Function: Setting the clock source of mpu6050
-Input   : source£ºClock source number
+Input   : sourceï¼šClock source number
 Output  : none
-º¯Êý¹¦ÄÜ£ºÉèÖÃ  MPU6050 µÄÊ±ÖÓÔ´
-Èë¿Ú²ÎÊý£ºsource£ºÊ±ÖÓÔ´±àºÅ
-·µ»Ø  Öµ£ºÎÞ
+å‡½æ•°åŠŸèƒ½ï¼šè®¾ç½®  MPU6050 çš„æ—¶é’Ÿæº
+å…¥å£å‚æ•°ï¼šsourceï¼šæ—¶é’Ÿæºç¼–å·
+è¿”å›ž  å€¼ï¼šæ— 
  * CLK_SEL | Clock Source
  * --------+--------------------------------------
  * 0       | Internal oscillator
@@ -169,27 +169,27 @@ void MPU6050_setFullScaleGyroRange(uint8_t range) {
 
 /**************************************************************************
 Function: Setting the maximum range of mpu6050 accelerometer
-Input   : range£ºAcceleration maximum range number
+Input   : rangeï¼šAcceleration maximum range number
 Output  : none
-º¯Êý¹¦ÄÜ£ºÉèÖÃ MPU6050 ¼ÓËÙ¶È¼ÆµÄ×î´óÁ¿³Ì
-Èë¿Ú²ÎÊý£ºrange£º¼ÓËÙ¶È×î´óÁ¿³Ì±àºÅ
-·µ»Ø  Öµ£ºÎÞ
+å‡½æ•°åŠŸèƒ½ï¼šè®¾ç½® MPU6050 åŠ é€Ÿåº¦è®¡çš„æœ€å¤§é‡ç¨‹
+å…¥å£å‚æ•°ï¼šrangeï¼šåŠ é€Ÿåº¦æœ€å¤§é‡ç¨‹ç¼–å·
+è¿”å›ž  å€¼ï¼šæ— 
 **************************************************************************/
-//#define MPU6050_ACCEL_FS_2          0x00  		//===×î´óÁ¿³Ì+-2G
-//#define MPU6050_ACCEL_FS_4          0x01			//===×î´óÁ¿³Ì+-4G
-//#define MPU6050_ACCEL_FS_8          0x02			//===×î´óÁ¿³Ì+-8G
-//#define MPU6050_ACCEL_FS_16         0x03			//===×î´óÁ¿³Ì+-16G
+//#define MPU6050_ACCEL_FS_2          0x00  		//===æœ€å¤§é‡ç¨‹+-2G
+//#define MPU6050_ACCEL_FS_4          0x01			//===æœ€å¤§é‡ç¨‹+-4G
+//#define MPU6050_ACCEL_FS_8          0x02			//===æœ€å¤§é‡ç¨‹+-8G
+//#define MPU6050_ACCEL_FS_16         0x03			//===æœ€å¤§é‡ç¨‹+-16G
 void MPU6050_setFullScaleAccelRange(uint8_t range) {
     I2C_WriteBits(devAddr, MPU6050_RA_ACCEL_CONFIG, MPU6050_ACONFIG_AFS_SEL_BIT, MPU6050_ACONFIG_AFS_SEL_LENGTH, range);
 }
 
 /**************************************************************************
 Function: Set mpu6050 to sleep mode or not
-Input   : enable£º1£¬sleep£»0£¬work£»
+Input   : enableï¼š1ï¼Œsleepï¼›0ï¼Œworkï¼›
 Output  : none
-º¯Êý¹¦ÄÜ£ºÉèÖÃ MPU6050 ÊÇ·ñ½øÈëË¯ÃßÄ£Ê½
-Èë¿Ú²ÎÊý£ºenable£º1£¬Ë¯¾õ£»0£¬¹¤×÷£»
-·µ»Ø  Öµ£ºÎÞ
+å‡½æ•°åŠŸèƒ½ï¼šè®¾ç½® MPU6050 æ˜¯å¦è¿›å…¥ç¡çœ æ¨¡å¼
+å…¥å£å‚æ•°ï¼šenableï¼š1ï¼Œç¡è§‰ï¼›0ï¼Œå·¥ä½œï¼›
+è¿”å›ž  å€¼ï¼šæ— 
 **************************************************************************/
 void MPU6050_setSleepEnabled(uint8_t enabled) {
     I2C_WriteOneBit(devAddr, MPU6050_RA_PWR_MGMT_1, MPU6050_PWR1_SLEEP_BIT, enabled);
@@ -199,9 +199,9 @@ void MPU6050_setSleepEnabled(uint8_t enabled) {
 Function: Read identity
 Input   : none
 Output  : 0x68
-º¯Êý¹¦ÄÜ£º¶ÁÈ¡  MPU6050 WHO_AM_I ±êÊ¶
-Èë¿Ú²ÎÊý£ºÎÞ
-·µ»Ø  Öµ£º0x68
+å‡½æ•°åŠŸèƒ½ï¼šè¯»å–  MPU6050 WHO_AM_I æ ‡è¯†
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›ž  å€¼ï¼š0x68
 **************************************************************************/
 uint8_t MPU6050_getDeviceID(void) {
     return I2C_ReadOneByte(devAddr,MPU6050_RA_WHO_AM_I);
@@ -210,10 +210,10 @@ uint8_t MPU6050_getDeviceID(void) {
 /**************************************************************************
 Function: Check whether mpu6050 is connected
 Input   : none
-Output  : 1£ºConnected£»0£ºNot connected
-º¯Êý¹¦ÄÜ£º¼ì²âMPU6050 ÊÇ·ñÒÑ¾­Á¬½Ó
-Èë¿Ú²ÎÊý£ºÎÞ
-·µ»Ø  Öµ£º1£ºÒÑÁ¬½Ó£»0£ºÎ´Á¬½Ó
+Output  : 1ï¼šConnectedï¼›0ï¼šNot connected
+å‡½æ•°åŠŸèƒ½ï¼šæ£€æµ‹MPU6050 æ˜¯å¦å·²ç»è¿žæŽ¥
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›ž  å€¼ï¼š1ï¼šå·²è¿žæŽ¥ï¼›0ï¼šæœªè¿žæŽ¥
 **************************************************************************/
 uint8_t MPU6050_testConnection(void) {
     if(MPU6050_getDeviceID() == 0x68)  //0b01101000;
@@ -223,11 +223,11 @@ uint8_t MPU6050_testConnection(void) {
 
 /**************************************************************************
 Function: Setting whether mpu6050 is the host of aux I2C cable
-Input   : enable£º1£¬yes£»0;not
+Input   : enableï¼š1ï¼Œyesï¼›0;not
 Output  : none
-º¯Êý¹¦ÄÜ£ºÉèÖÃ MPU6050 ÊÇ·ñÎªAUX I2CÏßµÄÖ÷»ú
-Èë¿Ú²ÎÊý£ºenable£º1£¬ÊÇ£»0£º·ñ
-·µ»Ø  Öµ£ºÎÞ
+å‡½æ•°åŠŸèƒ½ï¼šè®¾ç½® MPU6050 æ˜¯å¦ä¸ºAUX I2Cçº¿çš„ä¸»æœº
+å…¥å£å‚æ•°ï¼šenableï¼š1ï¼Œæ˜¯ï¼›0ï¼šå¦
+è¿”å›ž  å€¼ï¼šæ— 
 **************************************************************************/
 void MPU6050_setI2CMasterModeEnabled(uint8_t enabled) {
     I2C_WriteOneBit(devAddr, MPU6050_RA_USER_CTRL, MPU6050_USERCTRL_I2C_MST_EN_BIT, enabled);
@@ -235,11 +235,11 @@ void MPU6050_setI2CMasterModeEnabled(uint8_t enabled) {
 
 /**************************************************************************
 Function: Setting whether mpu6050 is the host of aux I2C cable
-Input   : enable£º1£¬yes£»0;not
+Input   : enableï¼š1ï¼Œyesï¼›0;not
 Output  : none
-º¯Êý¹¦ÄÜ£ºÉèÖÃ MPU6050 ÊÇ·ñÎªAUX I2CÏßµÄÖ÷»ú
-Èë¿Ú²ÎÊý£ºenable£º1£¬ÊÇ£»0£º·ñ
-·µ»Ø  Öµ£ºÎÞ
+å‡½æ•°åŠŸèƒ½ï¼šè®¾ç½® MPU6050 æ˜¯å¦ä¸ºAUX I2Cçº¿çš„ä¸»æœº
+å…¥å£å‚æ•°ï¼šenableï¼š1ï¼Œæ˜¯ï¼›0ï¼šå¦
+è¿”å›ž  å€¼ï¼šæ— 
 **************************************************************************/
 void MPU6050_setI2CBypassEnabled(uint8_t enabled) {
     I2C_WriteOneBit(devAddr, MPU6050_RA_INT_PIN_CFG, MPU6050_INTCFG_I2C_BYPASS_EN_BIT, enabled);
@@ -249,16 +249,16 @@ void MPU6050_setI2CBypassEnabled(uint8_t enabled) {
 Function: Read mpu6050 built-in temperature sensor data
 Input   : none
 Output  : Centigrade temperature
-º¯Êý¹¦ÄÜ£º¶ÁÈ¡MPU6050ÄÚÖÃÎÂ¶È´«¸ÐÆ÷Êý¾Ý
-Èë¿Ú²ÎÊý£ºÎÞ
-·µ»Ø  Öµ£ºÉãÊÏÎÂ¶È
+å‡½æ•°åŠŸèƒ½ï¼šè¯»å–MPU6050å†…ç½®æ¸©åº¦ä¼ æ„Ÿå™¨æ•°æ®
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›ž  å€¼ï¼šæ‘„æ°æ¸©åº¦
 **************************************************************************/
 int Read_Temperature(void)
 {
     float Temp;
     Temp=(I2C_ReadOneByte(devAddr,MPU6050_RA_TEMP_OUT_H)<<8)+I2C_ReadOneByte(devAddr,MPU6050_RA_TEMP_OUT_L);
-    if(Temp>32768) Temp-=65536;	//Êý¾ÝÀàÐÍ×ª»»
-    Temp=(36.53f+Temp/340)*10;	  //ÎÂ¶È·Å´óÊ®±¶´æ·Å
+    if(Temp>32768) Temp-=65536;	//æ•°æ®ç±»åž‹è½¬æ¢
+    Temp=(36.53f+Temp/340)*10;	  //æ¸©åº¦æ”¾å¤§åå€å­˜æ”¾
     return (int)Temp;
 }
 
@@ -266,9 +266,9 @@ int Read_Temperature(void)
 Function: Initialize TIM2 as the encoder interface mode
 Input   : LPF: Digital low-pass filtering frequency (Hz)
 Output  : 0: Settings successful, others: Settings failed
-º¯Êý¹¦ÄÜ£ºÉèÖÃMPUrobot_select_init.hµÄÊý×ÖµÍÍ¨ÂË²¨Æ÷
-Èë¿Ú²ÎÊý£ºlpf:Êý×ÖµÍÍ¨ÂË²¨ÆµÂÊ(Hz)
-·µ»Ø  Öµ£º0:ÉèÖÃ³É¹¦, ÆäËû:ÉèÖÃÊ§°Ü
+å‡½æ•°åŠŸèƒ½ï¼šè®¾ç½®MPUrobot_select_init.hçš„æ•°å­—ä½Žé€šæ»¤æ³¢å™¨
+å…¥å£å‚æ•°ï¼šlpf:æ•°å­—ä½Žé€šæ»¤æ³¢é¢‘çŽ‡(Hz)
+è¿”å›ž  å€¼ï¼š0:è®¾ç½®æˆåŠŸ, å…¶ä»–:è®¾ç½®å¤±è´¥
 **************************************************************************/
 unsigned char MPU6050_Set_LPF(u16 lpf)
 {
@@ -279,15 +279,15 @@ unsigned char MPU6050_Set_LPF(u16 lpf)
     else if(lpf>=20)data=4;
     else if(lpf>=10)data=5;
     else data=6;
-    return I2C_WriteOneByte(devAddr,MPU6050_RA_CONFIG,data); //Set the digital lowpass filter//ÉèÖÃÊý×ÖµÍÍ¨ÂË²¨Æ÷
+    return I2C_WriteOneByte(devAddr,MPU6050_RA_CONFIG,data); //Set the digital lowpass filter//è®¾ç½®æ•°å­—ä½Žé€šæ»¤æ³¢å™¨
 }
 /**************************************************************************
 Function: Initialize TIM2 as the encoder interface mode
 Input   : rate:4~1000(Hz)
 Output  : 0: Settings successful, others: Settings failed
-º¯Êý¹¦ÄÜ£ºÉèÖÃMPUrobot_select_init.hµÄ²ÉÑùÂÊ(¼Ù¶¨Fs=1KHz)
-Èë¿Ú²ÎÊý£ºrate:4~1000(Hz)
-·µ»Ø  Öµ£º0:ÉèÖÃ³É¹¦, ÆäËû:ÉèÖÃÊ§°Ü
+å‡½æ•°åŠŸèƒ½ï¼šè®¾ç½®MPUrobot_select_init.hçš„é‡‡æ ·çŽ‡(å‡å®šFs=1KHz)
+å…¥å£å‚æ•°ï¼šrate:4~1000(Hz)
+è¿”å›ž  å€¼ï¼š0:è®¾ç½®æˆåŠŸ, å…¶ä»–:è®¾ç½®å¤±è´¥
 **************************************************************************/
 unsigned char MPU6050_Set_Rate(u16 rate)
 {
@@ -295,52 +295,52 @@ unsigned char MPU6050_Set_Rate(u16 rate)
     if(rate>1000)rate=1000;
     if(rate<4)rate=4;
     data=1000/rate-1;
-    data=I2C_WriteOneByte(devAddr,MPU6050_RA_SMPLRT_DIV,data);	//Set the digital lowpass filter//ÉèÖÃÊý×ÖµÍÍ¨ÂË²¨Æ÷
-    return MPU6050_Set_LPF(rate/2);	//Automatically sets LPF to half of the sampling rate //×Ô¶¯ÉèÖÃLPFÎª²ÉÑùÂÊµÄÒ»°ë
+    data=I2C_WriteOneByte(devAddr,MPU6050_RA_SMPLRT_DIV,data);	//Set the digital lowpass filter//è®¾ç½®æ•°å­—ä½Žé€šæ»¤æ³¢å™¨
+    return MPU6050_Set_LPF(rate/2);	//Automatically sets LPF to half of the sampling rate //è‡ªåŠ¨è®¾ç½®LPFä¸ºé‡‡æ ·çŽ‡çš„ä¸€åŠ
 }
 
 /**************************************************************************
 Function: initialization Mpu6050 to enter the available state
 Input   : none
 Output  : none
-º¯Êý¹¦ÄÜ£º³õÊ¼»¯	MPU6050 ÒÔ½øÈë¿ÉÓÃ×´Ì¬
-Èë¿Ú²ÎÊý£ºÎÞ
-·µ»Ø  Öµ£ºÎÞ
+å‡½æ•°åŠŸèƒ½ï¼šåˆå§‹åŒ–	MPU6050 ä»¥è¿›å…¥å¯ç”¨çŠ¶æ€
+å…¥å£å‚æ•°ï¼šæ— 
+è¿”å›ž  å€¼ï¼šæ— 
 **************************************************************************/
 u8 MPU6050_initialize(void) {
-//    MPU6050_setClockSource(MPU6050_CLOCK_PLL_YGYRO); //ÉèÖÃÊ±ÖÓ
-//    MPU6050_setFullScaleGyroRange(MPU6050_GYRO_FS_2000);//ÍÓÂÝÒÇÁ¿³ÌÉèÖÃ
-//    MPU6050_setFullScaleAccelRange(MPU6050_ACCEL_FS_2);	//¼ÓËÙ¶È¶È×î´óÁ¿³Ì +-2G
-//    MPU6050_setSleepEnabled(0); //½øÈë¹¤×÷×´Ì¬
-//	  MPU6050_setI2CMasterModeEnabled(0);	 //²»ÈÃMPU6050 ¿ØÖÆAUXI2C
-//	  MPU6050_setI2CBypassEnabled(0);	 //Ö÷¿ØÖÆÆ÷µÄI2CÓë	MPU6050µÄAUXI2C	Ö±Í¨¹Ø±Õ
+//    MPU6050_setClockSource(MPU6050_CLOCK_PLL_YGYRO); //è®¾ç½®æ—¶é’Ÿ
+//    MPU6050_setFullScaleGyroRange(MPU6050_GYRO_FS_2000);//é™€èžºä»ªé‡ç¨‹è®¾ç½®
+//    MPU6050_setFullScaleAccelRange(MPU6050_ACCEL_FS_2);	//åŠ é€Ÿåº¦åº¦æœ€å¤§é‡ç¨‹ +-2G
+//    MPU6050_setSleepEnabled(0); //è¿›å…¥å·¥ä½œçŠ¶æ€
+//	  MPU6050_setI2CMasterModeEnabled(0);	 //ä¸è®©MPU6050 æŽ§åˆ¶AUXI2C
+//	  MPU6050_setI2CBypassEnabled(0);	 //ä¸»æŽ§åˆ¶å™¨çš„I2Cä¸Ž	MPU6050çš„AUXI2C	ç›´é€šå…³é—­
 
     u8 res;
-    //IIC_Init();  //Initialize the IIC bus //³õÊ¼»¯IIC×ÜÏß
-    I2C_WriteOneByte(devAddr,MPU6050_RA_PWR_MGMT_1,0X80);	//Reset MPUrobot_select_init.h //¸´Î»MPUrobot_select_init.h
-    delay_ms(200); //Delay 200 ms //ÑÓÊ±200ms
-    I2C_WriteOneByte(devAddr,MPU6050_RA_PWR_MGMT_1,0X00);	//Wake mpurobot_select_init.h //»½ÐÑMPUrobot_select_init.h
+    //IIC_Init();  //Initialize the IIC bus //åˆå§‹åŒ–IICæ€»çº¿
+    I2C_WriteOneByte(devAddr,MPU6050_RA_PWR_MGMT_1,0X80);	//Reset MPUrobot_select_init.h //å¤ä½MPUrobot_select_init.h
+    delay_ms(200); //Delay 200 ms //å»¶æ—¶200ms
+    I2C_WriteOneByte(devAddr,MPU6050_RA_PWR_MGMT_1,0X00);	//Wake mpurobot_select_init.h //å”¤é†’MPUrobot_select_init.h
 
-    //MPU6050_Set_Gyro_Fsr(1);  //Gyroscope sensor              //ÍÓÂÝÒÇ´«¸ÐÆ÷,¡À500dps=¡À500¡ã/s ¡À32768 (gyro/32768*500)*PI/180(rad/s)=gyro/3754.9(rad/s)
+    //MPU6050_Set_Gyro_Fsr(1);  //Gyroscope sensor              //é™€èžºä»ªä¼ æ„Ÿå™¨,Â±500dps=Â±500Â°/s Â±32768 (gyro/32768*500)*PI/180(rad/s)=gyro/3754.9(rad/s)
     MPU6050_setFullScaleGyroRange(MPU6050_GYRO_FS_500);
-    //MPU6050_Set_Accel_Fsr(0);	//Acceleration sensor           //¼ÓËÙ¶È´«¸ÐÆ÷,¡À2g=¡À2*9.8m/s^2 ¡À32768 accel/32768*19.6=accel/1671.84
+    //MPU6050_Set_Accel_Fsr(0);	//Acceleration sensor           //åŠ é€Ÿåº¦ä¼ æ„Ÿå™¨,Â±2g=Â±2*9.8m/s^2 Â±32768 accel/32768*19.6=accel/1671.84
     MPU6050_setFullScaleAccelRange(MPU6050_ACCEL_FS_2);
-    MPU6050_Set_Rate(50);			//Set the sampling rate to 50Hz //ÉèÖÃ²ÉÑùÂÊ50Hz
+    MPU6050_Set_Rate(50);			//Set the sampling rate to 50Hz //è®¾ç½®é‡‡æ ·çŽ‡50Hz
 
-    I2C_WriteOneByte(devAddr,MPU6050_RA_INT_ENABLE,0X00);	  //Turn off all interrupts //¹Ø±ÕËùÓÐÖÐ¶Ï
-    I2C_WriteOneByte(devAddr,MPU6050_RA_USER_CTRL,0X00);	//The I2C main mode is off //I2CÖ÷Ä£Ê½¹Ø±Õ
-    I2C_WriteOneByte(devAddr,MPU6050_RA_FIFO_EN,0X00);	  //Close the FIFO //¹Ø±ÕFIFO
+    I2C_WriteOneByte(devAddr,MPU6050_RA_INT_ENABLE,0X00);	  //Turn off all interrupts //å…³é—­æ‰€æœ‰ä¸­æ–­
+    I2C_WriteOneByte(devAddr,MPU6050_RA_USER_CTRL,0X00);	//The I2C main mode is off //I2Cä¸»æ¨¡å¼å…³é—­
+    I2C_WriteOneByte(devAddr,MPU6050_RA_FIFO_EN,0X00);	  //Close the FIFO //å…³é—­FIFO
     //The INT pin is low, enabling bypass mode to read the magnetometer directly
-    //INTÒý½ÅµÍµçÆ½ÓÐÐ§£¬¿ªÆôbypassÄ£Ê½£¬¿ÉÒÔÖ±½Ó¶ÁÈ¡´ÅÁ¦¼Æ
+    //INTå¼•è„šä½Žç”µå¹³æœ‰æ•ˆï¼Œå¼€å¯bypassæ¨¡å¼ï¼Œå¯ä»¥ç›´æŽ¥è¯»å–ç£åŠ›è®¡
     I2C_WriteOneByte(devAddr,MPU6050_RA_INT_PIN_CFG,0X80);
     //Read the ID of MPU6050
-    //¶ÁÈ¡MPU6050µÄID
+    //è¯»å–MPU6050çš„ID
     res=I2C_ReadOneByte(devAddr,MPU6050_RA_WHO_AM_I);
-    if(res==MPU6050_DEFAULT_ADDRESS) //The device ID is correct, The correct device ID depends on the AD pin //Æ÷¼þIDÕýÈ·, Æ÷¼þIDµÄÕýÈ·È¡¾öÓÚADÒý½Å
+    if(res==MPU6050_DEFAULT_ADDRESS) //The device ID is correct, The correct device ID depends on the AD pin //å™¨ä»¶IDæ­£ç¡®, å™¨ä»¶IDçš„æ­£ç¡®å–å†³äºŽADå¼•è„š
     {
-        I2C_WriteOneByte(devAddr,MPU6050_RA_PWR_MGMT_1,0X01);	//Set CLKSEL,PLL X axis as reference //ÉèÖÃCLKSEL,PLL XÖáÎª²Î¿¼
-        I2C_WriteOneByte(devAddr,MPU6050_RA_PWR_MGMT_2,0X00);	//Acceleration and gyroscope both work //¼ÓËÙ¶ÈÓëÍÓÂÝÒÇ¶¼¹¤×÷
-        MPU6050_Set_Rate(50);	                      //Set the sampling rate to 50Hz //ÉèÖÃ²ÉÑùÂÊÎª50Hz
+        I2C_WriteOneByte(devAddr,MPU6050_RA_PWR_MGMT_1,0X01);	//Set CLKSEL,PLL X axis as reference //è®¾ç½®CLKSEL,PLL Xè½´ä¸ºå‚è€ƒ
+        I2C_WriteOneByte(devAddr,MPU6050_RA_PWR_MGMT_2,0X00);	//Acceleration and gyroscope both work //åŠ é€Ÿåº¦ä¸Žé™€èžºä»ªéƒ½å·¥ä½œ
+        MPU6050_Set_Rate(50);	                      //Set the sampling rate to 50Hz //è®¾ç½®é‡‡æ ·çŽ‡ä¸º50Hz
     } else return 1;
     return 0;
 }
