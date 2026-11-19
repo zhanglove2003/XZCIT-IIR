@@ -236,16 +236,8 @@ static void OLED_ShowTask(void)
 	//首页显示小车的各个传感器信息
 	if( 1 == oled.page ) 
 	{
-		//公共显示信息,首行车型,末行电池电压与控制方式
-		uint16_t TypeNum = 4096/CAR_NUMBER;
-		TypeNum = Get_ADC1_Average(CarMode_Ch,10)/TypeNum;
-		
-		//第一行左半部分,显示电位器车型
-		OLED_ShowString(0,0,"TYPE:");
-		
-		//车型号,报错则显示X
-		if( 0 == robot_check.errorflag) OLED_ShowNumber(40,0,TypeNum,2,12);
-		else                           OLED_ShowString(38,0," X");
+		//第一行左半部分,固定显示车型
+		OLED_ShowString(0,0,"TYPE:4WD");
 		
 		//第一行右半部分,Z轴角速度
 		OLED_ShowString(60,0,"GZ");

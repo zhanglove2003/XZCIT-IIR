@@ -37,7 +37,6 @@ extern AKM_SERVO_ADC Akm_Servo;
 #define ENABLE_CarMode_PIN_CLOCK RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE)
 #define CarMode_PORT  GPIOC
 #define CarMode_PIN   GPIO_Pin_2
-#define CarMode_Ch    ADC_Channel_12
 /*----------------------------------*/
 
 /*--------TurnAdjust_PIN config--------*/

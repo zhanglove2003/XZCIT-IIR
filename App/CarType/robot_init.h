@@ -78,8 +78,6 @@ void Robot_Select(void);
 #define VEL_KI 300
 
 //不同类别车型下的参数
-//四驱小车的车型数量
-	#define CAR_NUMBER    13    
 	//half wheelspacing //半轮距
 	#define SENIOR_4WD_BS_wheelspacing   0.176 
 	#define SENIOR_4WD_DL_wheelspacing   0.230
