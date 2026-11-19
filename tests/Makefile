@@ -15,14 +15,10 @@ ROOT     = ..
 INC_APP       = -I$(ROOT)/App/BALANCE
 INC_APP_INC   = -I$(ROOT)/App/BALANCE/Inc
 INC_ENC       = -I$(ROOT)/Drivers/BSP/encoder
-# Firmware sources pulling vendor headers need this chain:
-INC_VENDOR    = -I$(ROOT)/Core/Inc -I$(ROOT)/Drivers/BSP/encoder -I$(ROOT)/Drivers/BSP/sys \
-                -I$(ROOT)/Drivers/BSP/usart -I$(ROOT)/Drivers/CMSIS/Device/ST/STM32F4xx/Include \
-                -I$(ROOT)/Drivers/CMSIS/Include -I$(ROOT)/Drivers/STM32F4xx_StdPeriph_Driver/inc \
-                -DSTM32F407xx -DSTM32F40_41xxx -D__FPU_PRESENT=1 -DARM_MATH_CM4
-STDPERIPH_SRC = $(ROOT)/Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_gpio.c \
-                $(ROOT)/Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_tim.c \
-                $(ROOT)/Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_rcc.c
+# 批次3：原 INC_VENDOR/STDPERIPH_SRC 链（host 编 encoder.c+StdPeriph 源）已随
+# encoder.c 迁移到 HAL_TIM_Encoder_* 而废弃——固件 HAL 头链无法在 host 编译，
+# 且 test_encoder_diag 只测 encoder_diag.h 的 encoder_diag_record 纯逻辑，
+# 从未使用 encoder.c 的符号（改前该链接即历史遗留）。
 
 TESTS = test_c50c_logic \
         test_encoder_diag \
@@ -67,9 +63,8 @@ $(BUILD)/test_c50c_logic: test_c50c_logic.c usart1_body.inc $(ROOT)/App/BALANCE/
 	$(CC) $(CSTD) -Wall -Wextra -Werror -Itests $(INC_APP_INC) $(INC_ENC) test_c50c_logic.c -lm -o $@ && ./$@
 
 # --- module unit tests ---
-$(BUILD)/test_encoder_diag: test_encoder_diag.c $(ROOT)/Drivers/BSP/encoder/encoder.c | $(BUILD)
-	$(CC) $(CSTD) -Wall -Werror -Wno-error -w $(INC_VENDOR) -include stm32f4xx_conf.h \
-	  test_encoder_diag.c $(ROOT)/Drivers/BSP/encoder/encoder.c $(STDPERIPH_SRC) -lm -o $@ && ./$@
+$(BUILD)/test_encoder_diag: test_encoder_diag.c $(ROOT)/Drivers/BSP/encoder/encoder_diag.h | $(BUILD)
+	$(CC) $(CSTD) -Wall -Wextra -Werror $(INC_ENC) test_encoder_diag.c -lm -o $@ && ./$@
 
 $(BUILD)/test_rear_debug: test_rear_debug.c $(ROOT)/App/BALANCE/rear_debug.c | $(BUILD)
 	$(CC) $(CSTD) -Wall -Werror $(INC_APP) test_rear_debug.c $(ROOT)/App/BALANCE/rear_debug.c -lm -o $@ && ./$@

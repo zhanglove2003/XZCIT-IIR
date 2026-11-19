@@ -1,9 +1,12 @@
 #include "I2C.h"
+/* 批次5：PB8/PB9 引脚初始化迁 HAL_GPIO_Init；软 I2C 时序层（IIC_SCL/SDA 位带宏、
+ * I2C.h 的 SDA_IN/SDA_OUT MODER 直写）按蓝图风险6 保持寄存器级直写零改动。 */
+#include "stm32f4xx_hal.h"
 
 /**************************************************************************
 Function: IIC pin initialization
 Input   : none
-Output  : none
+Output   : none
 函数功能：IIC引脚初始化
 入口参数：无
 返回  值：无
@@ -15,19 +18,20 @@ void I2C_GPIOInit(void)
     ENABLE_IIC_SCL_PIN_CLOCK;
     ENABLE_IIC_SDA_PIN_CLOCK;
 
-    GPIO_InitStructure.GPIO_Pin = IIC_SCL_PIN;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;//普通输出模式
-    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;//推挽输出
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;//100MHz
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;//上拉
-    GPIO_Init(IIC_SCL_PORT, &GPIO_InitStructure);//初始化
+    /* 批次5：等价映射 PB8/PB9 推挽输出；100MHz→GPIO_SPEED_FREQ_VERY_HIGH
+     * （ioc:195-206 为 SPEED_HIGH，现码 100MHz 优先保留，差异已申报；
+     * 上拉与 ioc PULLUP 一致）。 */
+    GPIO_InitStructure.Pin   = IIC_SCL_PIN;
+    GPIO_InitStructure.Mode  = GPIO_MODE_OUTPUT_PP;//普通输出模式
+    GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_VERY_HIGH;//100MHz
+    GPIO_InitStructure.Pull  = GPIO_PULLUP;//上拉
+    HAL_GPIO_Init(IIC_SCL_PORT, &GPIO_InitStructure);//初始化
 
-    GPIO_InitStructure.GPIO_Pin = IIC_SDA_PIN;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;//普通输出模式
-    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;//推挽输出
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;//100MHz
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;//上拉
-    GPIO_Init(IIC_SDA_PORT, &GPIO_InitStructure);//初始化
+    GPIO_InitStructure.Pin   = IIC_SDA_PIN;
+    GPIO_InitStructure.Mode  = GPIO_MODE_OUTPUT_PP;//普通输出模式
+    GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_VERY_HIGH;//100MHz
+    GPIO_InitStructure.Pull  = GPIO_PULLUP;//上拉
+    HAL_GPIO_Init(IIC_SDA_PORT, &GPIO_InitStructure);//初始化
 
     IIC_SCL=1;
     IIC_SDA=1;

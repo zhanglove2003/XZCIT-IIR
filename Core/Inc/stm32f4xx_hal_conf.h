@@ -28,9 +28,9 @@
  extern "C" {
 #endif
 
-/* 批次0：StdPeriph CMSIS 头与 HAL 1.8.5 的兼容层（_Pos 位偏移宏 + 全局量声明），
-   必须在所有 HAL 模块头之前 include。 */
-#include "stm32f4xx_hal_compat.h"
+/* 批次6：stm32f4xx_hal_compat.h（批次0 兼容层：_Pos 位偏移宏 + 全局量声明）退役——
+ * stm32f4xx.h shim 切至 Cube 版 stm32f407xx.h 后，RCC 位偏移宏与
+ * SystemCoreClock/AHBPrescTable/APBPrescTable 声明均由设备头原生提供。 */
 
 /* Exported types ------------------------------------------------------------*/
 /* Exported constants --------------------------------------------------------*/
@@ -42,11 +42,21 @@
 #define HAL_MODULE_ENABLED
 
   /* #define HAL_CRYP_MODULE_ENABLED */
-/* 批次0：GPIO/DMA/ADC/TIM/UART 的 HAL 模块暂不启用——HAL 与 StdPeriph 头
-   （stm32f4xx_conf.h 全量包含）同名 InitTypeDef 结构体冲突（GPIO_InitTypeDef/
-   DMA_InitTypeDef/ADC_InitTypeDef/TIM_HandleTypeDef 等），待各外设迁移批次
-   删除对应 StdPeriph 源文件后再逐一启用。本批只需 RCC/FLASH/PWR/CORTEX。 */
-/* #define HAL_ADC_MODULE_ENABLED */
+/* 批次0：GPIO 的 HAL 模块暂不启用——HAL 与 StdPeriph 头（stm32f4xx_conf.h 全量
+   包含）同名 InitTypeDef 结构体冲突（GPIO_InitTypeDef 等），待 GPIO 迁移批次
+   删除对应 StdPeriph 源文件后再启用。
+   批次2：启用 HAL_UART + HAL_DMA（stm32f4xx_hal_uart.h 无条件嵌入
+   DMA_HandleTypeDef 指针）；配套将 stm32f4xx_conf.h 的 StdPeriph
+   stm32f4xx_dma.h 摘除——两库同名 DMA_InitTypeDef 成员集不同，同 TU 必然
+   硬冲突；全树无 DMA 用户（grep DMA_InitTypeDef/DMA_Init/DMA_Cmd 为空），
+   StdPeriph DMA 源文件已从 Makefile 移除。
+   批次3：启用 HAL_TIM + HAL_ADC（encoder×4/ADC1 迁移）。HAL tim 头与 StdPeriph
+   tim 头无同名类型（TIM_Base_InitTypeDef vs TIM_TimeBaseInitTypeDef 等），共存
+   无冲突；ADC 侧两库同名 ADC_InitTypeDef（成员集不同），配套将 stm32f4xx_conf.h
+   的 StdPeriph stm32f4xx_adc.h 摘除（全树 StdPeriph ADC 调用面仅 adc.c，本批已
+   迁移；stm32f4xx_adc.c 同批出构建）。 */
+#define HAL_ADC_MODULE_ENABLED     /* 批次3：ADC1(电池电压/阿克曼滑轨)迁移至 HAL_ADC_*；StdPeriph
+                                       adc.h 已从 stm32f4xx_conf.h 摘除、源文件已出构建 */
 /* #define HAL_CAN_MODULE_ENABLED */
 /* #define HAL_CRC_MODULE_ENABLED */
 /* #define HAL_CAN_LEGACY_MODULE_ENABLED */
@@ -71,8 +81,12 @@
 /* #define HAL_SD_MODULE_ENABLED */
 /* #define HAL_MMC_MODULE_ENABLED */
 /* #define HAL_SPI_MODULE_ENABLED */
-/* #define HAL_TIM_MODULE_ENABLED */   /* 批次0：与 StdPeriph TIM 类型冲突，待 TIM 批次启用 */
-/* #define HAL_UART_MODULE_ENABLED */  /* 批次0：与 StdPeriph USART 类型冲突，待 UART 批次启用 */
+#define HAL_TIM_MODULE_ENABLED     /* 批次3：TIM2/3/4/5 编码器模式迁移至 HAL_TIM_Encoder_Init；
+                                       批次4：motor.c/led.c PWM 迁移至 HAL_TIM_PWM_*（F4 hal_tim.c
+                                       无 HAL_PWM_MODULE_ENABLED 子 guard，本宏即覆盖 PWM API），
+                                       stm32f4xx_tim.c 已退场 */
+#define HAL_UART_MODULE_ENABLED     /* 批次2：UART1/3/4 迁移至 HAL_UART_Init 启用；HAL 与 StdPeriph
+                                       USART 无同名类型冲突（UART_InitTypeDef vs USART_InitTypeDef） */
 /* #define HAL_USART_MODULE_ENABLED */
 /* #define HAL_IRDA_MODULE_ENABLED */
 /* #define HAL_SMARTCARD_MODULE_ENABLED */
@@ -89,15 +103,19 @@
 /* #define HAL_SPDIFRX_MODULE_ENABLED */
 /* #define HAL_DFSDM_MODULE_ENABLED */
 /* #define HAL_LPTIM_MODULE_ENABLED */
-/* #define HAL_GPIO_MODULE_ENABLED */   /* 批次0：与 StdPeriph GPIO_InitTypeDef 冲突，待 GPIO 批次启用 */
-/* #define HAL_EXTI_MODULE_ENABLED */   /* 批次0：本批未用 EXTI HAL */
-/* #define HAL_DMA_MODULE_ENABLED */   /* 批次0：与 StdPeriph DMA_InitTypeDef 冲突，待 DMA 批次启用 */
+#define HAL_GPIO_MODULE_ENABLED    /* 批次5：全树 GPIO 迁移至 HAL_GPIO_Init/ReadPin/WritePin；
+                                       StdPeriph stm32f4xx_gpio.h 已从 stm32f4xx_conf.h 摘除、
+                                       stm32f4xx_gpio.c 已出构建，同名 GPIO_InitTypeDef 冲突解除 */
+#define HAL_EXTI_MODULE_ENABLED    /* 批次5：hc_sr04 PD9 双沿 EXTI 走 HAL_EXTI_SetConfigLine
+                                       （EXTICR/IMR/RTSR/FTSR 一体配置）；ISR 保持裸 EXTI9_5_IRQHandler
+                                       + 裸读/写 EXTI->PR（蓝图风险3：不走回调机制） */
+#define HAL_DMA_MODULE_ENABLED     /* 批次2：hal_uart.h 的 DMA_HandleTypeDef 依赖；StdPeriph DMA
+                                       头已从 stm32f4xx_conf.h 摘除、源文件已出构建，无冲突 */
 #define HAL_RCC_MODULE_ENABLED
 #define HAL_FLASH_MODULE_ENABLED
 #define HAL_PWR_MODULE_ENABLED
 #define HAL_CORTEX_MODULE_ENABLED
-/* #define HAL_TIM_MODULE_ENABLED */    /* 批次0：与 StdPeriph TIM 类型冲突，待 TIM 批次启用 */
-/* #define HAL_UART_MODULE_ENABLED */   /* 批次0：与 StdPeriph USART 类型冲突，待 UART 批次启用 */
+/* （批次3 备注：HAL_TIM/HAL_ADC_MODULE_ENABLED 已在上面列表启用，此为批次0遗留的重复注释行） */
 
 /* ########################## HSE/HSI Values adaptation ##################### */
 /**
@@ -408,6 +426,12 @@
 #ifdef HAL_SPI_MODULE_ENABLED
  #include "stm32f4xx_hal_spi.h"
 #endif /* HAL_SPI_MODULE_ENABLED */
+
+/* 批次3：补 ADC include guard——批次0 起本树即缺失（官方 hal_conf.h 本有），
+ * 启用 HAL_ADC_MODULE_ENABLED 后无此行 hal_adc.h 根本不被引入。 */
+#ifdef HAL_ADC_MODULE_ENABLED
+ #include "stm32f4xx_hal_adc.h"
+#endif /* HAL_ADC_MODULE_ENABLED */
 
 #ifdef HAL_TIM_MODULE_ENABLED
  #include "stm32f4xx_hal_tim.h"

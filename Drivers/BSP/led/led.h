@@ -36,17 +36,18 @@ void LightStrip_SetColor( uint8_t r,uint8_t g,uint8_t b );
 
 /*--------LED config--------*/
 //LED灯珠
-#define ENABLE_LED_R_PIN_CLOCK RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE)
-#define ENABLE_LED_G_PIN_CLOCK RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE)
-#define ENABLE_LED_B_PIN_CLOCK RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE)
+/* 批次6：RCC_*PeriphClockCmd → __HAL_RCC_*_CLK_ENABLE（写同 ENR 位，行为等价；StdPeriph 退场） */
+#define ENABLE_LED_R_PIN_CLOCK __HAL_RCC_GPIOB_CLK_ENABLE()
+#define ENABLE_LED_G_PIN_CLOCK __HAL_RCC_GPIOE_CLK_ENABLE()
+#define ENABLE_LED_B_PIN_CLOCK __HAL_RCC_GPIOB_CLK_ENABLE()
 
 #define LED_R_PORT GPIOB
 #define LED_G_PORT GPIOE
 #define LED_B_PORT GPIOB
 
-#define LED_R_PIN GPIO_Pin_15
-#define LED_G_PIN GPIO_Pin_6
-#define LED_B_PIN GPIO_Pin_14
+#define LED_R_PIN GPIO_PIN_15
+#define LED_G_PIN GPIO_PIN_6
+#define LED_B_PIN GPIO_PIN_14
 
 #define LED_R PBout(15) 
 #define LED_G PEout(6) 
@@ -56,26 +57,26 @@ void LightStrip_SetColor( uint8_t r,uint8_t g,uint8_t b );
 
 /*--------LightStrip config--------*/
 /*-------- RGB灯带配置 --------*/
-#define ENABLE_LightStrip_R_TIM_CLOCK   RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM12,ENABLE) //定时器
-#define ENABLE_LightStrip_G_TIM_CLOCK   RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM9,ENABLE) 
-#define ENABLE_LightStrip_B_TIM_CLOCK   RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM12,ENABLE) 
+#define ENABLE_LightStrip_R_TIM_CLOCK   __HAL_RCC_TIM12_CLK_ENABLE() //定时器
+#define ENABLE_LightStrip_G_TIM_CLOCK   __HAL_RCC_TIM9_CLK_ENABLE() 
+#define ENABLE_LightStrip_B_TIM_CLOCK   __HAL_RCC_TIM12_CLK_ENABLE() 
 
-#define ENABLE_LightStrip_R_PORT_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB,ENABLE) //引脚端口
-#define ENABLE_LightStrip_G_PORT_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE,ENABLE) 
-#define ENABLE_LightStrip_B_PORT_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB,ENABLE)
+#define ENABLE_LightStrip_R_PORT_CLOCK   __HAL_RCC_GPIOB_CLK_ENABLE() //引脚端口
+#define ENABLE_LightStrip_G_PORT_CLOCK   __HAL_RCC_GPIOE_CLK_ENABLE() 
+#define ENABLE_LightStrip_B_PORT_CLOCK   __HAL_RCC_GPIOB_CLK_ENABLE()
 	
 #define LightStrip_R_PORT      GPIOB            //引脚端口
-#define LightStrip_R_PIN       GPIO_Pin_15      //引脚
+#define LightStrip_R_PIN       GPIO_PIN_15      //引脚
 #define LightStrip_R_TIM       TIM12            //使用的定时器
 #define LightStrip_R_Channel   2                //使用了定时器的哪一个通道CCRx(1~4)
 
 #define LightStrip_G_PORT      GPIOE            //引脚端口 （此处注意,高配阿克曼舵机pwm信号也使用了TIM9定时器）
-#define LightStrip_G_PIN       GPIO_Pin_6       //引脚
+#define LightStrip_G_PIN       GPIO_PIN_6       //引脚
 #define LightStrip_G_TIM       TIM9             //使用的定时器
 #define LightStrip_G_Channel   2                //使用了定时器的哪一个通道CCRx(1~4)
 
 #define LightStrip_B_PORT      GPIOB            //引脚端口
-#define LightStrip_B_PIN       GPIO_Pin_14      //引脚
+#define LightStrip_B_PIN       GPIO_PIN_14      //引脚
 #define LightStrip_B_TIM       TIM12            //使用的定时器
 #define LightStrip_B_Channel   1                //使用了定时器的哪一个通道CCRx(1~4)
 /*--------------------------------------------*/

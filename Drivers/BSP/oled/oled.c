@@ -2,6 +2,9 @@
 #include "stdlib.h"
 #include "oledfont.h"
 #include "delay.h"
+/* 批次5：GPIO 迁移至 HAL_GPIO_Init/WritePin（StdPeriph gpio.h 已从 conf 摘除，
+ * BitAction 改用 HAL GPIO_PinState，见 oled.h 宏区注释）。 */
+#include "stm32f4xx_hal.h"
 
 static u8 OLED_GRAM[128][8];
 
@@ -20,17 +23,17 @@ typedef struct
 } OLED_PinMap_t;
 
 static const OLED_PinMap_t oled_pins_old = {
-    {GPIOD, GPIO_Pin_7},
-    {GPIOD, GPIO_Pin_6},
-    {GPIOD, GPIO_Pin_5},
-    {GPIOD, GPIO_Pin_4},
+    {GPIOD, GPIO_PIN_7},
+    {GPIOD, GPIO_PIN_6},
+    {GPIOD, GPIO_PIN_5},
+    {GPIOD, GPIO_PIN_4},
 };
 
 static const OLED_PinMap_t oled_pins_v1_2 = {
-    {GPIOD, GPIO_Pin_7},
-    {GPIOD, GPIO_Pin_4},
-    {GPIOE, GPIO_Pin_1},
-    {GPIOE, GPIO_Pin_0},
+    {GPIOD, GPIO_PIN_7},
+    {GPIOD, GPIO_PIN_4},
+    {GPIOE, GPIO_PIN_1},
+    {GPIOE, GPIO_PIN_0},
 };
 
 static const OLED_PinMap_t *oled_pins = &oled_pins_old;
@@ -45,28 +48,31 @@ static void OLED_SelectHardware(void)
 
 static void OLED_PinClockEnable(GPIO_TypeDef *port)
 {
-    if(port == GPIOA)      RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
-    else if(port == GPIOB) RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
-    else if(port == GPIOC) RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
-    else if(port == GPIOD) RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
-    else if(port == GPIOE) RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE);
+/* 批次6：RCC_*PeriphClockCmd → __HAL_RCC_*_CLK_ENABLE（写同 ENR 位，行为等价；StdPeriph 退场） */
+    if(port == GPIOA)      __HAL_RCC_GPIOA_CLK_ENABLE();
+    else if(port == GPIOB) __HAL_RCC_GPIOB_CLK_ENABLE();
+    else if(port == GPIOC) __HAL_RCC_GPIOC_CLK_ENABLE();
+    else if(port == GPIOD) __HAL_RCC_GPIOD_CLK_ENABLE();
+    else if(port == GPIOE) __HAL_RCC_GPIOE_CLK_ENABLE();
 }
 
 static void OLED_GPIO_Output_Init(GPIO_TypeDef *port, uint16_t pin)
 {
     GPIO_InitTypeDef GPIO_InitStructure;
 
-    GPIO_InitStructure.GPIO_Pin = pin;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
-    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
-    GPIO_Init(port, &GPIO_InitStructure);
+    /* 批次5：等价映射推挽输出；2MHz→GPIO_SPEED_FREQ_LOW（ioc PD4/PD7=LOW 一致，
+     * PE0/PE1 不在 ioc 43 引脚内，保留现码 2MHz/NOPULL）；引脚表 PD7/PD4/PE1/PE0
+     * （v1_2）与 PD7/PD6/PD5/PD4（old）在上方 oled_pins 结构，本批不动。 */
+    GPIO_InitStructure.Pin   = pin;
+    GPIO_InitStructure.Mode  = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStructure.Pull  = GPIO_NOPULL;
+    HAL_GPIO_Init(port, &GPIO_InitStructure);
 }
 
-static void OLED_PinWrite(const OLED_Pin_t *pin, BitAction value)
+static void OLED_PinWrite(const OLED_Pin_t *pin, GPIO_PinState value)
 {
-    GPIO_WriteBit(pin->port, pin->pin, value);
+    HAL_GPIO_WritePin(pin->port, pin->pin, value);
 }
 /**************************************************************************
 Function: Refresh the OLED screen
@@ -210,7 +216,7 @@ void OLED_Init(void)
 //	//特殊IO:PC13、14、15的处理
 //	//Turn off the external low speed external clock signal function, PC13, PC14, PC15 can be used as normal IO
 //    //关闭外部低速外部时钟信号功能 后，PC13 PC14 PC15 才可以当普通IO用
-//    RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR, ENABLE);
+//    __HAL_RCC_PWR_CLK_ENABLE();
 //    PWR_BackupAccessCmd(ENABLE);
 //    RCC_LSEConfig(RCC_LSE_OFF);
 //    PWR_BackupAccessCmd(DISABLE);

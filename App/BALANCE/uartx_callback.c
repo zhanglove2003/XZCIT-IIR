@@ -189,9 +189,13 @@ int USART1_IRQHandler(void)
 {
     u8 Usart_Receive;
 
-    if(USART_GetITStatus(USART1, USART_IT_RXNE) != RESET) //Check if data is received //判断是否接收到数据
+    /* 批次2：USART_GetITStatus(USART1, USART_IT_RXNE) → 直读 SR（寄存器级）。
+     * 等价性：GetITStatus(RXNE)=CR1.RXNEIE && SR.RXNE；本工程 RXNEIE 在
+     * UART1_Init 开启后无任何关闭路径（grep 无 RXNEIE/RXNE 中断开关），
+     * 故 SR 判读与原实现等价。保持 int 返回厂家 hack，勿改 void。 */
+    if(USART1->SR & USART_SR_RXNE) //Check if data is received //判断是否接收到数据
     {
-        Usart_Receive = USART_ReceiveData(USART1);//Read the data //读取数据
+        Usart_Receive = (u8)USART1->DR;//Read the data //读取数据（读 DR 同时清 RXNE，等价 USART_ReceiveData）
 
 		/* [C50C] 见 USART3 注释：帧解析不能被时间门截断。 */
         UartxControll_Callback(USART1,Usart_Receive);
@@ -210,7 +214,10 @@ Output  : none
 int UART4_IRQHandler(void)
 {
     int Usart_Receive;
-    if(USART_GetITStatus(UART4, USART_IT_RXNE) != RESET) //Check if data is received //判断是否接收到数据
+    /* 批次2：USART_GetITStatus(UART4, USART_IT_RXNE) → 直读 SR（等价性同 USART1 注释，
+     * RXNEIE 由 UART4_Init 开启后无关闭路径）。UART4->DR 直读与 _System_Reset_ 链路
+     * 本就是寄存器级，保持不动。 */
+    if(UART4->SR & USART_SR_RXNE) //Check if data is received //判断是否接收到数据
     {
         static u8 Flag_PID,i,j,Receive[50],Last_Usart_Receive;
         static float Data;
@@ -396,9 +403,10 @@ int USART3_IRQHandler(void)
 {
     u8 Usart_Receive;
 
-    if(USART_GetITStatus(USART3, USART_IT_RXNE) != RESET) //Check if data is received //判断是否接收到数据
+    /* 批次2：USART_GetITStatus(USART3, USART_IT_RXNE) → 直读 SR（等价性同 USART1 注释）。 */
+    if(USART3->SR & USART_SR_RXNE) //Check if data is received //判断是否接收到数据
     {
-        Usart_Receive = USART_ReceiveData(USART3);//Read the data //读取数据
+        Usart_Receive = (u8)USART3->DR;//Read the data //读取数据（读 DR 同时清 RXNE，等价 USART_ReceiveData）
 		
 		// Data is not processed until 10 seconds after startup
 		//开机10秒前不处理数据

@@ -46,10 +46,10 @@ void HardFault_Handler(void);
 void MemManage_Handler(void);
 void BusFault_Handler(void);
 void UsageFault_Handler(void);
-void SVC_Handler(void);
+/* 批次1：SVC_Handler/PendSV_Handler/SysTick_Handler 原型删除——本文件只实现上述
+ * fault 处理与 DebugMon；其余三个异常分别由 FreeRTOS port.c（FreeRTOSConfig.h:216-217
+ * 宏改名）与 Drivers/BSP/delay/delay.c:19 实现，原型不归本文件。 */
 void DebugMon_Handler(void);
-void PendSV_Handler(void);
-void SysTick_Handler(void);
 
 #ifdef __cplusplus
 }

@@ -23,10 +23,13 @@ extern AKM_SERVO_ADC Akm_Servo;
 
 /*--------Battery_PIN config--------*/
 //电池电压采集的引脚
-#define ENABLE_BATTERY_PIN_CLOCK RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE)
+/* 批次6：RCC_*PeriphClockCmd → __HAL_RCC_*_CLK_ENABLE（写同 ENR 位，行为等价；StdPeriph 退场） */
+#define ENABLE_BATTERY_PIN_CLOCK __HAL_RCC_GPIOB_CLK_ENABLE()
 #define Battery_PORT  GPIOB
-#define Battery_PIN   GPIO_Pin_0
-#define Battery_Ch    ADC_Channel_8
+#define Battery_PIN   GPIO_PIN_0
+//批次3：原 StdPeriph ADC_Channel_8=0x08；HAL ADC_CHANNEL_8 数值同为 8，
+//Get_ADC1 迁 HAL 后 sConfig.Channel 直作通道号
+#define Battery_Ch    8
 /*----------------------------------*/
 
 #endif 

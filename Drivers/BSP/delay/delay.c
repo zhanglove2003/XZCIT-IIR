@@ -45,7 +45,9 @@ u32 getSysTickCnt(void)
 void delay_init(u8 SYSCLK)
 {
 	u32 reload;
- 	SysTick_CLKSourceConfig(SysTick_CLKSource_HCLK); 
+	//批次1：原 SysTick_CLKSourceConfig(SysTick_CLKSource_HCLK)（misc.c）改 CMSIS 直写，
+	//逐位等价 misc.c:223-247 的 HCLK 分支（置 CLKSOURCE 位，SysTick 时钟=处理器时钟）。
+	SysTick->CTRL |= SysTick_CTRL_CLKSOURCE_Msk;
 	fac_us=SYSCLK;							//不论是否使用OS,fac_us都需要使用
 	reload=SYSCLK;							//每秒钟的计数次数 单位为M	   
 	reload*=1000000/configTICK_RATE_HZ;		//根据configTICK_RATE_HZ设定溢出时间

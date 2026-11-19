@@ -16,10 +16,14 @@ FPU      = -mfpu=fpv4-sp-d16
 FLOAT-ABI= -mfloat-abi=hard
 MCU      = $(CPU) -mthumb $(FPU) $(FLOAT-ABI)
 
-DEFS     = -DUSE_STDPERIPH_DRIVER -DSTM32F407xx -DHAL_NO_LEGACY -DHAL_RCC_NO_MCO -D__FPU_PRESENT=1 -D__TARGET_FPU_VFP \
-           -DARM_MATH_CM4 -DUSE_USB_OTG_FS -D_4WD_CAR -DSTM32F40_41xxx -D__weak="__attribute__((weak))" -D__packed="__attribute__((__packed__))" -D__align="__attribute__((aligned(4)))" -D__inline="inline" -D__forceinline="inline __attribute__((always_inline))" -D__nop="__NOP"
-# 批次0：-DSTM32F407xx 供 HAL _ex 模块的器件宏分支使用；-DSTM32F40_41xxx 仍需保留
-# （StdPeriph 头 stm32f4xx.h:101-103 与 BSP/App 代码依赖它）。
+# 批次6 DEFS 终态：删 -DUSE_STDPERIPH_DRIVER（conf.h 机制退场）、-DSTM32F40_41xxx
+# （legacy 器件门，唯一使用面 conf.h 已删）、-DUSE_USB_OTG_FS（全树零消费者）。
+# 保守保留 -DHAL_NO_LEGACY（跳过 Legacy/stm32_hal_legacy.h 纯别名层，HAL 源不依赖）
+# 与 -DHAL_RCC_NO_MCO（HAL_RCC_MCOConfig 未使用）；__weak 等 5 个编译器 shim 仍被
+# BSP 头使用（风险6），必须保留。
+DEFS     = -DSTM32F407xx -DHAL_NO_LEGACY -DHAL_RCC_NO_MCO -D__FPU_PRESENT=1 -D__TARGET_FPU_VFP \
+           -DARM_MATH_CM4 -D_4WD_CAR -D__weak="__attribute__((weak))" -D__packed="__attribute__((__packed__))" -D__align="__attribute__((aligned(4)))" -D__inline="inline" -D__forceinline="inline __attribute__((always_inline))" -D__nop="__NOP"
+# 批次6：-DSTM32F407xx 供 HAL _ex 模块的器件宏分支使用（shim 后亦选中 stm32f407xx.h）。
 # 四轮 ROS 直行（task-15）：这 4 个宏是 balance_task.c 的 #error 守卫要求的最小充分集合。
 # REAR_WHEEL_DEBUG 打开四轮调试输出路径；ROS_STRAIGHT_DRIVE 打开 ros_cmd_tick 与
 # steer_debug_step_duty；FOUR_TURN_DEBUG 打开 PS2 四轮转向分支（不加则走引用
@@ -33,7 +37,6 @@ C_INCLUDES = -IDrivers/CMSIS/Include -IDrivers/CMSIS/Device/ST/STM32F4xx/Include
              -IDrivers/BSP/sys \
              -IDrivers/BSP/usart \
              -ICore/Src -ICore/Inc \
-             -IDrivers/STM32F4xx_StdPeriph_Driver/inc \
              -IMiddlewares/Third_Party/FreeRTOS/include \
              -IMiddlewares/Third_Party/FreeRTOS/portable/RVDS/ARM_CM4F \
              -IDrivers/BSP/MPU6050 \
@@ -88,17 +91,14 @@ C_SOURCES = \
   Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c \
   Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c \
   Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/misc.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_gpio.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_rcc.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_syscfg.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_exti.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_usart.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_adc.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_can.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_tim.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_pwr.c \
-  Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_dma.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim_ex.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_adc.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_adc_ex.c \
   Middlewares/Third_Party/FreeRTOS/croutine.c \
   Middlewares/Third_Party/FreeRTOS/event_groups.c \
   Middlewares/Third_Party/FreeRTOS/list.c \
@@ -141,7 +141,7 @@ C_SOURCES = \
   App/BALANCE/uartx_callback.c \
   App/BALANCE/pwm_test.c \
   App/BALANCE/reportErr_task.c \
-  Core/Startup/startup_gcc.s
+  startup_stm32f407xx.s
 
 # C 源与汇编源分开收集，各自单独生成目标文件
 CSRC     = $(filter %.c,$(C_SOURCES))

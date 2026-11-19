@@ -1,4 +1,6 @@
 #include "buzzer.h"
+/* 批次5：GPIO 迁移至 HAL_GPIO_Init；Buzzer=BEEP_OFF 位带写宏（buzzer.h）保留。 */
+#include "stm32f4xx_hal.h"
 
 /**************************************************************************
 Function: Buzzer interface initialized
@@ -9,16 +11,17 @@ Output  : none
 返回  值：无
 **************************************************************************/
 void Buzzer_Init(void)
-{	
+{
 	GPIO_InitTypeDef  GPIO_InitStructure;
 	ENABLE_Buzzer_PIN_CLOCK;
-	GPIO_InitStructure.GPIO_Pin =  Buzzer_PIN;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
-	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
-	GPIO_Init(Buzzer_PORT, &GPIO_InitStructure);
-	
+	/* 批次5：等价映射 PD11 推挽输出；原 GPIO_Speed_100MHz→GPIO_SPEED_FREQ_VERY_HIGH
+	 * （ioc:280 为 SPEED_HIGH，现码 100MHz 优先保留，差异已申报）。 */
+	GPIO_InitStructure.Pin   = Buzzer_PIN;
+	GPIO_InitStructure.Mode  = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+	GPIO_InitStructure.Pull  = GPIO_PULLUP;
+	HAL_GPIO_Init(Buzzer_PORT, &GPIO_InitStructure);
+
 	Buzzer = BEEP_OFF;
 }
 

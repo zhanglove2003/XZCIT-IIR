@@ -17,131 +17,132 @@ void Servo_Top_Init(u16 arr,u16 psc,int servomid);    //顶配阿克曼车型舵
 //用户配置User config,当不涉及功能修改时,若发生引脚更换,仅修改该文件下的引脚参数即可
 /*--------Motor_A User config--------*/
 //PWM引脚配置
-#define ENABLE_PWMA_TIM_CLOCK   RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM8,ENABLE)  //PWMA时钟使能
-#define ENABLE_PWMA_PORT_CLOCK  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC,ENABLE) //PWMA对应的引脚端口使能
+/* 批次6：RCC_*PeriphClockCmd → __HAL_RCC_*_CLK_ENABLE（写同 ENR 位，行为等价；StdPeriph 退场） */
+#define ENABLE_PWMA_TIM_CLOCK   __HAL_RCC_TIM8_CLK_ENABLE()  //PWMA时钟使能
+#define ENABLE_PWMA_PORT_CLOCK  __HAL_RCC_GPIOC_CLK_ENABLE() //PWMA对应的引脚端口使能
 	
 #define PWMA_PORT      GPIOC            //PWMA引脚端口
-#define PWMA_PIN       GPIO_Pin_9       //PWMA引脚
+#define PWMA_PIN       GPIO_PIN_9       //PWMA引脚
 #define PWMA_TIM       TIM8             //PWMA使用的定时器
 #define PWMA_Channel   4                //使用了定时器的哪一个通道CCRx(1~4)
 
 //电机方向引脚配置
-#define ENABLE_AIN1_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB,ENABLE)
-#define ENABLE_AIN2_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB,ENABLE)
+#define ENABLE_AIN1_CLOCK   __HAL_RCC_GPIOB_CLK_ENABLE()
+#define ENABLE_AIN2_CLOCK   __HAL_RCC_GPIOB_CLK_ENABLE()
 
 #define AIN1 	            PBout(13)//AIN1
 #define AIN1_PORT           GPIOB
-#define AIN1_PIN            GPIO_Pin_13
+#define AIN1_PIN            GPIO_PIN_13
 
 #define AIN2 	            PBout(12)//AIN2
 #define AIN2_PORT           GPIOB
-#define AIN2_PIN            GPIO_Pin_12
+#define AIN2_PIN            GPIO_PIN_12
 /*----------------------------------*/
 
 /*--------Motor_B User config--------*/
 //PWM引脚配置
-#define ENABLE_PWMB_TIM_CLOCK   RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM8,ENABLE)  //PWMB时钟使能
-#define ENABLE_PWMB_PORT_CLOCK  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC,ENABLE) //PWMB对应的引脚端口使能
+#define ENABLE_PWMB_TIM_CLOCK   __HAL_RCC_TIM8_CLK_ENABLE()  //PWMB时钟使能
+#define ENABLE_PWMB_PORT_CLOCK  __HAL_RCC_GPIOC_CLK_ENABLE() //PWMB对应的引脚端口使能
 	
 #define PWMB_PORT      GPIOC            //PWMB引脚端口
-#define PWMB_PIN       GPIO_Pin_8       //PWMB引脚
+#define PWMB_PIN       GPIO_PIN_8       //PWMB引脚
 #define PWMB_TIM       TIM8             //PWMB使用的定时器
 #define PWMB_Channel   3                //使用了定时器的哪一个通道CCRx(1~4)
 
 //电机方向引脚配置
-#define ENABLE_BIN1_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC,ENABLE)
-#define ENABLE_BIN2_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE,ENABLE)
+#define ENABLE_BIN1_CLOCK   __HAL_RCC_GPIOC_CLK_ENABLE()
+#define ENABLE_BIN2_CLOCK   __HAL_RCC_GPIOE_CLK_ENABLE()
 
 #define BIN1 	            PCout(0)//BIN1
 #define BIN1_PORT           GPIOC
-#define BIN1_PIN            GPIO_Pin_0
+#define BIN1_PIN            GPIO_PIN_0
 
 #define BIN2 	            PEout(15)//BIN2
 #define BIN2_PORT           GPIOE
-#define BIN2_PIN            GPIO_Pin_15
+#define BIN2_PIN            GPIO_PIN_15
 /*----------------------------------*/
 
 /*--------Motor_C User config--------*/
 //PWM引脚配置
-#define ENABLE_PWMC_TIM_CLOCK   RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM8,ENABLE) //PWMC时钟使能
-#define ENABLE_PWMC_PORT_CLOCK  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC,ENABLE) //PWMC对应的引脚端口使能
+#define ENABLE_PWMC_TIM_CLOCK   __HAL_RCC_TIM8_CLK_ENABLE() //PWMC时钟使能
+#define ENABLE_PWMC_PORT_CLOCK  __HAL_RCC_GPIOC_CLK_ENABLE() //PWMC对应的引脚端口使能
 	
 #define PWMC_PORT      GPIOC            //PWMC引脚端口
-#define PWMC_PIN       GPIO_Pin_7       //PWMC引脚
+#define PWMC_PIN       GPIO_PIN_7       //PWMC引脚
 #define PWMC_TIM       TIM8             //PWMC使用的定时器
 #define PWMC_Channel   2                //使用了定时器的哪一个通道CCRx(1~4)
 
 //电机方向引脚配置
-#define ENABLE_CIN1_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD,ENABLE)
-#define ENABLE_CIN2_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD,ENABLE)
+#define ENABLE_CIN1_CLOCK   __HAL_RCC_GPIOD_CLK_ENABLE()
+#define ENABLE_CIN2_CLOCK   __HAL_RCC_GPIOD_CLK_ENABLE()
 
 #define CIN1 	        PDout(10)//CIN1
 #define CIN1_PORT       GPIOD
-#define CIN1_PIN        GPIO_Pin_10
+#define CIN1_PIN        GPIO_PIN_10
 
 #define CIN2 	        PDout(12)//CIN2
 #define CIN2_PORT       GPIOD
-#define CIN2_PIN        GPIO_Pin_12
+#define CIN2_PIN        GPIO_PIN_12
 /*----------------------------------*/
 
 /*--------Motor_D User config--------*/
 //PWM引脚配置
-#define ENABLE_PWMD_TIM_CLOCK   RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM8,ENABLE) //PWMD时钟使能
-#define ENABLE_PWMD_PORT_CLOCK  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC,ENABLE) //PWMD对应的引脚端口使能
+#define ENABLE_PWMD_TIM_CLOCK   __HAL_RCC_TIM8_CLK_ENABLE() //PWMD时钟使能
+#define ENABLE_PWMD_PORT_CLOCK  __HAL_RCC_GPIOC_CLK_ENABLE() //PWMD对应的引脚端口使能
 	
 #define PWMD_PORT      GPIOC            //PWMD引脚端口
-#define PWMD_PIN       GPIO_Pin_6       //PWMD引脚
+#define PWMD_PIN       GPIO_PIN_6       //PWMD引脚
 #define PWMD_TIM       TIM8             //PWMD使用的定时器
 #define PWMD_Channel   1                //使用了定时器的哪一个通道CCRx(1~4)
 
 //电机方向引脚配置
-#define ENABLE_DIN1_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC,ENABLE)
-#define ENABLE_DIN2_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA,ENABLE)
+#define ENABLE_DIN1_CLOCK   __HAL_RCC_GPIOC_CLK_ENABLE()
+#define ENABLE_DIN2_CLOCK   __HAL_RCC_GPIOA_CLK_ENABLE()
 
 #define DIN1 	        PCout(12)//DIN1
 #define DIN1_PORT       GPIOC
-#define DIN1_PIN        GPIO_Pin_12
+#define DIN1_PIN        GPIO_PIN_12
 
 #define DIN2 	        PAout(8) //DIN2
 #define DIN2_PORT       GPIOA
-#define DIN2_PIN        GPIO_Pin_8
+#define DIN2_PIN        GPIO_PIN_8
 /*----------------------------------*/
 
 /*--------Senior akm Servo User config--------*/
 //高配阿克曼车型舵机配置
 //PWM引脚配置
-#define ENABLE_SERVO_SENIOR_TIM_CLOCK   RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM9,ENABLE)  //舵机定时器时钟使能
-#define ENABLE_SERVO_SENIOR_PORT_CLOCK  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA,ENABLE) //舵机对应的引脚端口使能
+#define ENABLE_SERVO_SENIOR_TIM_CLOCK   __HAL_RCC_TIM9_CLK_ENABLE()  //舵机定时器时钟使能
+#define ENABLE_SERVO_SENIOR_PORT_CLOCK  __HAL_RCC_GPIOA_CLK_ENABLE() //舵机对应的引脚端口使能
 	
 #define SERVO_SENIOR_PORT      GPIOA            //舵机引脚端口
-#define SERVO_SENIOR_PIN       GPIO_Pin_2       //舵机引脚
+#define SERVO_SENIOR_PIN       GPIO_PIN_2       //舵机引脚
 #define SERVO_SENIOR_TIM       TIM9             //舵机使用的定时器
 #define SERVO_SENIOR_Channel   1                //使用了定时器的哪一个通道CCRx(1~4)
 /*--------------------------------------------*/
 
 /*--------Top akm Servo User config--------*/
 //顶配阿克曼车型舵机配置
-#define ENABLE_SERVO_TOP_TIM_CLOCK   RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4,ENABLE) //舵机时钟使能
-#define ENABLE_SERVO_TOP_PORT_CLOCK  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB,ENABLE) //舵机对应的引脚端口使能
+#define ENABLE_SERVO_TOP_TIM_CLOCK   __HAL_RCC_TIM4_CLK_ENABLE() //舵机时钟使能
+#define ENABLE_SERVO_TOP_PORT_CLOCK  __HAL_RCC_GPIOB_CLK_ENABLE() //舵机对应的引脚端口使能
 	
 #define SERVO_TOP_PORT      GPIOB            //舵机引脚端口
-#define SERVO_TOP_PIN       GPIO_Pin_7       //舵机引脚
+#define SERVO_TOP_PIN       GPIO_PIN_7       //舵机引脚
 #define SERVO_TOP_TIM       TIM4             //舵机使用的定时器
 #define SERVO_TOP_Channel   2                //使用了定时器的哪一个通道CCRx(1~4)
 /*--------------------------------------------*/
 
 /*-------- V1.0 Motor_B User config--------*/
 //V1.00版本硬件的电机方向引脚配置
-#define V1_0_ENABLE_BIN1_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC,ENABLE)
-#define V1_0_ENABLE_BIN2_CLOCK   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB,ENABLE)
+#define V1_0_ENABLE_BIN1_CLOCK   __HAL_RCC_GPIOC_CLK_ENABLE()
+#define V1_0_ENABLE_BIN2_CLOCK   __HAL_RCC_GPIOB_CLK_ENABLE()
 
 #define V1_0_BIN1 	              PCout(0)//BIN1
 #define V1_0_BIN1_PORT            GPIOC
-#define V1_0_BIN1_PIN             GPIO_Pin_0
+#define V1_0_BIN1_PIN             GPIO_PIN_0
 
 #define V1_0_BIN2 	              PBout(14)//BIN2
 #define V1_0_BIN2_PORT            GPIOB
-#define V1_0_BIN2_PIN             GPIO_Pin_14
+#define V1_0_BIN2_PIN             GPIO_PIN_14
 /*----------------------------------*/
 
 

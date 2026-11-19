@@ -54,7 +54,6 @@ extern SYS_VAL_t SysVal;
 void SYS_VAL_t_Init(SYS_VAL_t* p);
 const uint8_t* getSW_Ver(SOFTWARE_VERSION ver);
 const uint8_t* getHW_Ver(HARDWARE_VERSION ver);
-void Version_GPIO_Init(void);
 
 //extern DEBUG_t debug;
 

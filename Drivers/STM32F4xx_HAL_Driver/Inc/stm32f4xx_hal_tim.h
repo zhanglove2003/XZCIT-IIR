@@ -2150,6 +2150,227 @@ void TIM_ResetCallback(TIM_HandleTypeDef *htim);
   * @}
   */
 
+/* 批次3：本库 stm32f4xx_hal_tim.c/hal_tim_ex.c（较新 HAL 版本，使用 60 处 ATOMIC 风格
+ * 断言宏）引用下列实例判定宏，而本树 stm32f4xx_hal_tim.h 较旧未含定义，导致 GCC 14
+ * implicit-function-declaration 硬错误。此处按 ST 官方 F4 HAL "TIM Private macros"
+ * 逐个补齐（实例集按 STM32F407 外设手册核对：TIM1/8 全功能，TIM2-5+9+12 slave，
+ * TIM13/14 仅 CH1 等）。注意：本工程 USE_FULL_ASSERT 未定义，assert_param 编译为
+ * 空操作，这些宏仅在编译期存在、不参与运行时行为。 */
+#define IS_TIM_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1)  || \
+   ((INSTANCE) == TIM2)  || \
+   ((INSTANCE) == TIM3)  || \
+   ((INSTANCE) == TIM4)  || \
+   ((INSTANCE) == TIM5)  || \
+   ((INSTANCE) == TIM8)  || \
+   ((INSTANCE) == TIM9)  || \
+   ((INSTANCE) == TIM10) || \
+   ((INSTANCE) == TIM11) || \
+   ((INSTANCE) == TIM12) || \
+   ((INSTANCE) == TIM13) || \
+   ((INSTANCE) == TIM14))
+
+#define IS_TIM_MASTER_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1)  || \
+   ((INSTANCE) == TIM2)  || \
+   ((INSTANCE) == TIM3)  || \
+   ((INSTANCE) == TIM4)  || \
+   ((INSTANCE) == TIM5)  || \
+   ((INSTANCE) == TIM8)  || \
+   ((INSTANCE) == TIM9)  || \
+   ((INSTANCE) == TIM10) || \
+   ((INSTANCE) == TIM11) || \
+   ((INSTANCE) == TIM12))
+
+#define IS_TIM_SLAVE_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM2)  || \
+   ((INSTANCE) == TIM3)  || \
+   ((INSTANCE) == TIM4)  || \
+   ((INSTANCE) == TIM5)  || \
+   ((INSTANCE) == TIM9)  || \
+   ((INSTANCE) == TIM12))
+
+#define IS_TIM_DMA_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1)  || \
+   ((INSTANCE) == TIM2)  || \
+   ((INSTANCE) == TIM3)  || \
+   ((INSTANCE) == TIM4)  || \
+   ((INSTANCE) == TIM5)  || \
+   ((INSTANCE) == TIM8)  || \
+   ((INSTANCE) == TIM9)  || \
+   ((INSTANCE) == TIM10) || \
+   ((INSTANCE) == TIM11) || \
+   ((INSTANCE) == TIM12) || \
+   ((INSTANCE) == TIM13) || \
+   ((INSTANCE) == TIM14))
+
+#define IS_TIM_DMA_CC_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM2) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM8) || \
+   ((INSTANCE) == TIM9) || \
+   ((INSTANCE) == TIM12))
+
+#define IS_TIM_DMABURST_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM2) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM8) || \
+   ((INSTANCE) == TIM9) || \
+   ((INSTANCE) == TIM12))
+
+#define IS_TIM_CC1_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1)  || \
+   ((INSTANCE) == TIM2)  || \
+   ((INSTANCE) == TIM3)  || \
+   ((INSTANCE) == TIM4)  || \
+   ((INSTANCE) == TIM5)  || \
+   ((INSTANCE) == TIM8)  || \
+   ((INSTANCE) == TIM9)  || \
+   ((INSTANCE) == TIM12) || \
+   ((INSTANCE) == TIM13) || \
+   ((INSTANCE) == TIM14))
+
+#define IS_TIM_CC2_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM2) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM8) || \
+   ((INSTANCE) == TIM9) || \
+   ((INSTANCE) == TIM12))
+
+#define IS_TIM_CC3_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM8))
+
+#define IS_TIM_CC4_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM8))
+
+#define IS_TIM_CCX_INSTANCE(INSTANCE, CHANNEL) \
+  ((((INSTANCE) == TIM1) || ((INSTANCE) == TIM8)) &&                 \
+   (((CHANNEL) == TIM_CHANNEL_1) || ((CHANNEL) == TIM_CHANNEL_2) ||  \
+    ((CHANNEL) == TIM_CHANNEL_3) || ((CHANNEL) == TIM_CHANNEL_4)))   || \
+  ((((INSTANCE) == TIM2) || ((INSTANCE) == TIM3) || ((INSTANCE) == TIM4) || \
+    ((INSTANCE) == TIM5) || ((INSTANCE) == TIM9) || ((INSTANCE) == TIM12)) && \
+   (((CHANNEL) == TIM_CHANNEL_1) || ((CHANNEL) == TIM_CHANNEL_2)))   || \
+  ((((INSTANCE) == TIM10) || ((INSTANCE) == TIM11) || ((INSTANCE) == TIM13) || \
+    ((INSTANCE) == TIM14)) && \
+   ((CHANNEL) == TIM_CHANNEL_1))
+
+#define IS_TIM_CCXN_INSTANCE(INSTANCE, CHANNEL) \
+  ((((INSTANCE) == TIM1) || ((INSTANCE) == TIM8)) && \
+   (((CHANNEL) == TIM_CHANNEL_1) || ((CHANNEL) == TIM_CHANNEL_2) || \
+    ((CHANNEL) == TIM_CHANNEL_3)))
+
+#define IS_TIM_COUNTER_MODE_SELECT_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM2) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM8))
+
+#define IS_TIM_CLOCK_DIVISION_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1)  || \
+   ((INSTANCE) == TIM2)  || \
+   ((INSTANCE) == TIM3)  || \
+   ((INSTANCE) == TIM4)  || \
+   ((INSTANCE) == TIM5)  || \
+   ((INSTANCE) == TIM8)  || \
+   ((INSTANCE) == TIM9)  || \
+   ((INSTANCE) == TIM10) || \
+   ((INSTANCE) == TIM11))
+
+#define IS_TIM_REPETITION_COUNTER_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM8))
+
+#define IS_TIM_BREAK_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM8))
+
+#define IS_TIM_COMMUTATION_EVENT_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM8))
+
+#define IS_TIM_XOR_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM2) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM8))
+
+#define IS_TIM_OCXREF_CLEAR_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM2) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM8))
+
+#define IS_TIM_ENCODER_INTERFACE_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM2) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM8))
+
+#define IS_TIM_HALL_SENSOR_INTERFACE_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM8))
+
+#define IS_TIM_CLOCKSOURCE_ETRMODE1_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM2) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM9) || \
+   ((INSTANCE) == TIM12))
+
+#define IS_TIM_CLOCKSOURCE_ETRMODE2_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM2) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM8) || \
+   ((INSTANCE) == TIM9) || \
+   ((INSTANCE) == TIM12))
+
+#define IS_TIM_CLOCKSOURCE_ITRX_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM2) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM9) || \
+   ((INSTANCE) == TIM12))
+
+#define IS_TIM_CLOCKSOURCE_TIX_INSTANCE(INSTANCE) \
+  (((INSTANCE) == TIM1) || \
+   ((INSTANCE) == TIM2) || \
+   ((INSTANCE) == TIM3) || \
+   ((INSTANCE) == TIM4) || \
+   ((INSTANCE) == TIM5) || \
+   ((INSTANCE) == TIM8) || \
+   ((INSTANCE) == TIM9) || \
+   ((INSTANCE) == TIM12))
+
 #ifdef __cplusplus
 }
 #endif

@@ -1763,6 +1763,15 @@ __STATIC_INLINE int32_t ITM_CheckChar (void) {
 
 /*@} end of CMSIS_core_DebugFunctions */
 
+/* 批次3：HAL 1.8.x 的 stm32f4xx_ll_adc.h（__ADC_MASK_SHIFT）依赖 CMSIS V3+ 的
+ * POSITION_VAL，本树 core_cm4.h 为旧版（V1.x，无 __RBIT/__CLZ 包装）缺此宏。
+ * 官方定义 POSITION_VAL(x) == __CLZ(__RBIT(x))，语义 = x 最低置 1 位的位序号；
+ * GCC 下用 __builtin_ctz 等价实现（x=0 时官方返回 32 而 __builtin_ctz(0) 为 UB，
+ * 故显式分派，行为与官方完全一致）。#ifndef 条件定义，只增不减。 */
+#ifndef POSITION_VAL
+#define POSITION_VAL(VAL)  ((uint32_t)((((uint32_t)(VAL)) == 0U) ? 32U : (uint32_t)__builtin_ctz((uint32_t)(VAL))))
+#endif
+
 #endif /* __CORE_CM4_H_DEPENDANT */
 
 #endif /* __CMSIS_GENERIC */

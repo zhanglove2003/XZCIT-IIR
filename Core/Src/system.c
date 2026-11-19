@@ -29,7 +29,9 @@ void systemInit(void)
 	//================= 通用硬件初始化部分 =================//
     //Interrupt priority group setting
     //中断优先级分组设置
-    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+    //批次1：原 NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4)（misc.c）删除。
+    //等价：HAL_Init() 内 HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4)
+    //(stm32f4xx_hal.c:173) 已在 SystemInit 阶段完成同分组配置（system_stm32f4xx.c:112）。
 
     //Delay function initialization
     //延时函数初始化

@@ -85,6 +85,15 @@
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f4xx_hal.h"
 
+/* 批次5：本树 CMSIS device 头为 StdPeriph V1.4.0 旧版，SYSCFG_EXTICRx 位域只有
+ * 选择值宏（如 SYSCFG_EXTICR1_EXTI1_PC=0x0020）而无新式 SYSCFG_EXTICR1_EXTIx_Pos
+ * 命名。EXTICR 每通道固定占 4 位，_Pos 恒为 4U（与新版 CMSIS 定义同值），
+ * #ifndef 条件补齐使 HAL 1.8.x 源码可编译；SYSCFG_EXTICR1_EXTI0（4 位掩码 0x000F）
+ * 旧头已有同值定义。 */
+#ifndef SYSCFG_EXTICR1_EXTI1_Pos
+#define SYSCFG_EXTICR1_EXTI1_Pos  4U
+#endif
+
 /** @addtogroup STM32F4xx_HAL_Driver
   * @{
   */

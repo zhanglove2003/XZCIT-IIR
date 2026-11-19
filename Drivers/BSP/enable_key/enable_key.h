@@ -3,9 +3,10 @@
 #include "sys.h"
 
 /*--------EnableKey config--------*/
-#define ENABLE_EnableKEY_PIN_CLOCK  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE)
+/* 批次6：RCC_*PeriphClockCmd → __HAL_RCC_*_CLK_ENABLE（写同 ENR 位，行为等价；StdPeriph 退场） */
+#define ENABLE_EnableKEY_PIN_CLOCK  __HAL_RCC_GPIOE_CLK_ENABLE()
 #define ENABLE_KEY_PORT              GPIOE
-#define ENABLE_KEY_PIN               GPIO_Pin_4
+#define ENABLE_KEY_PIN               GPIO_PIN_4
 #define EN     PEin(4)  
 /*----------------------------------*/
 

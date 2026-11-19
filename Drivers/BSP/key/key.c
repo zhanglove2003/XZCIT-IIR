@@ -1,4 +1,7 @@
 #include "key.h"
+/* 批次5：GPIO 迁移至 HAL_GPIO_Init；USER_KEY_PIN 等宏（GPIO_PIN_5=0x0020）与
+ * HAL 的 GPIO_PIN_5 数值一致，头文件宏保留。 */
+#include "stm32f4xx_hal.h"
 
 /**************************************************************************
 Function: Key initialization
@@ -12,12 +15,14 @@ void KEY_Init(void)
 {
 	GPIO_InitTypeDef  GPIO_InitStructure;
 	ENABLE_USER_KEY_PIN_CLOCK;
-	GPIO_InitStructure.GPIO_Pin = USER_KEY_PIN; 
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;//上拉
-	GPIO_Init(USER_KEY_PORT, &GPIO_InitStructure);
-} 
+	/* 批次5：等价映射 PC5 输入上拉（ioc:233-237 PULLUP 一致）；
+	 * 100MHz→GPIO_SPEED_FREQ_VERY_HIGH（输入模式 Speed 不参与输出边沿，数值保留）。 */
+	GPIO_InitStructure.Pin   = USER_KEY_PIN;
+	GPIO_InitStructure.Mode  = GPIO_MODE_INPUT;
+	GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+	GPIO_InitStructure.Pull  = GPIO_PULLUP;//上拉
+	HAL_GPIO_Init(USER_KEY_PORT, &GPIO_InitStructure);
+}
 
 
 /**************************************************************************

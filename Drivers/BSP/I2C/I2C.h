@@ -9,17 +9,24 @@ enum
 	I2C_NACK
 };
 
+/* 批次6：I2C_Direction_* 原由 conf.h→stm32f4xx_i2c.h:138-139 提供（conf.h 已删）。
+ * 软 I2C 首字节的 R/W 位语义：7 位地址|0x00=写(Transmitter)、|0x01=读(Receiver)，
+ * 数值与原宏一致。 */
+#define I2C_Direction_Transmitter  ((uint8_t)0x00)
+#define I2C_Direction_Receiver     ((uint8_t)0x01)
+
 /*--------simulate iic config--------*/
 //模拟IIC 引脚配置
-#define ENABLE_IIC_SCL_PIN_CLOCK RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE)
-#define ENABLE_IIC_SDA_PIN_CLOCK RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE)
+/* 批次6：RCC_*PeriphClockCmd → __HAL_RCC_*_CLK_ENABLE（写同 ENR 位，行为等价；StdPeriph 退场） */
+#define ENABLE_IIC_SCL_PIN_CLOCK __HAL_RCC_GPIOB_CLK_ENABLE()
+#define ENABLE_IIC_SDA_PIN_CLOCK __HAL_RCC_GPIOB_CLK_ENABLE()
 
 #define IIC_SCL_PORT      GPIOB
-#define IIC_SCL_PIN       GPIO_Pin_9
+#define IIC_SCL_PIN       GPIO_PIN_9
 #define IIC_SCL           PBout(9) //SCL
 
 #define IIC_SDA_PORT      GPIOB
-#define IIC_SDA_PIN       GPIO_Pin_8
+#define IIC_SDA_PIN       GPIO_PIN_8
 #define IIC_SDA_PIN_NUM   8          //SDA的引脚号
 #define IIC_SDA           PBout(8)   //输出SDA	 
 #define READ_SDA          PBin(8)    //输入SDA 

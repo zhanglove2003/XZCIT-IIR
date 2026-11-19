@@ -107,14 +107,10 @@ void UsageFault_Handler(void)
   }
 }
 
-///**
-//  * @brief  This function handles SVCall exception.
-//  * @param  None
-//  * @retval None
-//  */
-//void SVC_Handler(void)
-//{
-//}
+/* 批次1：模板中已注释的 SVC_Handler/PendSV_Handler/SysTick_Handler 与 PPP_IRQHandler
+ * 死代码块删除。三个系统异常的实现位置保持不变：
+ *   SVC_Handler/PendSV_Handler —— FreeRTOSConfig.h:216-217 宏改名后的 port.c；
+ *   SysTick_Handler           —— Drivers/BSP/delay/delay.c:19（HAL_IncTick + xPortSysTickHandler）。 */
 
 /**
   * @brief  This function handles Debug Monitor exception.
@@ -125,40 +121,6 @@ void DebugMon_Handler(void)
 {
 }
 
-///**
-//  * @brief  This function handles PendSVC exception.
-//  * @param  None
-//  * @retval None
-//  */
-//void PendSV_Handler(void)
-//{
-//}
-
-///**
-//  * @brief  This function handles SysTick Handler.
-//  * @param  None
-//  * @retval None
-//  */
-//void SysTick_Handler(void)
-//{
-// 
-//}
-
-/******************************************************************************/
-/*                 STM32F4xx Peripherals Interrupt Handlers                   */
-/*  Add here the Interrupt Handler for the used peripheral(s) (PPP), for the  */
-/*  available peripheral interrupt handler's name please refer to the startup */
-/*  file (startup_stm32f4xx.s).                                               */
-/******************************************************************************/
-
-/**
-  * @brief  This function handles PPP interrupt request.
-  * @param  None
-  * @retval None
-  */
-/*void PPP_IRQHandler(void)
-{
-}*/
 
 /**
   * @}

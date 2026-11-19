@@ -4,9 +4,10 @@
 
 
 /*--------KEY config--------*/
-#define ENABLE_USER_KEY_PIN_CLOCK  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE)
+/* 批次6：RCC_*PeriphClockCmd → __HAL_RCC_*_CLK_ENABLE（写同 ENR 位，行为等价；StdPeriph 退场） */
+#define ENABLE_USER_KEY_PIN_CLOCK  __HAL_RCC_GPIOC_CLK_ENABLE()
 #define USER_KEY_PORT              GPIOC
-#define USER_KEY_PIN               GPIO_Pin_5
+#define USER_KEY_PIN               GPIO_PIN_5
 #define KEY                        PCin(5)
 /*----------------------------------*/
 

@@ -8,9 +8,10 @@ enum{
 };
 
 /*--------Buzzer config--------*/
-#define ENABLE_Buzzer_PIN_CLOCK  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE)
+/* 批次6：RCC_*PeriphClockCmd → __HAL_RCC_*_CLK_ENABLE（写同 ENR 位，行为等价；StdPeriph 退场） */
+#define ENABLE_Buzzer_PIN_CLOCK  __HAL_RCC_GPIOD_CLK_ENABLE()
 #define Buzzer_PORT              GPIOD
-#define Buzzer_PIN               GPIO_Pin_11
+#define Buzzer_PIN               GPIO_PIN_11
 #define Buzzer                   PDout(11)
 /*----------------------------------*/
 

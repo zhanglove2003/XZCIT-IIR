@@ -1,87 +1,65 @@
 #include "encoder.h"
+#include "stm32f4xx_hal.h"		/* 批次3：HAL_TIM_Encoder_* 声明（encoder.h→sys.h 链不引 HAL 头） */
 #ifdef ENCODER_DIAG
 #include "encoder_diag.h"
 volatile EncoderDiag g_encoder_diag[4];
 #endif
 
 //通用编码器初始化,将传入的定时器以及对应引脚初始化为编码器模式3
-static void Encoder_TI12_ModeInit(GPIO_TypeDef* GPIOx_1,uint16_t GPIO_PIN_1,GPIO_TypeDef* GPIOx_2,uint16_t GPIO_PIN_2,TIM_TypeDef* TIMx)
+//批次5：参数名原为 GPIO_PIN_1/GPIO_PIN_2——启用 HAL_GPIO 后与 hal_gpio.h 的
+//GPIO_PIN_1/GPIO_PIN_2 位掩码宏同名冲突（宏展开炸语法），改名 pin1/pin2。
+static void Encoder_TI12_ModeInit(GPIO_TypeDef* GPIOx_1,uint16_t pin1,GPIO_TypeDef* GPIOx_2,uint16_t pin2,TIM_TypeDef* TIMx)
 {
-    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
-    TIM_ICInitTypeDef TIM_ICInitStructure;
+    TIM_HandleTypeDef       htim_encoder;
+    TIM_Encoder_InitTypeDef TIM_EncoderConfig;
     GPIO_InitTypeDef GPIO_InitStructure;
-   
-	//引脚配置
-    GPIO_InitStructure.GPIO_Pin = GPIO_PIN_1;  
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
-    GPIO_InitStructure.GPIO_OType = GPIO_OType_OD;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
-    GPIO_Init(GPIOx_1, &GPIO_InitStructure);
 
-    GPIO_InitStructure.GPIO_Pin = GPIO_PIN_2; 
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
-    GPIO_InitStructure.GPIO_OType = GPIO_OType_OD;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
-    GPIO_Init(GPIOx_2, &GPIO_InitStructure);
-	
-	//确认复用的定时器
-	//除TIM6、7无通道外,其他均有通道,对应使用复用功能
-	uint8_t GPIO_AF;
-	      if( TIMx == TIM1 || TIMx == TIM2 )                                      GPIO_AF = 0x01;
-	else if( TIMx == TIM3  || TIMx == TIM4  || TIMx == TIM5 )                     GPIO_AF = 0x02;
-	else if( TIMx == TIM8  || TIMx == TIM9  || TIMx == TIM10 || TIMx == TIM11 )   GPIO_AF = 0x03;
-	else if( TIMx == TIM12 || TIMx == TIM13 || TIMx == TIM14)                     GPIO_AF = 0x09;
-	
-	//确认1号引脚复用的引脚号
-	uint8_t PinSource=0;
-	for(PinSource=0;PinSource<16;PinSource++)
-	{
-		if( ( (GPIO_PIN_1>>PinSource)&0x01 )==1 ) break;
-	}
-	//复用配置
-	GPIO_PinAFConfig(GPIOx_1,PinSource,GPIO_AF);
-	
-	//确认2号引脚复用的引脚号
-	for(PinSource=0;PinSource<16;PinSource++)
-	{
-		if( ( (GPIO_PIN_2>>PinSource)&0x01 )==1 ) break;
-	}
-	//复用配置
-	GPIO_PinAFConfig(GPIOx_2,PinSource,GPIO_AF);
-	
-	
-	//定时器配置
-    TIM_TimeBaseStructInit(&TIM_TimeBaseStructure);
-    TIM_TimeBaseStructure.TIM_Prescaler = 0x0; 				    //不分频
-    TIM_TimeBaseStructure.TIM_Period = ENCODER_TIM_PERIOD;      //设定计数器自动重装值
-    TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;     //选择时钟分频：不分频
-    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up; //TIM向上计数
-    TIM_TimeBaseInit(TIMx, &TIM_TimeBaseStructure);    //初始化定时器
+	//引脚配置（批次5：迁 HAL——编码器 8 脚 AF+开漏+上拉，与 ioc OPEN_DRAIN+PULLUP
+	//一致（蓝图明确项）；100MHz→GPIO_SPEED_FREQ_VERY_HIGH；AF 数值与原 if 链一致
+	//(0x01/0x02/0x03/0x09)，经 Alternate 字段写入 AFR（等价原 GPIO_PinAFConfig））
+    GPIO_InitStructure.Pin        = pin1;
+    GPIO_InitStructure.Mode       = GPIO_MODE_AF_OD;
+    GPIO_InitStructure.Speed      = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStructure.Pull       = GPIO_PULLUP;
+	      if( TIMx == TIM1 || TIMx == TIM2 )                                      GPIO_InitStructure.Alternate = GPIO_AF1_TIM1;
+	else if( TIMx == TIM3  || TIMx == TIM4  || TIMx == TIM5 )                     GPIO_InitStructure.Alternate = GPIO_AF2_TIM3;
+	else if( TIMx == TIM8  || TIMx == TIM9  || TIMx == TIM10 || TIMx == TIM11 )   GPIO_InitStructure.Alternate = GPIO_AF3_TIM8;
+	else if( TIMx == TIM12 || TIMx == TIM13 || TIMx == TIM14)                     GPIO_InitStructure.Alternate = GPIO_AF9_TIM12;
+    HAL_GPIO_Init(GPIOx_1, &GPIO_InitStructure);
 
-	//先配置输入捕获的滤波(6级). 原厂此处为0(不滤波).
-	//顺序很重要: 原厂先调 TIM_EncoderInterfaceConfig 再调 TIM_ICInit,
-	//TIM_ICInit 会重写 CCER 只使能 CC1E, 导致编码器模式只剩一相,
-	//计数器乱跳(实测单拍读到数百脉冲). 这里改为先 ICInit 再配置编码器模式.
-    TIM_ICStructInit(&TIM_ICInitStructure);
-    TIM_ICInitStructure.TIM_ICFilter = 6;
-    TIM_ICInit(TIMx, &TIM_ICInitStructure);
+    GPIO_InitStructure.Pin        = pin2;
+    HAL_GPIO_Init(GPIOx_2, &GPIO_InitStructure);
 
-	//使用编码器模式3
-    TIM_EncoderInterfaceConfig(TIMx, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
 
-	//标准库 TIM_EncoderInterfaceConfig 只写 SMS/CC1S/CC2S/极性, 不置位通道使能位.
-	//厂家原代码只靠 TIM_ICInit 置了 CC1E, CC2E 一直是 0, 实测 CCER=0x0001,
-	//两相编码器只剩一相, 计数器按内部时钟乱跳. 这里显式使能两个通道.
-    TIMx->CCER |= (TIM_CCER_CC1E | TIM_CCER_CC2E);
-	
-	//清除TIM的更新标志位
-    TIM_ClearFlag(TIMx, TIM_FLAG_Update);
-	//清空计数值
-    TIM_SetCounter(TIMx,0);
-	//启动定时器
-    TIM_Cmd(TIMx, ENABLE);
+	//批次3：原 TIM_TimeBaseInit(PSC=0/ARR=65535/CKD=DIV1/向上) + TIM_ICInit(滤波6级) +
+	//       TIM_EncoderInterfaceConfig(TI12,双上升沿) + 手工 CC1E|CC2E 补位 → HAL_TIM_Encoder_Init。
+	//       HAL 一次写全 PSC/ARR 与 SMS/CC1S/CC2S/CCER 极性，原 encoder.c:63-66 记录的
+	//       "先 ICInit 再 EncoderInterfaceConfig 否则 CCER 只剩一相"顺序问题在 HAL 中不复存在；
+	//       CC1E|CC2E 由下方 HAL_TIM_Encoder_Start(TIM_CHANNEL_ALL) 置位（等价原 77 行补位）。
+	htim_encoder.Instance               = TIMx;
+	htim_encoder.Init.Prescaler         = 0x0;                          //不分频
+	htim_encoder.Init.CounterMode       = TIM_COUNTERMODE_UP;           //TIM向上计数
+	htim_encoder.Init.Period            = ENCODER_TIM_PERIOD;           //设定计数器自动重装值(65535)
+	htim_encoder.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;       //选择时钟分频：不分频
+	htim_encoder.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE; //等价复位默认 ARPE=0
+	TIM_EncoderConfig.EncoderMode       = TIM_ENCODERMODE_TI12;         //使用编码器模式3
+	TIM_EncoderConfig.IC1Polarity       = TIM_ICPOLARITY_RISING;        //上升沿,等价 TIM_ICPolarity_Rising
+	TIM_EncoderConfig.IC1Selection      = TIM_ICSELECTION_DIRECTTI;     //CH1→IC1
+	TIM_EncoderConfig.IC1Prescaler      = TIM_ICPSC_DIV1;               //不分频,等价 TIM_ICStructInit 默认
+	TIM_EncoderConfig.IC1Filter         = 6;                            //滤波(6级),对应原 TIM_ICFilter=6
+	TIM_EncoderConfig.IC2Polarity       = TIM_ICPOLARITY_RISING;
+	TIM_EncoderConfig.IC2Selection      = TIM_ICSELECTION_DIRECTTI;     //CH2→IC2
+	TIM_EncoderConfig.IC2Prescaler      = TIM_ICPSC_DIV1;
+	TIM_EncoderConfig.IC2Filter         = 6;
+	(void)HAL_TIM_Encoder_Init(&htim_encoder, &TIM_EncoderConfig);
+
+	//清除TIM的更新标志位(等价原 TIM_ClearFlag(TIMx, TIM_FLAG_Update))
+	__HAL_TIM_CLEAR_FLAG(&htim_encoder, TIM_FLAG_UPDATE);
+	//清空计数值(等价原 TIM_SetCounter(TIMx,0))
+	__HAL_TIM_SET_COUNTER(&htim_encoder, 0);
+
+	//启动定时器(等价原 TIM_Cmd(TIMx,ENABLE) + encoder.c:77 手工 CC1E|CC2E 补位)
+	(void)HAL_TIM_Encoder_Start(&htim_encoder, TIM_CHANNEL_ALL);
 }
 
 /**************************************************************************

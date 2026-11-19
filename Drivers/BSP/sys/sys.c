@@ -3,45 +3,25 @@
 //���ڵ��Ե�ϵͳ����
 DEBUG_t debug;
 
-//�汾��������
-void Version_GPIO_Init(void)
-{
-	GPIO_InitTypeDef  GPIO_InitStructure;
-	
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE);
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
-	
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3; 
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_DOWN;//����
-	GPIO_Init(GPIOE, &GPIO_InitStructure);
-	
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2; 
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_DOWN;//����
-	GPIO_Init(GPIOE, &GPIO_InitStructure);
-	
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_13; 
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_DOWN;//����
-	GPIO_Init(GPIOC, &GPIO_InitStructure);
-} 
-
-
-//����汾����,���ذ汾��Ϣ����
+// 批次5：删除 Version_GPIO_Init 死码
+// （原蓝图条目：操作 PE3/PE2/PC13，三脚不在 43 引脚 C50C_HAL.ioc
+// 内，且 grep 证实全树无调用者，按蓝图风险4 删除而非迁移；硬件版本
+// 检测由其它途径承担，这里保留静态默认值）。
+// 批次5 误删恢复 getSW_Ver
+// （删 Version_GPIO_Init 时 NEL 混合行终止符导致 b\\n 分割误判函数边界，本函数被连带删除；按原样恢复，show_task.c:288 调用）
+// 输入版本参数,返回版本信息函数
 const uint8_t* getSW_Ver(SOFTWARE_VERSION ver)
 {
 	switch( ver )
 	{
 		case V1_00: return "V1.00";
-		//���������汾.
+		//待定后续版本.
 	}
 	
 	return "unknown";
 }
+
+
 
 const uint8_t* getHW_Ver(HARDWARE_VERSION ver)
 {

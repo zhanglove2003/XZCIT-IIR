@@ -9,17 +9,20 @@
 #define CNSizeHeight 16
 
 /*--------OLED config--------*/
-#define OLED_SCLK_Clr()  OLED_PinWrite(&oled_pins->scl, Bit_RESET)   //SCL
-#define OLED_SCLK_Set()  OLED_PinWrite(&oled_pins->scl, Bit_SET)     //SCL
+/* 批次5：GPIO 迁 HAL——StdPeriph BitAction（Bit_RESET/Bit_SET）改用 HAL 枚举
+ * GPIO_PinState（GPIO_PIN_RESET=0/GPIO_PIN_SET=1，数值等价），由 oled.c 的
+ * HAL_GPIO_WritePin 层落地。 */
+#define OLED_SCLK_Clr()  OLED_PinWrite(&oled_pins->scl, GPIO_PIN_RESET)   //SCL
+#define OLED_SCLK_Set()  OLED_PinWrite(&oled_pins->scl, GPIO_PIN_SET)     //SCL
 
-#define OLED_SDIN_Clr()  OLED_PinWrite(&oled_pins->sda, Bit_RESET)   //SDA
-#define OLED_SDIN_Set()  OLED_PinWrite(&oled_pins->sda, Bit_SET)     //SDA
+#define OLED_SDIN_Clr()  OLED_PinWrite(&oled_pins->sda, GPIO_PIN_RESET)   //SDA
+#define OLED_SDIN_Set()  OLED_PinWrite(&oled_pins->sda, GPIO_PIN_SET)     //SDA
 
-#define OLED_RST_Clr()   OLED_PinWrite(&oled_pins->rst, Bit_RESET)   //RES
-#define OLED_RST_Set()   OLED_PinWrite(&oled_pins->rst, Bit_SET)     //RES
+#define OLED_RST_Clr()   OLED_PinWrite(&oled_pins->rst, GPIO_PIN_RESET)   //RES
+#define OLED_RST_Set()   OLED_PinWrite(&oled_pins->rst, GPIO_PIN_SET)     //RES
 
-#define OLED_RS_Clr()    OLED_PinWrite(&oled_pins->dc,  Bit_RESET)   //DC
-#define OLED_RS_Set()    OLED_PinWrite(&oled_pins->dc,  Bit_SET)     //DC
+#define OLED_RS_Clr()    OLED_PinWrite(&oled_pins->dc,  GPIO_PIN_RESET)   //DC
+#define OLED_RS_Set()    OLED_PinWrite(&oled_pins->dc,  GPIO_PIN_SET)     //DC
 /*----------------------------------*/
 
 

@@ -1,5 +1,9 @@
 #include "hc_sr04.h"
 #include "delay.h"
+#include "stm32f4xx_hal.h"
+/* 批次5：GPIO/EXTI 迁移至 HAL_GPIO_* + HAL_EXTI_SetConfigLine；裸 ISR 函数名
+ * EXTI9_5_IRQHandler 与裸 EXTI->PR 保持（蓝图风险3：不走回调机制，避免守卫失效
+ * 与 ISR 延迟增加）；DWT 测宽路径原样不动。 */
 
 /* [C50C 2026-11-15] HC-SR04 front ultrasonic ranger driver. See hc_sr04.h.
  * The EXTI ISR measures the Echo high-pulse width with the DWT cycle
@@ -28,43 +32,45 @@ static void HC_SR04_DwtInit(void)
 void HC_SR04_Init(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure;
-    EXTI_InitTypeDef EXTI_InitStructure;
-    NVIC_InitTypeDef NVIC_InitStructure;
+    /* 批次5：EXTI_InitTypeDef/NVIC_InitTypeDef → HAL_EXTI handle + HAL_NVIC。 */
+    static EXTI_HandleTypeDef s_hcsr04_exti;
+    EXTI_ConfigTypeDef exti_cfg;
 
-    RCC_AHB1PeriphClockCmd(HC_SR04_TRIG_CLK, ENABLE);
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
+/* 批次6：RCC_*PeriphClockCmd → __HAL_RCC_*_CLK_ENABLE（写同 ENR 位，行为等价；StdPeriph 退场） */
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+    __HAL_RCC_SYSCFG_CLK_ENABLE();
 
-    /* Trig PD8: push-pull output, idle low */
-    GPIO_InitStructure.GPIO_Pin   = HC_SR04_TRIG_PIN;
-    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_OUT;
-    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-    GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_DOWN;
-    GPIO_Init(HC_SR04_TRIG_PORT, &GPIO_InitStructure);
-    GPIO_ResetBits(HC_SR04_TRIG_PORT, HC_SR04_TRIG_PIN);
+    /* Trig PD8: push-pull output, idle low（批次5：2MHz→SPEED_FREQ_LOW，
+     * 下拉与 ioc PD8 PULLDOWN 一致） */
+    GPIO_InitStructure.Pin   = HC_SR04_TRIG_PIN;
+    GPIO_InitStructure.Mode  = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStructure.Pull  = GPIO_PULLDOWN;
+    HAL_GPIO_Init(HC_SR04_TRIG_PORT, &GPIO_InitStructure);
+    HAL_GPIO_WritePin(HC_SR04_TRIG_PORT, HC_SR04_TRIG_PIN, GPIO_PIN_RESET);
 
-    /* Echo PD9: digital input, module drives it */
-    GPIO_InitStructure.GPIO_Pin   = HC_SR04_ECHO_PIN;
-    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IN;
-    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-    GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_DOWN;
-    GPIO_Init(HC_SR04_ECHO_PORT, &GPIO_InitStructure);
+    /* Echo PD9: digital input, module drives it（下拉与 ioc PD9 PULLDOWN 一致） */
+    GPIO_InitStructure.Pin   = HC_SR04_ECHO_PIN;
+    GPIO_InitStructure.Mode  = GPIO_MODE_INPUT;
+    GPIO_InitStructure.Pull  = GPIO_PULLDOWN;
+    HAL_GPIO_Init(HC_SR04_ECHO_PORT, &GPIO_InitStructure);
 
-    SYSCFG_EXTILineConfig(HC_SR04_ECHO_EXTI_PORT, HC_SR04_ECHO_EXTI_PIN);
     /* Both edges always on: ISR decides rise/fall by reading the pin, no
-     * trigger-polarity reconfiguration race. */
-    EXTI_InitStructure.EXTI_Line    = HC_SR04_ECHO_EXTI_LINE;
-    EXTI_InitStructure.EXTI_Mode    = EXTI_Mode_Interrupt;
-    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
-    EXTI_InitStructure.EXTI_LineCmd = ENABLE;
-    EXTI_Init(&EXTI_InitStructure);
+     * trigger-polarity reconfiguration race.
+     * 批次5：SYSCFG_EXTILineConfig(PD,9) + EXTI_Init(双沿/中断) → HAL_EXTI
+     * SetConfigLine 一体完成（内部写 SYSCFG->EXTICR[2] 的 GPIOD 选择与
+     * EXTI IMR/RTSR/FTSR）；双沿属性与原码 hc_sr04.c:59 一致，不改单沿
+     * （蓝图风险2），ioc:316-320 PD9=EXTI9 下拉一致。 */
+    exti_cfg.Line    = HC_SR04_ECHO_EXTI_LINE;
+    exti_cfg.Mode    = EXTI_MODE_INTERRUPT;
+    exti_cfg.Trigger = EXTI_TRIGGER_RISING_FALLING;
+    exti_cfg.GPIOSel = HC_SR04_ECHO_EXTI_PORT;
+    (void)HAL_EXTI_SetConfigLine(&s_hcsr04_exti, &exti_cfg);
 
-    NVIC_InitStructure.NVIC_IRQChannel                   = HC_SR04_ECHO_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 7;  /* low: non-critical */
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
-    NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
+    /* 批次5：原 NVIC_Init(EXTI9_5_IRQn, 抢占7, 子0, 分组4) → HAL 等价调用
+     * （批次2 同款换算：分组4 下 IPR=抢占<<4，抢占 7 原值传入、子优先级恒 0）。 */
+    HAL_NVIC_SetPriority(HC_SR04_ECHO_IRQn, 7, 0);
+    HAL_NVIC_EnableIRQ(HC_SR04_ECHO_IRQn);
 
     HC_SR04_DwtInit();
 }
@@ -112,10 +118,11 @@ void HC_SR04_task(void *pvParameters)
         vTaskDelayUntil(&lastWakeTime, F2T(HC_SR04_TASK_RATE));
 
         /* >=10 us Trig pulse; echo completes within ~30 ms, well inside the
-         * 100 ms cycle, so the ISR result is ready before the next read. */
-        GPIO_SetBits(HC_SR04_TRIG_PORT, HC_SR04_TRIG_PIN);
+         * 100 ms cycle, so the ISR result is ready before the next read.
+         * 批次5：GPIO_SetBits/ResetBits → HAL_GPIO_WritePin。 */
+        HAL_GPIO_WritePin(HC_SR04_TRIG_PORT, HC_SR04_TRIG_PIN, GPIO_PIN_SET);
         delay_us(12);
-        GPIO_ResetBits(HC_SR04_TRIG_PORT, HC_SR04_TRIG_PIN);
+        HAL_GPIO_WritePin(HC_SR04_TRIG_PORT, HC_SR04_TRIG_PIN, GPIO_PIN_RESET);
     }
 }
 
@@ -127,10 +134,12 @@ void EXTI9_5_IRQHandler(void)
     u32 now;
     u32 cycles, us, mm;
 
-    if (EXTI_GetITStatus(HC_SR04_ECHO_EXTI_LINE) != RESET)
+    /* 批次5：EXTI_GetITStatus/ClearITPendingBit → 裸读/写 EXTI->PR（写 1 清除），
+     * 保持裸 ISR 函数名与蓝图风险3 决策；DWT 测宽路径一行不改。 */
+    if ((EXTI->PR & HC_SR04_ECHO_PR_MASK) != 0u)
     {
         now = DWT->CYCCNT;
-        if (GPIO_ReadInputDataBit(HC_SR04_ECHO_PORT, HC_SR04_ECHO_PIN) != 0)
+        if (HAL_GPIO_ReadPin(HC_SR04_ECHO_PORT, HC_SR04_ECHO_PIN) != GPIO_PIN_RESET)
         {
             g_hcsr04_rise_cyc = now;                     /* echo rising edge */
         }
@@ -144,6 +153,6 @@ void EXTI9_5_IRQHandler(void)
             g_hcsr04_raw_mm = (u16)mm;
             g_hcsr04_update_tick = xTaskGetTickCountFromISR();
         }
-        EXTI_ClearITPendingBit(HC_SR04_ECHO_EXTI_LINE);
+        EXTI->PR = HC_SR04_ECHO_PR_MASK;
     }
 }
