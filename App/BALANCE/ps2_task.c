@@ -17,12 +17,7 @@ void pstwo_task(void *pvParameters)
     {
         vTaskDelayUntil(&lastWakeTime, F2T(PS2_TASK_RATE));
 		
-		if( SysVal.HardWare_Ver == V1_0 ) // V1.0硬件版本 使用常规ps2手柄
-		{
-			//Read the ps2 data
-			//读取PS2的数据
-			PS2_Read();
-		}
+		//PS2_Init/PS2_Read 已随 PS2 外设定案移除, Classic_PS2Gamepad 恒为中位, 不再进入 PS2 控制模式.
 
 		//游戏手柄模式启动
 		//原厂条件要求 LY>150(即左摇杆向后推到底)才进入PS2模式, 向前推永远进不去.

@@ -2,35 +2,6 @@
 #define __PSTWO_H
 #include "sys.h"
 
-/*--------PS2 config--------*/
-//PS2手柄引脚
-#define ENABLE_PS2_DI_PIN_CLOCK  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE)
-#define ENABLE_PS2_DO_PIN_CLOCK  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE)
-#define ENABLE_PS2_CS_PIN_CLOCK  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE)
-#define ENABLE_PS2_CLK_PIN_CLOCK RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE)
-
-#define PS2_DI_PORT  GPIOE
-#define PS2_DO_PORT  GPIOE
-#define PS2_CS_PORT  GPIOE
-#define PS2_CLK_PORT GPIOE
-
-#define PS2_DI_PIN  GPIO_Pin_0
-#define PS2_DO_PIN  GPIO_Pin_1
-#define PS2_CS_PIN  GPIO_Pin_2
-#define PS2_CLK_PIN GPIO_Pin_3
-
-#define DI   PEin(0)     //Input pin //输入引脚
-
-#define DO_H PEout(1)=1   //Command height //命令位高
-#define DO_L PEout(1)=0   //Command low //命令位低
-
-#define CS_H PEout(2)=1  //Cs pull up //CS拉高
-#define CS_L PEout(2)=0  //Cs drawdown //CS拉低
-
-#define CLK_H PEout(3)=1 //Clock lift //时钟拉高
-#define CLK_L PEout(3)=0 //Clock down //时钟拉低
-/*----------------------------------*/
-
 /* 经典 GPIO 时序 PS2 手柄的最小手柄模型.
  * USB Host 整链移除后, 原bsp_gamepad.h的通用手柄类型收敛到这里,
  * 仅保留 ps2_classic.c / balance_task.c 实际用到的字段与按键枚举. */
@@ -106,13 +77,10 @@ typedef struct{
 }GamePadType_t;
 
 //对外接口
-void PS2_Init(void);
-void PS2_Read(void);
 #if defined(REAR_WHEEL_DEBUG) && defined(_4WD_CAR)
 extern volatile uint8_t g_rear_ps2_valid;
 extern volatile uint32_t g_rear_ps2_tick;
 #endif
-void PS2_Key_Param_Init(void);
 
 //经典GPIO时序PS2手柄对象(定义在ps2_classic.c)
 extern GamePadType_t Classic_PS2Gamepad;

@@ -27,7 +27,6 @@ enum{
 
 /*--------LED Interface Fun --------*/
 void LED_Init(void);  
-void V1_0_LED_Init(void);
 void RGB_LightStrip_Init(void);
 
 void LED_SetColor(LED_COLOR color);
@@ -54,25 +53,6 @@ void LightStrip_SetColor( uint8_t r,uint8_t g,uint8_t b );
 #define LED_B PBout(14) 
 /*----------------------------------*/
 
-
-/*--------LED V1.0 config--------*/
-//LEDµ∆÷È
-#define V1_0_ENABLE_LED_R_PIN_CLOCK RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE)
-#define V1_0_ENABLE_LED_G_PIN_CLOCK RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE)
-#define V1_0_ENABLE_LED_B_PIN_CLOCK RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE)
-
-#define V1_0_LED_R_PORT GPIOD
-#define V1_0_LED_G_PORT GPIOD
-#define V1_0_LED_B_PORT GPIOD
-
-#define V1_0_LED_R_PIN GPIO_Pin_14
-#define V1_0_LED_G_PIN GPIO_Pin_13
-#define V1_0_LED_B_PIN GPIO_Pin_15
-
-#define V1_0_LED_R PDout(14) 
-#define V1_0_LED_G PDout(13) 
-#define V1_0_LED_B PDout(15) 
-/*----------------------------------*/
 
 /*--------LightStrip config--------*/
 /*-------- RGBµ∆¥¯≈‰÷√ --------*/

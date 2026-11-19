@@ -44,43 +44,6 @@ void LED_Init(void)
 	LED_SetColor(LED_Red);//设置LED颜色,默认为红色
 }
 
-void V1_0_LED_Init(void)
-{
-	GPIO_InitTypeDef  GPIO_InitStructure;
-
-	V1_0_ENABLE_LED_R_PIN_CLOCK;
-	V1_0_ENABLE_LED_G_PIN_CLOCK;
-	V1_0_ENABLE_LED_B_PIN_CLOCK;
-	
-	GPIO_InitStructure.GPIO_Pin =  V1_0_LED_R_PIN;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
-	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
-	GPIO_Init(V1_0_LED_R_PORT, &GPIO_InitStructure);
-	
-	GPIO_InitStructure.GPIO_Pin =  V1_0_LED_G_PIN;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
-	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
-	GPIO_Init(V1_0_LED_G_PORT, &GPIO_InitStructure);
-	
-	GPIO_InitStructure.GPIO_Pin =  V1_0_LED_B_PIN;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
-	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
-	GPIO_Init(V1_0_LED_B_PORT, &GPIO_InitStructure);
-	
-	GPIO_SetBits(V1_0_LED_R_PORT,V1_0_LED_R_PIN);
-	GPIO_SetBits(V1_0_LED_G_PORT,V1_0_LED_G_PIN);
-	GPIO_SetBits(V1_0_LED_B_PORT,V1_0_LED_B_PIN);
-	
-	LED_SetColor(LED_Red);//设置LED颜色,默认为红色
-}
-
-//将用户配置的亮度值 0~255 映射到实际控制PWM的值 0~10000.
 static int16_t rgb_map_value(uint8_t user_val)
 {
     // 计算输入范围的比例
@@ -232,19 +195,6 @@ void LED_SetState(uint8_t mode)
 		else
 		{
 			LightStrip_SetColor(RGB_FULL_OFF,RGB_FULL_OFF,RGB_FULL_OFF);
-		}
-	}
-	else if( SysVal.HardWare_Ver == V1_0 )
-	{
-		if( mode==1 )
-		{
-			V1_0_LED_R = led_buf[0];
-			V1_0_LED_G = led_buf[1];
-			V1_0_LED_B = led_buf[2];
-		}
-		else
-		{
-			V1_0_LED_R = LED_OFF , V1_0_LED_G = LED_OFF , V1_0_LED_B = LED_OFF;
 		}
 	}
 }

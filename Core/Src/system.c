@@ -53,18 +53,10 @@ void systemInit(void)
 	if( MPU6050_DEFAULT_ADDRESS == MPU6050_getDeviceID() )
 	{
 		SysVal.HardWare_Ver = V1_0;
-		
+
 		//旧版C50C硬件初始化
-		V1_0_LED_Init();
 		V1_0_MiniBalance_PWM_Init(16799,0);
-		
-		//Initialize the hardware interface to the PS2 controller
-		//初始化与PS2手柄连接的硬件接口
-		PS2_Init();
-		
-		//PS2软件参数初始化
-		PS2_Key_Param_Init();
-		
+
 		//MPU6050 is initialized to read the vehicle's three-axis attitude,
 		//three-axis angular velocity and three-axis acceleration information
 		//MPU6050初始化，用于读取小车三轴角速度、三轴加速度信息
