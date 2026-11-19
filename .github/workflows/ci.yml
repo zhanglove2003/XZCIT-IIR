@@ -3,7 +3,7 @@ name: Firmware CI
 # 触发规则（见 docs/workflow.md）：
 #   feat/<车型>    → 完整流水线（编译 + 主机测试 + 静态分析）
 #   main           → 只跑文档检查（main 只放项目门面，无业务代码）
-#   <车型>/develop → 只跑轻量检查
+#   dev/<车型>      → 只跑轻量检查
 # 其他分支不触发。
 
 on:
@@ -11,7 +11,7 @@ on:
     branches:
       - main
       - 'feat/**'
-      - '**/develop'
+      - 'dev/**'
   pull_request:
     branches:
       - main
