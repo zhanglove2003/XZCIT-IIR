@@ -1,10 +1,6 @@
 # XZCIT-IIR · 智能巡检机器人
-
-四轮移动机器人平台。主控 STM32F407VET6，HAL + FreeRTOS，OLED 本地界面，PS2 手柄操控。
-
+四轮移动机器人平台。主控 STM32F407VET6，HAL + FreeRTOS，
 > 仓库代号 `IIR` = Intelligent Inspection Robot。
-> 历史名 `MFSC`（Mecanum Four-wheel Smart Car）沿用为麦轮底盘子项目的目录名。
-
 ## 一、项目定位
 
 面向室内轻载巡检场景的四轮移动底盘。整车自持：本地 OLED 完成菜单、驾驶、自检、标定，不依赖上位机即可运行。
@@ -22,10 +18,9 @@
 | 项目代号 | XZCIT-IIR |
 | 前身 | XZCIT-MFSC（麦轮固件） |
 | 主控 | STM32F407VET6，LQFP100，168 MHz |
-| 板卡 | C50C-V4.3 |
+| 板卡 | C50C-V1.0 |
 | 固件基线 | 始于 2026-10-29 的 CubeMX HAL 骨架 |
 | 首个实车验收 | 2026-11-01，麦轮底盘完整固件 |
-| 授权方式 | 未声明（见「待办」） |
 
 ## 三、底盘形态
 
@@ -34,7 +29,7 @@
 | 底盘 | 分支 | 目录 | 运动方式 |
 |---|---|---|---|
 | 麦克纳姆轮 | `feat/mecanum` | 根目录 `Core/` | 全向平移 + 原地旋转 |
-| 四轮差速 | `feat/differential` | `four-wheel-differential/` | 前后 + 差速转向 |
+| 四轮差速 | `feat/differential`| 前后 + 差速转向 |
 
 麦轮与差速的轮序、编码器映射、PWM 通道不同。切换底盘必须整分支切换，不可混用配置。
 
@@ -48,9 +43,9 @@
 | PLL | M8 / N336 / P2 / Q7（Q=7 供 USB 48 MHz） |
 | SYSCLK | 168 MHz，Flash 5 WS |
 | 定时器 | TIM8 四路 PWM 1 kHz；TIM2–TIM5 编码器模式 TI12 |
-| 通信 | USART1 上位机、USART3 调试、UART4 蓝牙 9600 |
+| 通信 | USART1 上位机ROS通讯、USART3 调试和烧录、UART4 蓝牙 9600 |
 | 外设 | I2C1（IMU）、ADC1_IN8（电池）、USB_OTG_FS Host HID |
-| 人机 | OLED SSD1306 128×64 软 SPI、PS2 手柄、RGB、蜂鸣器 |
+| 人机 | OLED SSD1306 128×64 软 SPI、PS2 手柄、蜂鸣器 |
 | 时基 | HAL 用 TIM6，FreeRTOS 用 SysTick |
 
 ## 五、仓库结构
@@ -112,7 +107,3 @@ make -j8
 
 固件操作手册（菜单、按键、烧录、调试坑）在各车型正式分支的 README 中。
 
-## 九、待办
-
-- 补齐差速底盘的操作手册。
-- 电池分压参数现场核对后启用欠压停机。
