@@ -1,5 +1,6 @@
 #include "delay.h"
 #include "sys.h"
+#include "stm32f4xx_hal.h"		/* 批次0：HAL_IncTick 声明（HAL_RCC_* 超时依赖 uwTick） */
 ////////////////////////////////////////////////////////////////////////////////// 	 
 //如果使用OS,则包括下面的头文件即可
 #if SYSTEM_SUPPORT_OS
@@ -16,10 +17,12 @@ extern void xPortSysTickHandler(void);
  
 //systick中断服务函数,使用OS时用到
 void SysTick_Handler(void)
-{	
+{
+    HAL_IncTick();	//批次0：维护 HAL 的 uwTick（HAL_RCC_OscConfig/ClockConfig 的超时基准）。
+    				//SysTick 时基与 FreeRTOS 共用同一 1kHz 节拍，行为等价且互不影响。
     if(xTaskGetSchedulerState()!=taskSCHEDULER_NOT_STARTED)//系统已经运行
     {
-        xPortSysTickHandler();	
+        xPortSysTickHandler();
     }
 }
 	/********************************************************

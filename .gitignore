@@ -24,3 +24,4 @@ __pycache__/
 
 # 上游原始参考包，虽然扩展名是 .hex 也要纳入版本控制
 !Akm_Car.hex
+build/

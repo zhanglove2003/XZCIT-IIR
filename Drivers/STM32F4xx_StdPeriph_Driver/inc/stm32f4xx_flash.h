@@ -469,7 +469,11 @@ void         FLASH_ITConfig(uint32_t FLASH_IT, FunctionalState NewState);
 FlagStatus   FLASH_GetFlagStatus(uint32_t FLASH_FLAG);
 void         FLASH_ClearFlag(uint32_t FLASH_FLAG);
 FLASH_Status FLASH_GetStatus(void);
+/* 批次0：与 HAL stm32f4xx_hal_flash.h 的同名函数签名冲突；HAL FLASH 模块启用时
+   让位（StdPeriph stm32f4xx_flash.c 未参与本工程编译）。 */
+#ifndef HAL_FLASH_MODULE_ENABLED
 FLASH_Status FLASH_WaitForLastOperation(void);
+#endif /* HAL_FLASH_MODULE_ENABLED */
 
 #ifdef __cplusplus
 }

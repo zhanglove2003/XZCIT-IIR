@@ -16,8 +16,10 @@ FPU      = -mfpu=fpv4-sp-d16
 FLOAT-ABI= -mfloat-abi=hard
 MCU      = $(CPU) -mthumb $(FPU) $(FLOAT-ABI)
 
-DEFS     = -DUSE_STDPERIPH_DRIVER -D__FPU_PRESENT=1 -D__TARGET_FPU_VFP \
+DEFS     = -DUSE_STDPERIPH_DRIVER -DSTM32F407xx -DHAL_NO_LEGACY -DHAL_RCC_NO_MCO -D__FPU_PRESENT=1 -D__TARGET_FPU_VFP \
            -DARM_MATH_CM4 -DUSE_USB_OTG_FS -D_4WD_CAR -DSTM32F40_41xxx -D__weak="__attribute__((weak))" -D__packed="__attribute__((__packed__))" -D__align="__attribute__((aligned(4)))" -D__inline="inline" -D__forceinline="inline __attribute__((always_inline))" -D__nop="__NOP"
+# 批次0：-DSTM32F407xx 供 HAL _ex 模块的器件宏分支使用；-DSTM32F40_41xxx 仍需保留
+# （StdPeriph 头 stm32f4xx.h:101-103 与 BSP/App 代码依赖它）。
 # 四轮 ROS 直行（task-15）：这 4 个宏是 balance_task.c 的 #error 守卫要求的最小充分集合。
 # REAR_WHEEL_DEBUG 打开四轮调试输出路径；ROS_STRAIGHT_DRIVE 打开 ros_cmd_tick 与
 # steer_debug_step_duty；FOUR_TURN_DEBUG 打开 PS2 四轮转向分支（不加则走引用
@@ -26,6 +28,7 @@ DEFS     += -DREAR_WHEEL_DEBUG -DROS_STRAIGHT_DRIVE -DFOUR_TURN_DEBUG -DFRONT_TE
 
 
 C_INCLUDES = -IDrivers/CMSIS/Include -IDrivers/CMSIS/Device/ST/STM32F4xx/Include \
+             -IDrivers/STM32F4xx_HAL_Driver/Inc \
              -IDrivers/BSP/delay \
              -IDrivers/BSP/sys \
              -IDrivers/BSP/usart \
@@ -81,6 +84,10 @@ LDFLAGS  = $(MCU) -T$(LDSCRIPT) -specs=nano.specs -specs=nosys.specs \
            -Wl,--print-memory-usage -lc -lm -lnosys
 
 C_SOURCES = \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash.c \
   Drivers/STM32F4xx_StdPeriph_Driver/src/misc.c \
   Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_gpio.c \
   Drivers/STM32F4xx_StdPeriph_Driver/src/stm32f4xx_rcc.c \
