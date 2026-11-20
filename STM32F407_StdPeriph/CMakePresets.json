@@ -1,0 +1,22 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "stm32-arm",
+      "displayName": "C50C STM32F407 (Arm GCC)",
+      "binaryDir": "${sourceDir}/cmake-build",
+      "toolchainFile": "${sourceDir}/cmake/arm-none-eabi.cmake"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "stm32-arm",
+      "configurePreset": "stm32-arm"
+    }
+  ]
+}
