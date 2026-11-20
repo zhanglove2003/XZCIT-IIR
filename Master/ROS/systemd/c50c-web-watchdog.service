@@ -1,0 +1,6 @@
+[Unit]
+Description=C50C web console watchdog (relaunch web_debug when 8088 is dead)
+
+[Service]
+Type=oneshot
+ExecStart=/home/orangepi/c50c-web-watchdog.sh

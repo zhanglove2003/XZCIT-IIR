@@ -1,0 +1,11 @@
+[Unit]
+Description=C50C localization EKF
+After=c50c-chassis.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/bash -c 'if /usr/bin/pgrep -f "^/opt/ros/humble/lib/robot_localization/ekf_node" >/dev/null; then echo "EKF already running; refusing duplicate start" >&2; exit 1; else [ "$$?" -eq 1 ]; fi'
+ExecStart=/usr/bin/bash -c 'source /opt/ros/humble/setup.bash && source /home/orangepi/ros2_ws/install/setup.bash && exec /opt/ros/humble/lib/robot_localization/ekf_node --ros-args -r __node:=ekf_filter_node --params-file /home/orangepi/ekf.yaml'
+
+[Install]
+WantedBy=default.target

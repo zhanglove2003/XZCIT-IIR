@@ -1,0 +1,18 @@
+[Unit]
+Description=C50C Nav2 navigation stack (RPP controller + hysteresis nav_relay)
+After=c50c-localization.service c50c-web.service
+Wants=c50c-localization.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/sleep 5
+ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source /home/orangepi/ros2_ws/install/setup.bash && exec ros2 launch /home/orangepi/nav2_20261120/nav2_navigation.launch.py params_file:=/home/orangepi/nav2_20261120/nav2_params_20261120.yaml relay_script:=/home/orangepi/nav2_20261120/nav_relay.py use_sim_time:=false autostart:=true start_relay:=true'
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=control-group
+StandardOutput=append:/tmp/nav2_nav.log
+StandardError=append:/tmp/nav2_nav.log
+
+[Install]
+WantedBy=default.target

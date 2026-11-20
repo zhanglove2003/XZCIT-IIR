@@ -1,0 +1,82 @@
+# 摄像头与雷达参数
+camera_node:
+  ros__parameters:
+    # 用 by-id 稳定路径，不用 /dev/video0（重新枚举可能指向别的设备）
+    # 现场实测: /dev/v4l/by-id/usb-HD_720P_Webcam_HD_720P_Webcam_20130901-video-index0
+    device: /dev/video0
+    width: 1280
+    height: 720
+    pixel_format: MJPG
+    frame_id: camera_link
+
+lidar_node:
+  ros__parameters:
+    # 留空时每次重连前重扫 /dev/serial/by-path/*usb*：
+    # 0 个候选保持未连接，1 个候选自动采用，多个候选拒绝盲选并报错。
+    # 插了别的 USB 串口时必须在此写明现场实测路径。不要写 /dev/ttyUSB0。
+    # 现场实测: /dev/serial/by-path/platform-fc8c0000.usb-usb-0:1:1.0-port0
+    lidar_port: ''
+    baudrate: 230400
+    frame_id: laser
+    bins: 360
+    range_min: 0.02
+    range_max: 12.0
+    # 单角度测距最长保留时长（秒）。超过后该角度输出 inf，近目标移开点会消失
+    stale_point_age: 0.5
+    # 角度约定：mirror 与 LD19 协议方向一致；raw 仅用于现场核对
+    origin: mirror
+    angle_offset_deg: 0.0
+    # 最后一次 CRC 正确帧超时（秒）。待实测值，不满足停车安全要求
+    frame_timeout: 0.5
+    recovery_coverage: 0.9
+    # 重新打开串口的最小间隔（秒），防止设备缺失时刷屏
+    reconnect_interval: 1.0
+    log_interval: 10.0
+    diag_period: 1.0
+    poll_period: 0.01
+
+fusion_node:
+  ros__parameters:
+    # 0.4 是自动巡航停车门限（2026-11-14 用户定，原 0.25）。
+    stop_distance: 0.4
+    slow_distance: 0.90
+    front_half_angle_deg: 30.0
+    max_linear: 0.4
+    max_angular: 0.90
+    # 第二阶段：向底盘桥订阅的话题发速度指令。false 时只发 obstacle_report。
+    enable_cmd_vel: false
+    # 底盘桥 c50c_uart3_node 只订阅 /nav_cmd_vel
+    cmd_vel_topic: nav_cmd_vel
+    # 自动巡航开关话题：网页置真才前进，置假或超时即停。
+    cruise_topic: cruise_enable
+    cruise_timeout: 0.0   # ≤0 = 无限运行直到手动停止
+    # 自动巡航前进速度（巡航档 0.4 m/s）。超过 max_linear 时按 max_linear。
+    cruise_linear: 0.4
+    scan_timeout: 1.0
+    image_timeout: 1.0
+    lidar_diag_timeout: 2.0
+    min_front_points: 3
+    side_half_angle_deg: 30.0
+    # [2026-11-17] 前置 HC-SR04：0xFFFF（无回波/陈旧）在 uart3_node 被映射成
+    # max_range；>= us_max_range 的读数判无效（fail-closed：无效即停，
+    # 恢复需重新启动）。与 uart3_node 的 ultrasonic_max_range_m 保持一致。
+    us_max_range: 4.5
+    # [2026-11-17] 车体轮廓（m），motion_check 运动方向前置门用。
+    # 0 = 未标定 → 所有方向判 no_geometry，/drive_safety 拒绝、车不动。
+    # 上车前必须用实测值打开，并与 nav2 的 robot_radius 同一口径核对。
+    body_half_length: 0.0
+    body_half_width: 0.0
+    # 慢行区最低速度比例（乘到计算限速上）；1.0 = 不降速。
+    slow_min_ratio: 0.5
+    decide_period: 0.1
+    report_period: 1.0
+    # 关闭自动转向，未知方向一律当未知而不是空闲
+    auto_turn: false
+
+web_node:
+  ros__parameters:
+    http_port: 8088
+    image_hz: 5.0
+    scan_timeout: 1.0
+    image_timeout: 1.0
+    diag_timeout: 3.0

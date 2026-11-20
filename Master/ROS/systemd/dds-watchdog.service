@@ -1,0 +1,19 @@
+[Unit]
+Description=C50C DDS watchdog v2 (T2) - detects /scan brain-split and restarts stack
+After=network-online.target
+
+[Service]
+Type=simple
+SyslogIdentifier=dds-watchdog
+ExecStart=/home/orangepi/dds_watchdog.sh
+Restart=on-failure
+RestartSec=10
+# A2：装为用户服务（systemctl --user），进程归属安装用户 orangepi，无需也不允许写 User=
+# （User= 在用户 unit 中不被 systemd 支持，会导致 unit 加载失败——复审 P0 已修正）
+# Linger 由部署命令 loginctl enable-linger orangepi
+# （Linger 属 loginctl 用户属性，无法写在 unit 文件内；板上验证：
+#   loginctl show-user orangepi | grep Linger）
+# 注意：不设置任何 DDS domain 变量（板上默认 domain 0，设了必炸——见执行计划书 C1）
+
+[Install]
+WantedBy=default.target

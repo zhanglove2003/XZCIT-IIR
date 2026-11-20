@@ -1,0 +1,17 @@
+[Unit]
+Description=C50C Nav2 localization (map_server + AMCL + lifecycle_manager)
+After=opi-robot.service c50c-chassis.service c50c-ekf.service
+Wants=c50c-ekf.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source /home/orangepi/ros2_ws/install/setup.bash && exec ros2 launch /home/orangepi/nav2_20261120/nav2_localization.launch.py params_file:=/home/orangepi/maps/c50c-field-20261120/localization_params.yaml'
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=control-group
+StandardOutput=append:/tmp/nav2_loc.log
+StandardError=append:/tmp/nav2_loc.log
+
+[Install]
+WantedBy=default.target

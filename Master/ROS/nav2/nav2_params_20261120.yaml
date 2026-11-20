@@ -1,0 +1,354 @@
+# C50C Nav2 参数候选（nav2 改造区，仅候选文件，未部署）
+#
+# 事实来源：
+#   - 交接文档 ../c50c-地图导航交接-20261116.md §3（AMCL/DWB/Costmap/velocity_smoother）
+#   - ../c50c-opt-v4/ekf-dds-fix-20261117/SLAM与导航后续方案.md "自主导航前的阻塞项"
+#     （critics 缺 BaseObstacle；navigation_launch 把 cmd_vel_smoothed 重映射成 /cmd_vel）
+#   - ../c50c-auto-nav-20261117/probe-board.txt 第 1-12 行（实测节点为空、
+#     /cmd_vel_smoothed 无 info、/nav_cmd_vel 有 2 个订阅者）
+#
+# 相对交接文档的改动（每条都有理由）：
+#   1) DWB critics 显式加入 BaseObstacle（原列表只有 RotateToGoal/Oscillation/
+#      GoalAlign/PathAlign/PathDist/GoalDist）。
+#   2) max_vel_x / max_speed_xy 0.30 -> 0.10（首调直线速度上限要求）。
+#   3) velocity_smoother 显式块（Humble 里 "未发出 /cmd_vel_smoothed" 的根因是
+#      navigation_launch.py:182-183 的重映射 ('cmd_vel_smoothed','cmd_vel')，
+#      smoother 实际发到 /cmd_vel；本区 nav2_navigation.launch.py 只为 velocity_smoother 覆盖该重映射，
+#      让 smoother 真正发到 /cmd_vel_smoothed）。max_velocity 上界 0.15 m/s，
+#      保证 relay 不会把速度放大到 >0.15 m/s。
+#   4) behavior_server 去掉了 spin / backup / drive_on_heading 三个恢复动作：
+#      倒车（x<0）与原地旋转方向的观测量纲/符号均未验证，未验证前不开放。
+#      BT 插件列表同步去掉 spin/back_up/drive_on_heading 的 bt node，并用
+#      nav2_back_up_cancel_bt_node 代替容器内不存在的 nav2_wait_cancel_bt_node。
+#   5) 全局代价地图补 obstacle_layer（订阅 /scan）+ static_layer(track_unknown_space=true)
+#      + inflation；robot_radius=0.28（车长 0.42、宽 0.46 的圆包络）、inflation_radius=0.45。
+#
+# 未验证项（保持原样，未擅自改动）：inflation 0.45 与 fusion 禁动门限 0.40 的关系、
+# AMCL 粒子数是否适合新地图、smac/bt 等非必要项未加入。
+#
+# 速度链路定位（本轮容器内静态证据）：
+#   controller_server(FollowPath) --/cmd_vel_nav--> velocity_smoother --/cmd_vel_smoothed-->
+#   nav_relay --/nav_cmd_vel--> 桥 arbiter(/nav_cmd_vel 上限 1 个发布者, arbiter.py:47) --> 固件帧
+#   smoother 默认订阅 cmd_vel / 发布 cmd_vel_smoothed（libvelocity_smoother_core.so 字符串），
+#   由 nav2_navigation.launch.py 重映射为 /cmd_vel_nav 与 /cmd_vel_smoothed。
+
+amcl:
+  ros__parameters:
+    use_sim_time: false
+    # 初值只能走参数：/initialpose（PoseWithCovarianceStamped）被 AMCL 反复拒收
+    # "malformed"（交接文档 :74-76）。每次挪车/换地图后必须改这三项。
+    set_initial_pose: true
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0            # 2026-11-20 新图起点 (0, 0, 0)
+    always_reset_initial_pose: false
+    first_map_only: false
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.3           # 里程计漂移 ~17°/2.4m 实证（交接文档 :67）
+    alpha4: 0.3
+    alpha5: 0.3
+    base_frame_id: "base_link"   # 本车没有 base_footprint，start_web.sh 里 TF 是 odom->base_link
+    global_frame_id: "map"
+    odom_frame_id: "odom"
+    scan_topic: /scan
+    laser_min_range: 0.05
+    laser_max_range: 8.0
+    laser_model_type: "likelihood_field"
+    max_beams: 60
+    min_particles: 500
+    max_particles: 2000
+    pf_err: 0.05
+    pf_z: 0.99
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    save_pose_rate: 0.5
+    sigma_hit: 0.2
+    tf_broadcast: true        # 导航模式下 map->odom 的唯一发布者（slam_toolbox 必须停）
+    transform_tolerance: 1.0
+    update_min_a: 0.2
+    update_min_d: 0.25
+    z_hit: 0.5
+    z_max: 0.05
+    z_rand: 0.5
+    z_short: 0.05
+
+map_server:
+  ros__parameters:
+    use_sim_time: false
+    yaml_filename: "/home/orangepi/maps/c50c-field-20261120/c50c-field-20261120.yaml"   # 换图/重扫后必须改（交接文档 :255-257）
+    topic_name: "map"
+    frame_id: "map"
+
+map_saver:
+  ros__parameters:
+    use_sim_time: false
+    save_map_timeout: 5.0
+    free_thresh_default: 0.25
+    occupied_thresh_default: 0.65
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /odometry/filtered
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    default_nav_to_pose_bt_xml: "/home/orangepi/nav2_20261120/bt_navigate_to_pose_no_spin_backup.xml"
+    default_nav_through_poses_bt_xml: "/home/orangepi/nav2_20261120/bt_navigate_through_poses_no_spin_backup.xml"
+    # 与 Humble 自带列表一致；去掉 nav2_spin/back_up/drive_on_heading 的 action
+    # 节点只是让"未使用"显式化，真正禁用靠 behavior_server 不加载插件（见下）。
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_compute_path_through_poses_action_bt_node
+      - nav2_smooth_path_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_assisted_teleop_action_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_globally_updated_goal_condition_bt_node
+      - nav2_is_path_valid_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_truncate_path_action_bt_node
+      - nav2_truncate_path_local_action_bt_node
+      - nav2_goal_updater_node_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_path_expiring_timer_condition
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_goal_updated_controller_bt_node
+      - nav2_is_battery_low_condition_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_goal_checker_selector_bt_node
+      - nav2_controller_cancel_bt_node
+      - nav2_path_longer_on_approach_bt_node
+      # 容器内 /opt/ros/humble/lib 实测：无 libnav2_spin_cancel_bt_node.so / libnav2_wait_cancel_bt_node.so，
+      # 写进去会导致 bt_navigator 插件加载失败；倒车恢复的 cancel 节点名为 nav2_back_up_cancel_bt_node。
+      - nav2_back_up_cancel_bt_node
+
+bt_navigator_navigate_to_pose_rclcpp_node:
+  ros__parameters:
+    use_sim_time: false
+
+bt_navigator_navigate_through_poses_rclcpp_node:
+  ros__parameters:
+    use_sim_time: false
+
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    controller_frequency: 10.0      # 10Hz 跟随动态路径更平滑（RK3588 CPU 余量充足）
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5
+      movement_time_allowance: 10.0
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.15       # 交接文档 :88
+      yaw_goal_tolerance: 0.35
+    FollowPath:
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      desired_linear_vel: 0.12
+      lookahead_dist: 0.60
+      min_lookahead_dist: 0.35
+      max_lookahead_dist: 0.90
+      lookahead_time: 1.5
+      rotate_to_heading_angular_vel: 0.60
+      transform_tolerance: 0.2
+      use_velocity_scaled_lookahead_dist: false
+      approach_velocity_scaling_dist: 0.5
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.0
+      use_regulated_linear_velocity_scaling: true
+      use_cost_regulated_linear_velocity_scaling: true
+      cost_scaling_dist: 0.50
+      cost_scaling_gain: 1.0
+      inflation_cost_scaling_factor: 3.5
+      regulated_linear_scaling_min_radius: 0.60
+      regulated_linear_scaling_min_speed: 0.04
+      use_rotate_to_heading: true
+      allow_reversing: false
+      rotate_to_heading_min_angle: 0.65
+      max_angular_accel: 2.0
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: false
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_link
+      transform_tolerance: 0.5
+      rolling_window: true
+      width: 4                        # 交接文档 :101（4×4 m rolling，Humble 要求整数）
+      height: 4
+      resolution: 0.05
+      # 车体 0.40 x 0.40 m 实测轮廓（base_link 原点距前 0.20 / 后 0.20 / 左 0.20 / 右 0.20）
+      footprint: "[[0.20, 0.20], [0.20, -0.20], [-0.20, -0.20], [-0.20, 0.20]]"
+      footprint_clearing_enabled: True
+      track_unknown_space: true
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0    # 必须显式配置：Humble 默认 0.0 会过滤掉 z=+0.22m 的全部雷达点
+          min_obstacle_height: 0.0
+          data_type: "LaserScan"
+          clearing: True
+          marking: True
+          raytrace_max_range: 8.0     # 交接文档 :100
+          raytrace_min_range: 0.0
+          obstacle_max_range: 5.0
+          obstacle_min_range: 0.0
+          inf_is_valid: true
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.5
+        inflation_radius: 0.50        # >= fusion 禁动门限 0.40 且给足避障提前量
+        inflate_unknown: false
+      always_send_full_costmap: True
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: false
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      transform_tolerance: 0.5
+      resolution: 0.05
+      track_unknown_space: true       # 坑③：未知按致命处理，禁止规划进未扫区
+      footprint: "[[0.20, 0.20], [0.20, -0.20], [-0.20, -0.20], [-0.20, 0.20]]"
+      footprint_clearing_enabled: True
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0    # 必须显式配置：Humble 默认 0.0 会过滤掉 z=+0.22m 的全部雷达点
+          min_obstacle_height: 0.0
+          data_type: "LaserScan"
+          clearing: True
+          marking: True
+          raytrace_max_range: 8.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 5.0
+          obstacle_min_range: 0.0
+          inf_is_valid: true
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.5
+        inflation_radius: 0.50
+        inflate_unknown: false
+      always_send_full_costmap: True
+
+planner_server:
+  ros__parameters:
+    use_sim_time: false
+    expected_planner_frequency: 1.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner/NavfnPlanner"
+      tolerance: 0.5
+      use_astar: false
+      allow_unknown: false            # 与 track_unknown_space=true 配套：未知不进代价
+    costmap_update_timeout: 1.0
+
+smoother_server:
+  ros__parameters:
+    use_sim_time: false
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: True
+
+behavior_server:
+  ros__parameters:
+    use_sim_time: false
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    # 恢复动作白名单：倒车（BackUp/DriveOnHeading, x<0）与原地旋转（Spin）
+    # 在相应方向观测量纲/符号未验证前【不加载插件】= 动作服务器不可用，
+    # 默认行为树里的 BackUp/Spin recovery 节点会直接失败，不会发任何速度。
+    # 恢复手段暂时靠 BT 的 ClearEntireCostmap + Wait（不发速度）。
+    behavior_plugins: ["wait"]
+    # 二次闸门：Spin 插件读 max_rotational_vel（容器内 libnav2_spin_behavior.so 含该参数名+simulate_ahead_time），
+    # 置 0 → 原地旋转角速度为 0。BackUp 不插件化已是硬闸门；本轮不再写 min_linear_vel
+    # （libnav2_back_up_behavior.so 内无该参数名，按"不存在即不生效"处理，不拿未验证参数当闸门）。
+    max_rotational_vel: 0.0
+    wait:
+      plugin: "nav2_behaviors/Wait"
+    global_frame: odom
+    robot_base_frame: base_link
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+
+waypoint_follower:
+  ros__parameters:
+    use_sim_time: false
+    loop_rate: 20
+    stop_on_failure: false
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: True
+      waypoint_pause_duration: 200
+
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: false
+    smoothing_frequency: 20.0
+    scale_velocities: False
+    feedback: "OPEN_LOOP"
+    # 开环 PWM 车：smoother 输入 /cmd_vel_nav / 输出 /cmd_vel_smoothed。
+    # 容器内实测：libvelocity_smoother_core.so 同时含订阅默认名 cmd_vel 与发布默认名 cmd_vel_smoothed；
+    # 标准 navigation_launch.py:182-183 把发布名再 remap 成 cmd_vel，本区 nav2_navigation.launch.py:73-78
+    # 只为 velocity_smoother 保留 ('cmd_vel','/cmd_vel_nav')、('cmd_vel_smoothed','/cmd_vel_smoothed')。
+    max_velocity: [0.15, 0.0, 0.65]
+    min_velocity: [0.0, 0.0, -0.65]     # 线性下限 0 = 无倒车；角速度 0.65 rad/s 与 FollowPath/nav_relay 协同
+    # 不放大：relay 不做任何 >1 的缩放，线速度硬上界 0.15 m/s
+    max_accel: [0.5, 0.0, 2.0]
+    max_decel: [-0.5, 0.0, -2.0]
+    odom_topic: "odometry/filtered"     # 与 bt_navigator.odom_topic 同源；EKF 未起时需改回 /odom
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0

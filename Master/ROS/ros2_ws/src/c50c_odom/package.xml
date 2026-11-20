@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>c50c_odom</name>
+  <version>0.1.0</version>
+  <description>C50C 平面里程计候选积分器(纯 Python、无 ROS 依赖;候选,不发布 /odom、不发 TF)</description>
+  <maintainer email="snow@example.com">snow</maintainer>
+  <license>Apache-2.0</license>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

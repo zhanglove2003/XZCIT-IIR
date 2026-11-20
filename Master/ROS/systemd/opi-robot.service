@@ -1,0 +1,16 @@
+[Unit]
+Description=香橙派机器人：摄像头、雷达、网页调试台(8088)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/home/orangepi/start_web.sh
+ExecStop=/usr/bin/pkill -f "camera_node|lidar_node|web_debug|fusion_node|static_transform_publisher|opi_robot/static_tf|async_slam_toolbox_node"
+TimeoutStartSec=60
+
+[Install]
+WantedBy=default.target
