@@ -118,21 +118,23 @@ def task_state(nav_fresh, nav_vx, nav_wz, nav_age, manual_active=False,
     return STATE_IDLE, _TEXT[STATE_IDLE]
 
 
-# 电池规格（用户 2026-11-14 确认）：6S 锂离子，标称 22.2V（3.7V/串）。
-# 满充 25.2V（4.2V/串），停用线 21.0V（3.5V/串）——低于停用线继续放电会
-# 永久损伤电芯。百分比 = 电压在 [停用线, 满充] 的线性映射：锂电开路曲线
-# 非线性、带载有瞬时压降，此值为仪表估计，不是库仑计量。
+# 电池规格（用户 2026-11-20 现场重新标定）：6S 锂离子，正常满电 24.5V，
+# 超过 25.0V 判定为充电中，停用线 21.0V（3.5V/串）——低于停用线继续放电会
+# 永久损伤电芯。百分比 = 电压在 [停用线, 24.5V 满电] 的线性映射（超 24.5V 钳位 100%）：
+# 锂电开路曲线非线性、带载有瞬时压降，此值为仪表估计，不是库仑计量。
 _BAT_CELLS = 6
-_BAT_FULL_V = 25.2
+_BAT_FULL_V = 24.5
+_BAT_CHARGING_V = 25.0
 _BAT_EMPTY_V = 21.0
 _BAT_WARN_V = 22.2   # 低于标称电压即提示充电
 
 
 def battery_view(voltage_v, level=None):
-    """显示固件上报电压，按 6S 锂电标定推算电量百分比与告警。"""
+    """显示固件上报电压，按现场标定（24.5V 满电 / >25.0V 充电中）推算电量与状态。"""
     view = {
         'voltage_v': None,
         'percent': None,
+        'charging': False,
         'state': 'unknown',
         'text': '无数据',
     }
@@ -144,8 +146,12 @@ def battery_view(voltage_v, level=None):
         return view
     view['voltage_v'] = round(voltage, 2)
     percent = (voltage - _BAT_EMPTY_V) / (_BAT_FULL_V - _BAT_EMPTY_V) * 100.0
-    view['percent'] = int(max(0.0, min(100.0, percent)))
-    if voltage <= _BAT_EMPTY_V:
+    view['percent'] = int(round(max(0.0, min(100.0, percent))))
+    view['charging'] = voltage > _BAT_CHARGING_V
+    if voltage > _BAT_CHARGING_V:
+        view['state'] = 'ok'
+        view['text'] = '充电中'
+    elif voltage <= _BAT_EMPTY_V:
         view['state'] = 'bad'
         view['text'] = '低于停用线，立即停车充电'
     elif voltage < _BAT_WARN_V:
@@ -155,3 +161,4 @@ def battery_view(voltage_v, level=None):
         view['state'] = 'ok'
         view['text'] = '正常'
     return view
+

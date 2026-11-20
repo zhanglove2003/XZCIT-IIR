@@ -1156,17 +1156,23 @@ class Bridge(Node):
             self.create_subscription(
                 _U8Arr, 'robot/moving_bins', self.on_moving,
                 Q.status_qos())
-        # [C50C 2026-11-15] 地图页：/map 占据栅格 + map→base_link 位姿。
-        # /map 用 RELIABLE+VOLATILE（status_qos）：订阅端 durability 要求
-        # 低，对 slam_toolbox 的 transient_local 或 volatile 发布都兼容。
+        # [C50C 2026-11-20] /map 改为 RELIABLE+TRANSIENT_LOCAL：map_server 以
+        # TRANSIENT_LOCAL 发布静态栅格，web_debug 重启后即可自动收到历史地图，
+        # 不再依赖手动重调 /map_server/load_map。
         if _OccGrid is not None:
+            map_qos = Q.status_qos(1)
+            try:
+                from rclpy.qos import DurabilityPolicy as _Dur
+                map_qos.durability = _Dur.TRANSIENT_LOCAL
+            except Exception:
+                pass
             self.create_subscription(
-                _OccGrid, 'map', self.on_map, Q.status_qos())
+                _OccGrid, 'map', self.on_map, map_qos)
         if _TfBuffer is not None:
             try:
                 self._tf_buffer = _TfBuffer()
                 self._tf_listener = _TfListener(self._tf_buffer, self)
-                self.create_timer(0.5, self._pose_tick)
+                self.create_timer(0.2, self._pose_tick)
             except Exception:            # pragma: no cover - 垫片/坏环境兜底
                 self._tf_buffer = None
         else:
@@ -2398,12 +2404,16 @@ class Handler(BaseHTTPRequestHandler):
         last_img = -1
         last_scan = -1
         last_map_seq = -1
+        last_pose_t = None
         # 扫描点整圈约 8 KB，100 Hz 后台每秒能跑出 100 份，Wi-Fi 扛不住。
         # 画面上限 10 Hz 足够顺滑，也避免积压把图像挤掉。
         scan_period = 0.1
         # 地图推送：SLAM 栅格变化不快，1Hz 且仅在 seq 变化时推。
+        # 静态地图(AMCL)下栅格 seq 不再变，用独立轻量 pose 帧按 5Hz 推实时位姿。
         map_period = 1.0
+        pose_period = 0.2
         next_map_t = 0.0
+        next_pose_t = 0.0
         # 图像节流：Wi-Fi 带宽窄，图像最多每秒推 IMG_HZ 帧。
         img_period = 1.0 / max(1.0, IMG_HZ)
         next_img_t = 0.0
@@ -2475,7 +2485,16 @@ class Handler(BaseHTTPRequestHandler):
                         and now >= next_map_t):
                     last_map_seq = grid['seq']
                     next_map_t = now + map_period
+                    last_pose_t = pose_t
+                    next_pose_t = now + pose_period
                     text = _map_frame_json(grid, grid_t, pose, pose_t)
+                    if text is not None and not _send_display(self, text):
+                        drops += 1
+                elif (pose is not None and pose_t is not None
+                        and pose_t != last_pose_t and now >= next_pose_t):
+                    last_pose_t = pose_t
+                    next_pose_t = now + pose_period
+                    text = _pose_frame_json(pose, pose_t, grid_t)
                     if text is not None and not _send_display(self, text):
                         drops += 1
                 if drops >= VIDEO_DROP_LIMIT:
@@ -2902,6 +2921,21 @@ def _map_frame_json(grid, grid_t, pose, pose_t):
         }
         return json.dumps(payload, separators=(',', ':'), allow_nan=False)
     except (ValueError, TypeError, KeyError, zlib.error):
+        return None
+
+
+def _pose_frame_json(pose, pose_t, grid_t):
+    """静态地图模式下单独推实时位姿（5Hz，避免重复发送整幅栅格）。"""
+    try:
+        payload = {
+            't': 'pose',
+            'pose': pose,
+            'pose_age': (None if pose_t is None
+                         else round(time.time() - pose_t, 2)),
+            'map_age': None if grid_t is None else round(time.time() - grid_t, 2),
+        }
+        return json.dumps(payload, separators=(',', ':'), allow_nan=False)
+    except (ValueError, TypeError, KeyError):
         return None
 
 

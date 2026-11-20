@@ -686,7 +686,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
               <div class="vv nowrap" id="ov_bat_volt">电压 --</div>
             </div>
             <div class="batbar" style="margin-top:10px"><i id="ov_bat_bar"></i></div>
-            <p class="hint nowrap">6S 锂电：满充 25.2V / 停用 21.0V；带载压降会让百分比瞬时偏低</p>
+            <p class="hint nowrap">6S 锂电：满电 24.5V / 停用 21.0V / &gt;25.0V 充电中；带载压降会让百分比瞬时偏低</p>
           </div>
 
           <!-- 主机：环形仪表（四个环并排一行） -->
@@ -1359,6 +1359,12 @@ function openVideo() {
     } else if (m.t === 'map') {
       /* [C50C 2026-11-15] 占据栅格 + 位姿（1Hz、seq 变化才推） */
       onMap(m);
+    } else if (m.t === 'pose') {
+      /* 静态地图模式下由服务端 5Hz 单独推实时位姿 */
+      mapPose = m.pose || null;
+      mapPoseAge = m.pose_age;
+      if (mapGrid && typeof m.map_age === 'number') mapGrid.age = m.map_age;
+      if (curPage === 'map') renderMap();
     }
   };
   videoWs.onclose = () => {
@@ -1565,6 +1571,45 @@ function renderMap() {
     ctx.lineWidth = 1;
   }
 
+  /* [巡航] 航点草稿与已保存巡航闭环路线可视化 */
+  if (routeDraft.length > 0) {
+    const isSaved = !!(patrolSt && patrolSt.route && !routeAdd);
+    const activeIdx = (patrolSt && patrolSt.status === 'running') ? patrolSt.index : -1;
+    if (routeDraft.length >= 2) {
+      ctx.save();
+      ctx.strokeStyle = isSaved ? 'rgba(16, 185, 129, 0.85)' : 'rgba(245, 158, 11, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      for (let i = 0; i < routeDraft.length; i++) {
+        const [wx, wy] = W(routeDraft[i].x, routeDraft[i].y);
+        if (i === 0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
+      }
+      const [fx, fy] = W(routeDraft[0].x, routeDraft[0].y);
+      ctx.lineTo(fx, fy);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < routeDraft.length; i++) {
+      const [wx, wy] = W(routeDraft[i].x, routeDraft[i].y);
+      const isCur = (i === activeIdx);
+      ctx.fillStyle = isCur ? 'rgb(59 130 246)' : (isSaved ? 'rgb(16 185 129)' : 'rgb(245 158 11)');
+      ctx.beginPath();
+      ctx.arc(wx, wy, isCur ? 11 : 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = '#0d1117';
+      ctx.fillText(String(i + 1), wx, wy + 0.5);
+    }
+    ctx.restore();
+  }
+
   /* 状态行 */
   const st = $('map_state');
   if (mapGrid) {
@@ -1623,10 +1668,21 @@ $('mapcanvas').addEventListener('click', (ev) => {
     const rp = screenToMap(ev.clientX - rect.left, ev.clientY - rect.top);
     if (!rp) {
       $('patrol_message').textContent = '没有定位，无法录入航点';
+      showToast('没有定位，无法录入航点', 'bad');
       return;
     }
+    if (routeDraft.length > 0) {
+      const prev = routeDraft[routeDraft.length - 1];
+      if (Math.hypot(rp.x - prev.x, rp.y - prev.y) < 0.30) {
+        $('patrol_message').textContent = '与上一个航点过近（<0.30 m），请点远一点的位置';
+        showToast('与上一个航点过近（<0.30 m）', 'warn');
+        return;
+      }
+    }
     routeDraft.push(rp);
-    $('patrol_message').textContent = '已录入 ' + routeDraft.length + ' 个航点（未保存）';
+    const tip = '已录入 ' + routeDraft.length + ' 个航点（未保存）';
+    $('patrol_message').textContent = tip;
+    showToast(tip, 'ok');
     renderMap();
     return;
   }
@@ -1669,6 +1725,11 @@ $('nav_mode').addEventListener('click', () => {
   if (!manualAuthenticated) {
     $('nav_result').textContent = '请先登录手动控制';
     return;
+  }
+  if (routeAdd) {
+    routeAdd = false;
+    $('route_add').textContent = '录入航点';
+    $('route_add').classList.remove('warn');
   }
   navMode = !navMode;
   if (!navMode) navPick = null;
@@ -1810,12 +1871,20 @@ function applyPatrol(p) {
     if (rearmEl.textContent !== rsText) rearmEl.textContent = rsText;
     rearmEl.className = rs === 'not_required' ? 'ok' : 'bad';
   }
-  if (p.route) routeDraft = p.route.map((q) => ({ x: q[0], y: q[1] }));
+  if (p.route && !routeAdd) routeDraft = p.route.map((q) => ({ x: q[0], y: q[1] }));
   const msg = $('patrol_message');
   if (msg && p.message) msg.textContent = p.message;
+  if (p.ok && routeAdd && p.route && p.route.length >= 2) {
+    routeAdd = false;
+    if ($('route_add')) {
+      $('route_add').textContent = '录入航点';
+      $('route_add').classList.remove('warn');
+    }
+  }
   /* 服务端判本页会话已失效（许可断开/被顶替）：立即换成新会话号重发，
-     一次有效许可之后服务端才会把本页当活的。不自动恢复锁停。 */
-  if (p.license && p.license.fresh === false) {
+     一次有效许可之后服务端才会把本页当活的。不自动恢复锁停。加 600ms 冷却防并发连环复位。 */
+  if (p.license && p.license.fresh === false
+      && (motionLastResetMs === 0 || performance.now() - motionLastResetMs > 600)) {
     motionResetSession();
   }
   if (curPage === 'map') renderMap();
@@ -1823,11 +1892,18 @@ function applyPatrol(p) {
 if ($('route_add')) {
   $('route_add').onclick = () => {
     routeAdd = !routeAdd;
-    if (routeAdd) navMode = false;
-    if (!routeAdd) routeDraft = [];
+    if (routeAdd) {
+      navMode = false;
+      navPick = null;
+      if ($('nav_mode')) {
+        $('nav_mode').textContent = '导航选点';
+        $('nav_mode').classList.remove('warn');
+      }
+      if (patrolSt && patrolSt.route) routeDraft = [];
+      if ($('patrol_message')) $('patrol_message').textContent = '请在地图上依次点击至少 2 个航点，再点「保存路线」。';
+    }
     $('route_add').textContent = routeAdd ? '点图录入中…' : '录入航点';
     $('route_add').classList.toggle('warn', routeAdd);
-    if (!$('nav_mode').classList.contains('warn')) $('nav_mode').textContent = '导航选点';
     if (curPage === 'map') renderMap();
   };
 }
@@ -1882,26 +1958,26 @@ if ($('us_rearm')) {
  * 网页进程退出后不再发许可，服务端 350ms 判失效；下游底盘桥按自己的许可
  * 超时（0.5s）独立零速，不依赖网页进程。 */
 const MOTION_LICENSE_MS = 100;
-let motionSeq = 0, motionClockSkew = null, motionLicTimer = null;
-let motionLicNak = 0;
+let motionSeq = 0, motionClockSkew = null, motionLicTimer = null, motionLicWorker = null;
+let motionLicNak = 0, motionLastResetMs = 0;
 let motionSession = Math.floor(Math.random() * 1073741824) + 1;
 let motionClaim = Math.floor(Math.random() * 1073741824) + 1;
 if (motionClaim === motionSession) motionClaim += 1;
 /* 服务端确认"本页号码有效"（motion_license_session）。
-   正常情况与本页号码相同；若本页号码已被别的页面占用，服务端会接受本页
-   另报的 claim 号——这时换用它（序号从 0 重来），不再发被占用的号码：
-   继续发只会一直被拒，许可永远不新鲜、"恢复"永远失败。 */
+   注意：若刚通过 session=0, claim=sid, seq=k 拿到服务端认可，服务端已记录
+   lic.seq=k，因此切用该 sid 时**不能把 motionSeq 归零**（否则下一帧 seq=1 <= k
+   会被服务端判为 seq_replay 拒绝），直接延续递增 seq 即可。 */
 function motionClaimSession(sid) {
   if (typeof sid !== 'number' || sid <= 0) return;
   if (sid === motionSession) return;
   motionSession = sid;
-  motionSeq = 0;
   motionLicNak = 0;
   sendMotionLicense();
 }
 /* 本页许可被服务端判失效（断开/被顶替）：生成新的一对号码——会话号
    motionSession 与"接管用"号码 motionClaim——重来。 */
 function motionResetSession() {
+  motionLastResetMs = performance.now();
   motionSession = Math.floor(Math.random() * 1073741824) + 1;
   motionClaim = Math.floor(Math.random() * 1073741824) + 1;
   if (motionClaim === motionSession) motionClaim += 1;
@@ -1957,11 +2033,25 @@ function sendMotionLicense(seqOverride) {
 }
 function startMotionLicense() {
   stopMotionLicense();
-  /* 偏移以 performance.now() 为锚，重连后依然有效，无需清空 */
+  /* 用独立 Web Worker 驱动 100ms 许可节拍：浏览器把页面切到后台时不会像主线程
+     setInterval 那样降频到 >=1000ms（避免误触发 350ms license_lost 与接管连跳）；
+     关闭/刷新标签页或断网时 Worker 随页面一同销毁，服务端仍在 350ms 内锁停。 */
+  try {
+    if (typeof Worker !== 'undefined' && typeof Blob !== 'undefined') {
+      const code = 'setInterval(function(){postMessage(1);},' + MOTION_LICENSE_MS + ');';
+      const url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+      motionLicWorker = new Worker(url);
+      URL.revokeObjectURL(url);
+      motionLicWorker.onmessage = () => sendMotionLicense();
+      sendMotionLicense();
+      return;
+    }
+  } catch (e) { /* 回退到主线程定时器 */ }
   motionLicTimer = setInterval(sendMotionLicense, MOTION_LICENSE_MS);
   sendMotionLicense();
 }
 function stopMotionLicense() {
+  if (motionLicWorker) { try { motionLicWorker.terminate(); } catch (e) {} motionLicWorker = null; }
   if (motionLicTimer) { clearInterval(motionLicTimer); motionLicTimer = null; }
 }
 /* motion_clock 回包：mono=服务端 monotonic(s)，addr=该帧到服务端时刻。 */
@@ -2145,7 +2235,9 @@ function applyStatus(m) {
     $('mp_scan_n').textContent = m.scan_valid || '--';
   }
   const hudBat = $('hud_bat');
-  if (b.percent !== null && b.percent !== undefined) {
+  if (b.charging && b.voltage_v !== null && b.voltage_v !== undefined) {
+    hudBat.textContent = '充电中（' + b.voltage_v.toFixed(1) + 'V）';
+  } else if (b.percent !== null && b.percent !== undefined) {
     hudBat.textContent = '估算 ' + b.percent.toFixed(0) + '%（'
       + (b.voltage_v !== null && b.voltage_v !== undefined
         ? b.voltage_v.toFixed(1) + 'V' : '--') + '）';
@@ -2767,7 +2859,10 @@ document.addEventListener('visibilitychange', () => {
     openVideo();
   }
 });
-window.addEventListener('pagehide', () => { if (manualActive) manualStop(); });
+window.addEventListener('pagehide', () => {
+  if (manualActive) manualStop();
+  stopMotionLicense();
+});
 
 window.addEventListener('resize', () => {
   if (lastCam && (curPage === 'control' || curPage === 'advanced')) drawCam();
