@@ -855,10 +855,14 @@ class C50CUart3Node(Node):
             self._guard_wiring.guard_tick_record_only()
             self._guard_wiring.forward_stop_to_arbiter(
                 getattr(self._drive_bridge, 'chain', None))
+            self._guard_wiring.publish_status()
             return None
         if not self._guard_wiring.can_write()[0]:
+            self._guard_wiring.publish_status()
             return None
-        return self._guard_wiring.tick()
+        rec = self._guard_wiring.tick()
+        self._guard_wiring.publish_status()
+        return rec
 
     def destroy_node(self) -> bool:
         self._stop_event.set()

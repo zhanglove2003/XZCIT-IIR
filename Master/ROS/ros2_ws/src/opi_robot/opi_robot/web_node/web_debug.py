@@ -80,6 +80,21 @@ try:                                    # 假数据模式不需要 rclpy
         from tf2_ros import TransformListener as _TfListener
     except Exception:                    # tf2_ros 可能缺，或被测试垫片遮蔽
         _TfBuffer = _TfListener = None
+    try:
+        from geometry_msgs.msg import PoseWithCovarianceStamped as _PoseWithCov
+    except ImportError:
+        _PoseWithCov = None
+    try:
+        from std_srvs.srv import Empty as _EmptySrv
+    except ImportError:
+        _EmptySrv = None
+    # [阶段 6 2026-11-20] 定位校准/巡航启动后清代价地图：AMCL 漂移期与
+    # 车后跟车残影会永久烙印在 global_costmap 里，封死走廊主路径。
+    # 缺 nav2_msgs 时退化为 no-op（clear_nav_costmaps 返回 0）。
+    try:
+        from nav2_msgs.srv import ClearEntireCostmap as _ClearCostmapSrv
+    except ImportError:
+        _ClearCostmapSrv = None
     _HAVE_ROS = True
 except ImportError:                     # pragma: no cover - 仅在假模式触发
     rclpy = None
@@ -87,6 +102,9 @@ except ImportError:                     # pragma: no cover - 仅在假模式触�
     _Bool = None
     _OccGrid = None
     _TfBuffer = _TfListener = None
+    _PoseWithCov = None
+    _EmptySrv = None
+    _ClearCostmapSrv = None
 
     class Node:                         # type: ignore[no-redef]
         pass
@@ -116,6 +134,13 @@ from .manual_forward import ManualForwardControl
 from . import nav_goal as NG
 from . import patrol as P
 from . import console_views as V
+try:
+    from . import relocalize as RLOC
+except ImportError:                      # pragma: no cover - 单文件直接导入兜底
+    try:
+        import relocalize as RLOC
+    except ImportError:
+        RLOC = None
 from opi_robot.chassis_status import MileageIntegrator
 
 # 模块加载即建一次巡航状态机：状态帧/鉴权在 Bridge 启动前也要正常返回
@@ -174,6 +199,7 @@ PATROL_GOAL_TIMEOUT_S = 15.0
 LICENSE_TOPIC = 'motion_license'
 REARM_TOPIC = 'rearm_request'
 AUTHORIZE_TOPIC = 'guard_authorize'
+GUARD_STATUS_TOPIC = 'guard_status'
 PATROL_PERIOD = 0.1
 
 
@@ -205,6 +231,8 @@ _patrol = {
     'last_frame_t': 0.0,
     'live_t': None,              # 上一次确认"网页会话还在"的时刻
     'session_lost': '',          # 最近一次判会话失效的原因
+    'start_mono': 0.0,           # 本次启动巡航单调时刻（避开启动瞬间与 rearm 竞态）
+    'guard_unlatched_seen': False,  # 本轮是否见过下游 /guard_status 解锁态
     # runner 的锁停通道：Bridge 启动时换成发下游的版本（见
     # patrol_downstream_attach），之前是 no-op。
     'lock_sink': lambda reason: None,
@@ -261,6 +289,8 @@ def _patrol_run_dispatch():
     except Exception:
         return
     _patrol_wire_nav()
+    # 切换航点前清一次全局代价地图：抹掉此前身后的行人/跟车残影，而局部滚动窗口保持连续。
+    clear_nav_costmaps(include_local=False)
     ok, view = NG.request_nav_goal(goal['x'], goal['y'], goal['yaw'])
     if not ok:
         runner = _patrol['runner']
@@ -352,6 +382,9 @@ def patrol_tick(now=None):
         runner.overall_timeout(PATROL_GOAL_TIMEOUT_S)
         snap = lic.snapshot()
         _patrol_session_guard(snap)
+        guard_reason = _patrol_guard_latch_reason()
+        if guard_reason and runner.state in ('running', 'holding_goal') and not runner.locked:
+            runner.stop(guard_reason)
         runner.on_plan_blocked(_patrol_plan_blocked())
         now = _patrol_now() if now is None else now
         if now - _patrol['last_frame_t'] >= PATROL_PERIOD:
@@ -372,6 +405,28 @@ def patrol_tick(now=None):
                     pass
     except Exception:
         _patrol_log_exc('patrol_tick')
+
+
+def _patrol_guard_latch_reason(now_wall=None):
+    """若底盘 /guard_status 报告已锁停，返回可读锁停原因；否则返回 None。"""
+    now_w = time.time() if now_wall is None else float(now_wall)
+    with _lock:
+        gs = _state.get('guard_status')
+        gs_t = _state.get('guard_status_t')
+    if not isinstance(gs, dict) or gs_t is None or (now_w - gs_t) > 2.0:
+        return None
+    if not gs.get('latched'):
+        _patrol['guard_unlatched_seen'] = True
+        return None
+    cause = str(gs.get('stop_cause') or '')
+    fault = str(gs.get('last_fault') or '')
+    text = str(gs.get('stop_text') or '')
+    if cause in ('', 'global_stop', 'rearm_pending', 'rearm_required') \
+            and not _patrol.get('guard_unlatched_seen'):
+        if (_patrol_now() - float(_patrol.get('start_mono') or 0.0)) < 1.0:
+            return None
+    detail = text or fault or cause or 'global_stop'
+    return '底盘安全锁停：%s' % detail
 
 
 def _patrol_session_guard(license_snapshot):
@@ -478,6 +533,11 @@ def configure_patrol(reset_runner=False, map_yaml=None, goal_queue=None,
         _patrol['route'] = None
         _patrol['live_t'] = None
         _patrol['session_lost'] = ''
+        _patrol['start_mono'] = 0.0
+        _patrol['guard_unlatched_seen'] = False
+        with _lock:
+            _state['guard_status'] = None
+            _state['guard_status_t'] = None
         # 新 runner 的许可监视也换新（旧监视的 on_lost 指向旧 runner）
         _patrol['license'] = None
     if reset_runner or _patrol['license'] is None:
@@ -516,6 +576,25 @@ def patrol_save(points, map_id=None):
     return True, '已保存 %d 个航点' % len(route['points']), patrol_status_frame()
 
 
+def clear_nav_costmaps(include_local=True):
+    """异步请求清空代价地图（默认全清；切航点时可只清全局图以防残影）。"""
+    if _ClearCostmapSrv is None:
+        return 0
+    cleared = 0
+    clients = ((_CLEAR_GLOBAL_CM_CLI, _CLEAR_LOCAL_CM_CLI)
+               if include_local else (_CLEAR_GLOBAL_CM_CLI,))
+    for cli in clients:
+        if cli is None:
+            continue
+        try:
+            if cli.service_is_ready():
+                cli.call_async(_ClearCostmapSrv.Request())
+                cleared += 1
+        except Exception:
+            pass
+    return cleared
+
+
 def patrol_start():
     runner = _patrol['runner']
     if runner is None:
@@ -531,10 +610,19 @@ def patrol_start():
         _patrol['map_id'] = _mid
     if runner.route is None:
         return False, '没有已保存的路线'
+    # 启动巡航前清一次代价地图：上一轮残留的动态障碍残影不能带进本轮规划。
+    clear_nav_costmaps()
     ok, info = runner.start(_patrol['map_id'])
     if ok:
         # 开始巡航的这条消息本身证明网页会话在；之后靠许可/心跳续期。
         _patrol_live_touch()
+        _patrol['start_mono'] = _patrol_now()
+        with _lock:
+            gs = _state.get('guard_status')
+            gs_t = _state.get('guard_status_t')
+        _patrol['guard_unlatched_seen'] = bool(
+            isinstance(gs, dict) and gs_t is not None
+            and (time.time() - gs_t) <= 2.0 and not gs.get('latched'))
     return ok, info
 
 
@@ -578,6 +666,132 @@ def ultrasonic_rearm():
         return False, '超声恢复发布失败: %r' % (exc,)
     _ws_log_add('tx', {'t': 'ultrasonic_rearm'})
     return True, '已请求重新启动超声波'
+
+
+def _relocalize_motion_guard(now=None):
+    """检查当前是否满足"完全静止且无主动导航/巡航/手动任务"条件。"""
+    now = time.time() if now is None else now
+    if _MANUAL.snapshot().get('active', False):
+        return '手动控制中，请停稳后再定位校准'
+    try:
+        nav_v = NG.nav_view() or {}
+    except Exception:
+        nav_v = {}
+    if nav_v.get('state') in ('sending', 'active'):
+        return '点图导航进行中，请先取消导航后再定位校准'
+    pat_v = patrol_status_frame(now=now)
+    if pat_v.get('status') in ('running', 'holding_goal', 'cancelling'):
+        return '巡航运行中，请先停止巡航后再定位校准'
+    with _lock:
+        chassis = _state['chassis']
+        chassis_t = _state['chassis_t']
+        cmds = (
+            (_state['cmd_manual'], _state['cmd_manual_t']),
+            (_state['cmd_nav'], _state['cmd_nav_t']),
+            (_state['cmd_auto'], _state['cmd_auto_t']),
+        )
+    ch_v = C.chassis_view(chassis, chassis_t, now, CHASSIS_TIMEOUT)
+    if ch_v.get('state') == S.FRESH:
+        if (abs(ch_v.get('vx_m_s') or 0.0) > 0.03
+                or abs(ch_v.get('vy_m_s') or 0.0) > 0.03
+                or abs(ch_v.get('wz_rad_s') or 0.0) > 0.08):
+            return '小车正在运动中，请停稳后再定位校准'
+    for cmd_payload, cmd_t in cmds:
+        cv = C.cmd_view(cmd_payload, cmd_t, now, CMD_TIMEOUT)
+        if cv.get('state') == S.FRESH and (
+                abs(cv.get('vx_m_s') or 0.0) > 0.02
+                or abs(cv.get('wz_rad_s') or 0.0) > 0.05):
+            return '当前存在运动速度指令，请停稳后再定位校准'
+    return None
+
+
+def relocalize_pose(now=None):
+    """全局扫描-地图匹配重定位（零轮动），并向 AMCL 发布 /initialpose。"""
+    global _RELOCALIZER
+    if RLOC is None:
+        return False, '重定位模块（numpy/relocalize）不可用', {}
+    pub = _INITIALPOSE_PUB
+    if pub is None or _PoseWithCov is None:
+        return False, 'AMCL 重定位通道 (/initialpose) 不可用', {}
+    if not _RELOCALIZE_LOCK.acquire(blocking=False):
+        return False, '定位校准正在进行中，请勿重复点击', {}
+    try:
+        t0 = time.time() if now is None else now
+        err = _relocalize_motion_guard(t0)
+        if err:
+            return False, err, {}
+        with _lock:
+            grid = _state['map_grid']
+            scan_pts = _state['scan']
+            scan_t = _state['scan_t']
+        if not grid or not grid.get('data'):
+            return False, '尚未收到静态地图 (/map)，无法定位校准', {}
+        if scan_t is None or (t0 - scan_t) > max(SCAN_TIMEOUT, 2.0):
+            return False, '激光雷达扫描已过期或缺失，无法定位校准', {}
+
+        if _RELOCALIZER is None:
+            _RELOCALIZER = RLOC.ScanMapRelocalizer()
+        try:
+            res = _RELOCALIZER.relocalize(grid, scan_pts)
+        except ValueError as exc:
+            return False, str(exc), {}
+
+        # 发布前再次确认期间未开始导航/手动控制。
+        err2 = _relocalize_motion_guard(time.time() if now is None else now)
+        if err2:
+            return False, err2, {}
+
+        msg = _PoseWithCov()
+        msg.header.frame_id = 'map'
+        # [阶段 6 2026-11-20] header.stamp 保持默认 0（不写 node 时钟）：
+        # AMCL 对零时间戳按"最新"处理，写本机时钟反而触发
+        # "Lookup would require extrapolation into the future"。
+        yaw = float(res['yaw_rad'])
+        msg.pose.pose.position.x = float(res['x'])
+        msg.pose.pose.position.y = float(res['y'])
+        msg.pose.pose.position.z = 0.0
+        msg.pose.pose.orientation.x = 0.0
+        msg.pose.pose.orientation.y = 0.0
+        msg.pose.pose.orientation.z = math.sin(yaw * 0.5)
+        msg.pose.pose.orientation.w = math.cos(yaw * 0.5)
+        cov = [0.0] * 36
+        cov[0] = 0.09
+        cov[7] = 0.09
+        cov[35] = 0.0685
+        msg.pose.covariance = cov
+        try:
+            pub.publish(msg)
+        except Exception as exc:                       # noqa: BLE001
+            return False, '发布 /initialpose 失败: %r' % (exc,), {}
+
+        cli = _NOMOTION_CLI
+        if cli is not None and _EmptySrv is not None:
+            try:
+                if cli.service_is_ready():
+                    cli.call_async(_EmptySrv.Request())
+            except Exception:
+                pass
+
+        # [阶段 6 2026-11-20] 位姿跳变后清代价地图：校准前 AMCL 漂移期扫到的
+        # 错位墙体残影会永久留在 global_costmap 里，封死走廊主路径。
+        clear_nav_costmaps()
+
+        _ws_log_add('tx', {
+            't': 'relocalize',
+            'x': res['x'],
+            'y': res['y'],
+            'yaw_deg': res['yaw_deg'],
+            'hit_ratio': res['hit_ratio'],
+        })
+        text = (
+            '定位校准完成：(%+.2f, %+.2f) m，航向 %.1f°，'
+            '匹配率 %.0f%%（用时 %.0f ms）'
+            % (res['x'], res['y'], res['yaw_deg'],
+               res['hit_ratio'] * 100.0, res['match_ms'])
+        )
+        return True, text, res
+    finally:
+        _RELOCALIZE_LOCK.release()
 
 
 def patrol_manual_override(owner):
@@ -817,6 +1031,20 @@ SAFETY_STATUS_TOPIC = 'drive_safety'
 ULTRASONIC_REARM_TOPIC = 'ultrasonic_rearm'
 #: 最近创建的 WebNode 的超声恢复发布器（None = 不可用）。
 _US_REARM_PUB = None
+#: 全局重定位（定位校准）AMCL /initialpose 发布器与无运动刷新客户端。
+INITIALPOSE_TOPIC = 'initialpose'
+NOMOTION_SERVICE = 'request_nomotion_update'
+_INITIALPOSE_PUB = None
+_NOMOTION_CLI = None
+_BRIDGE_NODE = None
+_RELOCALIZER = None
+_RELOCALIZE_LOCK = threading.Lock()
+#: [阶段 6 2026-11-20] Nav2 代价地图清理服务（定位校准/巡航启动后各请求一次，
+#: 清掉 AMCL 漂移期与车后跟车残影，避免持久化 obstacle_layer 封死走廊）。
+CLEAR_GLOBAL_COSTMAP_SERVICE = '/global_costmap/clear_entirely_global_costmap'
+CLEAR_LOCAL_COSTMAP_SERVICE = '/local_costmap/clear_entirely_local_costmap'
+_CLEAR_GLOBAL_CM_CLI = None
+_CLEAR_LOCAL_CM_CLI = None
 # [巡航] 下游运动门（c50c_uart3 guard_bridge）的输入通道：
 #   /motion_license  —— 与页面发给本进程同一套规则转出的许可（下游据此判
 #                       网页还活着；网页进程整个退出 → 不再有许可 → 0.5 s
@@ -1055,6 +1283,8 @@ _state = {
     'cmd_manual_t': None,
     'cmd_auto': None,
     'cmd_auto_t': None,
+    'guard_status': None,
+    'guard_status_t': None,
     'status_seq': 0,
     'mode': 'ros',
     'safety': None,
@@ -1197,6 +1427,9 @@ class Bridge(Node):
             self.create_subscription(
                 _String, SAFETY_STATUS_TOPIC, self.on_drive_safety,
                 Q.status_qos())
+            self.create_subscription(
+                _String, GUARD_STATUS_TOPIC, self.on_guard_status,
+                Q.status_qos())
         self._manual_publisher = self.create_publisher(Twist, 'manual_cmd_vel', Q.status_qos())
         # [巡航] 地图文件（路线内容标识的来源）。空 = 不知道地图，拒绝巡航。
         # /patrol_status 发布器与 10Hz 定时器（超时/许可/规划判停）随后建。
@@ -1230,14 +1463,43 @@ class Bridge(Node):
             _cruise['publisher'] = self._cruise_publisher
             _cruise['available'] = self._cruise_publisher is not None
         # 超声波"重新启动"发布器（fusion_node 订阅 ultrasonic_rearm）。
-        global _US_REARM_PUB
+        global _US_REARM_PUB, _INITIALPOSE_PUB, _NOMOTION_CLI, _BRIDGE_NODE
+        global _CLEAR_GLOBAL_CM_CLI, _CLEAR_LOCAL_CM_CLI
+        _BRIDGE_NODE = self
         _US_REARM_PUB = None
         if _Bool is not None:
             try:
-                _US_REARM_PUB = self.create_publisher(
+                self._us_pub = self.create_publisher(
                     _Bool, ULTRASONIC_REARM_TOPIC, Q.status_qos())
+                _US_REARM_PUB = self._us_pub
             except Exception:            # pragma: no cover
                 _US_REARM_PUB = None
+        _INITIALPOSE_PUB = None
+        _NOMOTION_CLI = None
+        if _PoseWithCov is not None:
+            try:
+                _INITIALPOSE_PUB = self.create_publisher(
+                    _PoseWithCov, INITIALPOSE_TOPIC, Q.status_qos(1))
+            except Exception:            # pragma: no cover
+                _INITIALPOSE_PUB = None
+        if _EmptySrv is not None:
+            try:
+                _NOMOTION_CLI = self.create_client(_EmptySrv, NOMOTION_SERVICE)
+            except Exception:            # pragma: no cover
+                _NOMOTION_CLI = None
+        # [阶段 6 2026-11-20] 代价地图清理客户端：缺 nav2_msgs 时保持 None，
+        # clear_nav_costmaps 退化为 no-op。
+        _CLEAR_GLOBAL_CM_CLI = None
+        _CLEAR_LOCAL_CM_CLI = None
+        if _ClearCostmapSrv is not None:
+            try:
+                _CLEAR_GLOBAL_CM_CLI = self.create_client(
+                    _ClearCostmapSrv, CLEAR_GLOBAL_COSTMAP_SERVICE)
+                _CLEAR_LOCAL_CM_CLI = self.create_client(
+                    _ClearCostmapSrv, CLEAR_LOCAL_COSTMAP_SERVICE)
+            except Exception:            # pragma: no cover
+                _CLEAR_GLOBAL_CM_CLI = None
+                _CLEAR_LOCAL_CM_CLI = None
         _MANUAL.attach(self._publish_manual, ready=self._manual_ready)
         self.create_timer(0.05, _MANUAL.tick)
         # [C50C 阶段 D 2026-11-16] 网页点图导航：/navigate_to_pose action。
@@ -1441,6 +1703,23 @@ class Bridge(Node):
         with _lock:
             _state['drive_safety'] = payload if isinstance(payload, dict) else None
             _state['drive_safety_t'] = now
+
+    def on_guard_status(self, msg):
+        """``/guard_status``（c50c_uart3_node guard 快照 JSON）：只保存状态。"""
+        now = time.time()
+        raw = getattr(msg, 'data', None)
+        payload = None
+        if isinstance(raw, (str, bytes, bytearray)):
+            try:
+                payload = json.loads(raw)
+            except (TypeError, ValueError, UnicodeDecodeError):
+                payload = None
+        if isinstance(payload, dict):
+            if not payload.get('latched'):
+                _patrol['guard_unlatched_seen'] = True
+            with _lock:
+                _state['guard_status'] = payload
+                _state['guard_status_t'] = now
 
     def on_cmd(self, which, msg):
         now = time.time()
@@ -1970,6 +2249,8 @@ def status_payload(now=None):
         mode = _state['mode']
         drive_safety = _state.get('drive_safety')
         drive_safety_t = _state.get('drive_safety_t')
+        guard_status = _state.get('guard_status')
+        guard_status_t = _state.get('guard_status_t')
         nodes_seen = dict(_state['nodes_seen'])
         nav_seen_t = _state['nav_seen_t']
         moving = list(_state['moving'])
@@ -1994,6 +2275,10 @@ def status_payload(now=None):
     # 交给导航状态（nav relay 侧），三处消费者读同一判断结果。
     ds_view = drive_safety_view(drive_safety, drive_safety_t, now)
     view['drive_safety'] = ds_view
+    if isinstance(guard_status, dict) and guard_status_t is not None and (now - guard_status_t) <= 2.0:
+        view['chassis_guard'] = dict(guard_status, age=round(now - guard_status_t, 2))
+    else:
+        view['chassis_guard'] = None
     view['nav'] = NG.nav_view(ds_view)
     view['scan_hz'] = scan_hz
     view['image_fps'] = image_fps
@@ -2725,6 +3010,41 @@ class Handler(BaseHTTPRequestHandler):
             _send_text(self, json.dumps({'t': 'manual_error' if not ok
                                          else 'ultrasonic_status',
                                          'ok': ok, 'message': info}))
+        elif kind == 'relocalize':
+            # 全局重定位（定位校准）：鉴权同巡航，耗时搜索放后台线程以免阻塞
+            # 100 ms 运动许可心跳；发回执走线程安全的 _send_text。
+            try:
+                _require_drive_auth(self, live)
+            except (PermissionError, RuntimeError, ValueError) as exc:
+                _send_text(self, json.dumps({'t': 'manual_error',
+                                             'message': str(exc)}))
+            else:
+                handler = self
+
+                def _run_relocalize():
+                    try:
+                        ok, info, detail = relocalize_pose()
+                    except Exception as exc:           # noqa: BLE001
+                        ok, info, detail = (
+                            False, '定位校准异常: %s' % (exc,), {}
+                        )
+                    payload = {
+                        't': 'relocalize_status',
+                        'ok': ok,
+                        'message': info,
+                    }
+                    if detail:
+                        payload.update(detail)
+                    try:
+                        _send_text(handler, json.dumps(payload, allow_nan=False))
+                    except (OSError, ValueError):
+                        pass
+
+                threading.Thread(
+                    target=_run_relocalize,
+                    name='relocalize-worker',
+                    daemon=True,
+                ).start()
         elif kind in ('patrol_save', 'patrol_start', 'motion_stop',
                       'motion_rearm'):
             # [巡航] 保存路线 / 开始巡航 / 全局停止 / 恢复。鉴权与 cruise_set

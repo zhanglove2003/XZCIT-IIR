@@ -110,7 +110,8 @@ class MotionLicenseBridge:
 
     def __init__(self, *, port=None, clock=time.monotonic, wall_clock=time.time,
                  drive_enable=False, status_stale_s=3.0,
-                 license_timeout_s=0.5, ultrasonic_stale_s=0.3,
+                 license_timeout_s=0.5, license_expiry_grace_s=0.05,
+                 ultrasonic_stale_s=0.3,
                  scan_stale_s=0.3, ultrasonic_max_range_m=4.5,
                  floor_filter_m=0.50, command_fresh_s=1.0,
                  scan_min_coverage=0.0, scan_strict=True):
@@ -123,6 +124,7 @@ class MotionLicenseBridge:
         self.floor_filter_m = float(floor_filter_m)
         self.guard = MotionGuard(clock,
                                  license_timeout_s=license_timeout_s,
+                                 license_expiry_grace_s=license_expiry_grace_s,
                                  ultrasonic_stale_s=ultrasonic_stale_s,
                                  ultrasonic_release_m=floor_filter_m,
                                  scan_stale_s=scan_stale_s,

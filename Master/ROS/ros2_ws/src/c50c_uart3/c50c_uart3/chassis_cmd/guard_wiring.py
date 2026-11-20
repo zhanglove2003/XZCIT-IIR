@@ -27,6 +27,7 @@
 """
 from __future__ import annotations
 
+import json
 import time
 
 from ..motion_guard import CHANNELS
@@ -42,6 +43,7 @@ SCAN_TOPIC = '/scan'
 LICENSE_TOPIC = '/motion_license'
 REARM_TOPIC = '/rearm_request'
 AUTHORIZE_TOPIC = '/guard_authorize'
+GUARD_STATUS_TOPIC = '/guard_status'
 
 NO_ECHO_MM = 0xFFFF
 
@@ -53,7 +55,9 @@ class GuardWiring:
                  baseline_protocol, ultrasonic_max_range_m=4.5,
                  drive_enable=True, fd_authorised=True,
                  has_other_writer=False, write_gap_s=0.0,
-                 coexist=False, clock=time.monotonic):
+                 coexist=False, clock=time.monotonic,
+                 ultrasonic_stale_s=1.5, scan_stale_s=1.0,
+                 license_timeout_s=1.5, license_expiry_grace_s=1.0):
         self.node = node
         self.port = port
         self.device = device
@@ -70,8 +74,15 @@ class GuardWiring:
         self.write_gap_s = float(write_gap_s)
         self.ultrasonic_max_range_m = float(ultrasonic_max_range_m)
         self.clock = clock
+        self.ultrasonic_stale_s = float(ultrasonic_stale_s)
+        self.scan_stale_s = float(scan_stale_s)
+        self.license_timeout_s = float(license_timeout_s)
+        self.license_expiry_grace_s = float(license_expiry_grace_s)
         self.bridge = None
         self.subs = []
+        self._status_pub = None
+        self._last_status_key = None
+        self._last_status_t = None
         self.authorized = False
         self._reported = set()
 
@@ -110,7 +121,11 @@ class GuardWiring:
             # 关闭：每拍只记录决策（frame_kind='none'），永不写字节——
             # guard 不是第二个写者。独占模式行为不变。
             drive_enable=self.drive_enable and not self.coexist,
-            ultrasonic_max_range_m=self.ultrasonic_max_range_m)
+            ultrasonic_max_range_m=self.ultrasonic_max_range_m,
+            ultrasonic_stale_s=self.ultrasonic_stale_s,
+            scan_stale_s=self.scan_stale_s,
+            license_timeout_s=self.license_timeout_s,
+            license_expiry_grace_s=self.license_expiry_grace_s)
         bridge.authorize(self.authorized)
         self.subs = bridge.attach(
             self.node,
@@ -119,9 +134,15 @@ class GuardWiring:
             scan_topic=SCAN_TOPIC,
             rearm_topic=REARM_TOPIC,
             command_topics=dict(COMMAND_TOPICS))
-        from std_msgs.msg import Bool
+        from std_msgs.msg import Bool, String
         self.subs.append(self.node.create_subscription(
             Bool, AUTHORIZE_TOPIC, self._on_authorize, 10))
+        if callable(getattr(self.node, 'create_publisher', None)):
+            try:
+                self._status_pub = self.node.create_publisher(
+                    String, GUARD_STATUS_TOPIC, 10)
+            except Exception:
+                self._status_pub = None
         self.bridge = bridge
         self.node.get_logger().warn(
             'guard 区已挂载：运动许可/四路仲裁/方向-帧龄停车生效；'
@@ -249,6 +270,42 @@ class GuardWiring:
         # 与读循环/直行桥共用同一个 fd：距上一拍写入不足一个周期则本拍不写
         return self.bridge.tick(write_gap_s=self.write_gap_s)
 
+    def publish_status(self, now_mono=None):
+        """发布底盘 guard 锁停快照到 ``/guard_status``（边沿立即发，否则 5 Hz）。"""
+        if self._status_pub is None or self.bridge is None:
+            return False
+        now = float(self.clock()) if now_mono is None else float(now_mono)
+        snap = self.bridge.guard.snapshot()
+        ustate, range_m, _uage = self.bridge.sensor_state()
+        last_rec = getattr(self, '_last_record_only', None)
+        zero_reason = getattr(last_rec, 'zero_reason', '') if last_rec is not None else ''
+        key = (bool(snap['latched']), str(snap['stop_cause'] or ''),
+               bool(snap['rearm_pending']), str(ustate or ''), str(zero_reason or ''))
+        if (key == self._last_status_key and self._last_status_t is not None
+                and (now - self._last_status_t) < 0.2):
+            return False
+        payload = {
+            'latched': bool(snap['latched']),
+            'stop_cause': snap['stop_cause'] or '',
+            'stop_text': snap['stop_text'] or '',
+            'rearm_pending': bool(snap['rearm_pending']),
+            'last_fault': snap['last_fault'] or '',
+            'ultrasonic_state': ustate or '',
+            'ultrasonic_range_m': range_m,
+            'zero_reason': zero_reason or '',
+            'ts': round(now, 3),
+        }
+        try:
+            from std_msgs.msg import String
+            msg = String()
+            msg.data = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
+            self._status_pub.publish(msg)
+            self._last_status_key = key
+            self._last_status_t = now
+            return True
+        except Exception:
+            return False
+
     def _report_once(self, key, text):
         if key in self._reported:
             return
@@ -264,4 +321,4 @@ class _SimpleRange:
         self.max_range = float(msg_max_range)
 
 
-__all__ = ['GuardWiring', 'COMMAND_TOPICS', 'NO_ECHO_MM']
+__all__ = ['GuardWiring', 'COMMAND_TOPICS', 'GUARD_STATUS_TOPIC', 'NO_ECHO_MM']

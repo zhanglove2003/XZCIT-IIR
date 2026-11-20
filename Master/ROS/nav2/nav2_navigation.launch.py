@@ -109,8 +109,18 @@ def generate_launch_description():
         condition=IfCondition(start_relay),
     )
 
-    return LaunchDescription([
+    udp_profile = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), 'fastrtps_udp.xml')
+    env_actions = [
         SetEnvironmentVariable('RCUTILS_LOGGING_BUFFERED_STREAM', '1'),
+        SetEnvironmentVariable('PYTHONUNBUFFERED', '1'),
+    ]
+    if os.path.isfile(udp_profile):
+        env_actions.append(
+            SetEnvironmentVariable('FASTRTPS_DEFAULT_PROFILES_FILE',
+                                   udp_profile))
+
+    return LaunchDescription(env_actions + [
         DeclareLaunchArgument('params_file',
                               default_value=os.path.expanduser('~/nav2_params.yaml'),
                               description='绝对路径；单写 params_file= 会被 ros2 当未知参数'),
