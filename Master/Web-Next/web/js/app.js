@@ -246,6 +246,10 @@
     $('ctl-tab-manual').setAttribute('aria-selected', String(manual));
     $('ctl-tab-sensors').setAttribute('aria-selected', String(name === 'sensors'));
     $('ctl-tab-map').setAttribute('aria-selected', String(map));
+    // roving tabindex：只有当前 tab 在 Tab 序里，方向键切换后焦点跟随
+    ['manual', 'sensors', 'map'].forEach(function (n) {
+      $('ctl-tab-' + n).tabIndex = n === name ? 0 : -1;
+    });
     $('ctl-pane-manual').hidden = !manual;
     $('ctl-pane-sensors').hidden = name !== 'sensors';
     if (map) $('ctl-pane-map').hidden = false;
@@ -280,12 +284,20 @@
    * 展开状态 ui.verdictOpen 只存内存（每帧 renderVerdict 重放） */
   function bindVerdictToggle() {
     var card = document.querySelector('#page-overview .card.verdict');
-    card.addEventListener('click', function () {
+    function toggle() {
       if (!card.classList.contains('expandable')) return;
       ui.verdictOpen = !ui.verdictOpen;
       card.classList.toggle('expanded', ui.verdictOpen);
       card.setAttribute('aria-expanded', String(ui.verdictOpen));
       $('ov-verdict-list').hidden = !ui.verdictOpen;
+    }
+    card.addEventListener('click', toggle);
+    // 键盘可达：Enter / Space 等价于点（role/tabindex 由 renderVerdict 按
+    // 是否可展开动态设置，不可展开时不进 Tab 序）
+    card.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      toggle();
     });
   }
 
@@ -1055,9 +1067,18 @@
       var k = c.getAttribute('data-ov');
       c.classList.toggle('alarming', !!(k && alarmed[k]));
     });
-    // 展开区：有异常才可点开（chevron + 可点）；异常清零强制收起
+    // 展开区：有异常才可点开（chevron + 可点）；异常清零强制收起。
+    // 可展开时才是可聚焦按钮（role=button + tabindex=0），否则不进 Tab 序
+    // 也不告诉读屏“可点”。
     var card = $('ov-verdict-list').closest('.verdict');
     card.classList.toggle('expandable', bad);
+    if (bad) {
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+    } else {
+      card.removeAttribute('role');
+      card.removeAttribute('tabindex');
+    }
     if (!bad) ui.verdictOpen = false;
     card.classList.toggle('expanded', bad && !!ui.verdictOpen);
     card.setAttribute('aria-expanded', String(bad && !!ui.verdictOpen));

@@ -106,7 +106,7 @@
 
 **文件**：`web/index.html`、`web/js/app.js`、`web/styles/micro.css`
 
-- [ ] 完成 　　验收：＿＿＿＿
+- [x] 完成 　　验收：判读条在有异常时为 `role=button` + `tabindex=0`，Enter 展开、Space 收起（DOM 实测 `{"before":{"role":"button","tab":"0","open":false},"openedByEnter":true,"closedBySpace":true}`），并补了 `:focus-visible` 焦点环；控制页 tab 改为 roving tabindex（仅当前 tab 在 Tab 序，方向键切换后焦点跟随）。产物 md5 `68a51d4e30a84b6ef2157797281186fe`。
 
 ---
 

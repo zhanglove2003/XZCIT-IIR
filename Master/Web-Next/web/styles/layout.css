@@ -247,6 +247,12 @@ body.side-collapsed .theme-toggle { align-self: center; }
  * 有异常时整卡可点，展开逐条具体原因（verdict-item），再点收起 */
 .verdict { grid-column: 1 / -1; }
 .verdict.expandable { cursor: pointer; }
+/* 键盘焦点环：判读条可展开时是 role=button，必须有可见焦点（
+ * :focus-visible 才不会在鼠标点击后冒出来） */
+.verdict.expandable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
 .verdict-row {
   display: flex;
   align-items: center;
