@@ -638,6 +638,10 @@ input[type="number"] {
 #cam {
   width: 100%;
   aspect-ratio: 16 / 9;
+  /* 窄屏下相机栏会被 1fr 拉得很高，画布封顶到视口 58%，
+   * 否则整页被撑成两屏、方向键被挤出首屏 */
+  max-height: 58vh;
+  object-fit: contain;
   display: block;
   border-radius: var(--radius-s);
   background: var(--bg2);
@@ -808,12 +812,22 @@ input[type="number"] {
 
 /* ---------------- 响应式 ---------------- */
 
+/* 中等宽度（笔记本 1024/1280 + 侧栏）：pad 收窄到 300px，给相机让位；
+ * 地图侧栏同步收窄，否则画布只剩 500px 出头。 */
+@media (max-width: 1120px) {
+  .ctl-pane { grid-template-columns: 300px minmax(280px, 1fr); }
+  .map-grid { grid-template-columns: minmax(0, 1fr) 240px; }
+}
+
 @media (max-width: 960px) {
   .ctl-pane {
     grid-template-columns: 1fr;
     grid-template-areas: "pad" "cam";
   }
   .map-grid { grid-template-columns: 1fr; }
+  /* 单列后相机在上，画布再压一点，让方向键与档位不被推走 */
+  #cam { max-height: 46vh; }
+  #map { height: clamp(320px, 52vh, 520px); }
 }
 
 @media (max-width: 700px) {
@@ -823,4 +837,7 @@ input[type="number"] {
   .brand { font-size: 0; gap: 0; justify-content: center; }
   .brand-dot { display: none; }
   .nav-item { justify-content: center; padding: 11px 0; }
+  /* 侧栏只剩图标列，内容区两侧留白同步收窄，不然表格/卡片被挤扁 */
+  .page-inner { padding: 20px 14px 22px; }
+  #map { height: clamp(300px, 50vh, 460px); }
 }
