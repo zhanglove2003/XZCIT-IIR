@@ -179,7 +179,24 @@ ssh opi 'cd /home/orangepi/web_next_deploy && md5sum web_next.new && mv web_next
 
 | 项 | 说明 |
 |---|---|
-| 地图等待态箭头实际不显示 | `Store.state.pose` 在控制页似乎为空（右侧位姿卡读的是别的字段），地图里 `if (pose)` 一直为假；改动后等待态箭头仍不画。属导航数据链问题，非 UI 缺陷，留给定位链修复后回归 |
+| 地图等待态箭头实际不显示 | 批次 8 复核：`Store.state.pose` **有值**（右侧卡读的就是它），箭头其实画得出来；之前判断有误。等待态箭头已挪到文案上方，不再压字 |
 | 内嵌 webview 主题钳制 | 宿主设置了 `prefers-color-scheme`，页面 `renderedScheme()` 被系统值拉回，`#theme-toggle` 点了不切色。判断为 webview 行为，真机浏览器待复核 |
 | `T()` 每次改文本读 `scrollWidth` | 调度器在 rAF 内写完再读，无强制同步布局；若后续出现 INP 问题再改成 `ResizeObserver` 缓存宽度 |
+
+---
+
+## 批次 8 — 位姿/地图新鲜度与交互反馈（2026-11-22，只动前端）
+
+真机观察到的四个纯前端问题。**不碰 Rust、垫片、匹配器、AMCL、`/initialpose`**。
+
+| 项 | 问题 | 处理 | 验收 |
+|---|---|---|---|
+| 位姿过期 | 垫片 TF 断流后不再发 `pose` 帧，`renderPose` 不看 `age`、`!pose` 直接 return，卡片/箭头永远停在旧值 | `Store.poseUsable()`：服务端 `pose_age` 与本地到达时长取大者，>2.5 s 判过期；卡片回「—」并显示「位姿不可用：TF 无数据」，`canvas-map` 不画箭头不记轨迹，重定位也不带旧位姿 | 注入 6 s 旧位姿 → x/θ 变「—」、提示出现；恢复 → 回到数值（浏览器实测通过） |
+| 地图帧位姿 | `ws_video.rs` 地图帧自带 `pose/pose_age`，`applyMap` 只取栅格，首帧箭头要等下一个独立 pose 帧 | `applyMap` 顺手 `setPose(f)` | 构造带 pose 的地图帧 → `state.pose` 立即被写入 |
+| 地图未就绪 | `endDrag` 里 `if (!g) return`，点选点等于没点 | 「导航选点 / 录入航点」点一下弹「地图还没加载，无法选点」；画布上的点击也给同一句。按钮**不** disabled（禁用后连原因都点不出来） | 未就绪时点击 → toast + 模式不变 |
+| 地图过期 | 栅格不刷新时界面没有任何提示 | `#map-age`（`role=status`）在地图 age > 5 s 显示「地图已 N 秒未更新」，恢复即隐藏 | 注入 30 s 旧地图 → 显示「地图已 32 秒未更新」；刷新 → 隐藏 |
+| 判读条键盘 | Enter/Space 都在 keydown 且 preventDefault，按住空格连发 | Enter 走 keydown（可重复），Space 走 keyup，keydown 只拦滚动 | 空格 keydown 不切换、keyup 切换；Enter 每次按下都切换 |
+
+上板：`116bbb16…` → `9b94f8a4b1bc6ffe1b20794a28720dcc`（两端 md5 一致，服务 active）。
+
 
