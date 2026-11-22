@@ -44,6 +44,44 @@
     return A.ssid !== B.ssid || A.sig !== B.sig || A.ip !== B.ip;
   }
 
+  /** 位姿新鲜度阈值：垫片 TF 一断就不再发 pose 帧，hub 保旧值只靠
+   *  pose_age 传达新鲜度。超过这个时限宁可显示「—」，也不要把两秒前的
+   *  位置当成当前位置画在图上（车动了就是错的）。 */
+  var POSE_STALE_MS = 2500;
+
+  /** 地图新鲜度阈值：静态地图模式不会反复重发栅格，age 会一路增长；
+   *  超过这个值提示「地图已 N 秒未更新」，说明 /map 端确实断了。 */
+  var MAP_STALE_MS = 5000;
+
+  /** 当前位姿是否可用于显示/绘制：服务端 age（TF 距今秒数）与本地到达
+   *  时刻取较大者，任一超限即判过期（本地时刻兜住「服务端 age 字段缺失」）。 */
+  function poseUsable() {
+    var p = state.pose;
+    if (!p) return false;
+    var serverMs = typeof p.age === 'number' ? p.age * 1000 : 0;
+    var localMs = performance.now() - p.t;
+    return Math.max(serverMs, localMs) <= POSE_STALE_MS;
+  }
+
+  /** 地图距今秒数（服务端栅格时间 + 本地驻留时长）。 */
+  function mapAgeSec() {
+    var m = state.map;
+    if (!m) return null;
+    var base = typeof m.age === 'number' ? m.age : 0;
+    return base + (performance.now() - m.t) / 1000;
+  }
+
+  /** 写入位姿（独立 pose 帧与地图帧共用）。无 pose 子对象的帧直接忽略。 */
+  function setPose(f) {
+    if (!f || !f.pose) return false;
+    state.pose = {
+      x: f.pose.x, y: f.pose.y, th: f.pose.th,
+      age: f.pose_age, t: performance.now(),
+    };
+    dirty |= F.POSE;
+    return true;
+  }
+
   var state = {
     /** 最新 {t:"status"} 快照（20Hz，服务端 StatusPayload 原样） */
     status: null,
@@ -132,16 +170,18 @@
         d: f.d, age: f.age, t: performance.now(),
       };
       dirty |= F.MAPTEX;
+      // 后端把位姿和栅格塞在同一帧里（ws_video.rs 地图帧带 pose/pose_age）：
+      // 顺手采纳，首帧地图到达时箭头不必再空等到下一个独立 pose 帧。
+      setPose(f);
     },
 
-    applyPose: function (f) {
-      if (!f || !f.pose) return;
-      state.pose = {
-        x: f.pose.x, y: f.pose.y, th: f.pose.th,
-        age: f.pose_age, t: performance.now(),
-      };
-      dirty |= F.POSE;
-    },
+    applyPose: function (f) { setPose(f); },
+
+    /** 位姿是否新鲜（过期即视为“没有位姿”），供 app.js / canvas-map.js 共用 */
+    poseUsable: poseUsable,
+    /** 地图距今秒数；无地图返回 null */
+    mapAgeSec: mapAgeSec,
+    MAP_STALE_MS: MAP_STALE_MS,
 
     applyImg: function (f) {
       state.img = { d: f.d, w: f.w, h: f.h, fps: f.fps, mime: f.mime, t: performance.now() };

@@ -476,6 +476,15 @@ body.side-collapsed .theme-toggle { align-self: center; }
   overflow-wrap: anywhere;
 }
 
+/* 地理位置的“不可用/已过期”提示：只在真发生时才出现，常态不占版面 */
+.map-note {
+  margin: 4px 0 0;
+  font-size: var(--fs-s);
+  line-height: 1.35;
+  color: var(--warn);
+  overflow-wrap: anywhere;
+}
+
 /* ---------------- 加载态 / 空态（全站共用三件套） ----------------
  * 极简裁决下「一切正常」不许占位，所以只有真等数据时才出现：
  * .skeleton 是还没拿到首帧时的值位占位，.empty-state 是筛选后确实

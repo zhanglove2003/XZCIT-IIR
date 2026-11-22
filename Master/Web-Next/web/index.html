@@ -249,6 +249,7 @@ try {
                   <button id="m-fit" class="btn ghost sq" type="button" aria-label="复位视图">⌂</button>
                 </div>
                 <canvas id="map"></canvas>
+                <p class="map-note" id="map-age" role="status" hidden></p>
               </article>
               <aside class="map-side">
                 <article class="card" data-card>
@@ -256,6 +257,7 @@ try {
                   <div class="kv"><span>x</span><b class="mono" id="mp-x">—</b></div>
                   <div class="kv"><span>y</span><b class="mono" id="mp-y">—</b></div>
                   <div class="kv"><span>θ</span><b class="mono" id="mp-th">—</b></div>
+                  <p class="map-note" id="mp-note" hidden>位姿不可用：TF 无数据</p>
                   <button id="btn-reloc" class="btn ghost wide" type="button">重定位</button>
                 </article>
                 <article class="card" data-card>

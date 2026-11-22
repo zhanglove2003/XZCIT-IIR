@@ -223,7 +223,7 @@
 
       // 提示文字先画、箭头后画：箭头压在（可能更长的）首行文字中间会糊成一团。
       // 有历史位姿时把箭头画在文案上方一档。
-      var wp = Store.state.pose;
+      var wp = Store.poseUsable() ? Store.state.pose : null;
       if (wp) {
         var wy = h / 2 - 26;
         ctx.save();
@@ -286,7 +286,8 @@
     if (trail.length > 1) strokeLine(trail, dark ? 'rgba(240,176,74,0.5)' : 'rgba(176,111,8,0.45)', 1.4);
 
     // 机器人箭头：x 前 y 左，th 逆时针 → 屏幕 y 取负
-    var pose = Store.state.pose;
+    // 位姿过期就不画：把两秒前的位置画成当前，比不画更误导。
+    var pose = Store.poseUsable() ? Store.state.pose : null;
     if (pose) {
       var pr = project(pose.x, pose.y);
       ctx.save();
@@ -351,7 +352,14 @@
       var r = canvas.getBoundingClientRect();
       var wpt = unproject(e.clientX - r.left, e.clientY - r.top);
       var g = texGeom;
-      if (!g) return;
+      if (!g) {
+        // 没栅格时世界坐标无从谈起：明确告诉用户「现在点不了」，
+        // 而不是静默吞掉这次点击（用户只会以为界面坏了）。
+        if (Store.state.ui.mapMode !== 'pan') {
+          Store.emit('toast', { message: '地图还没加载，无法选点' });
+        }
+        return;
+      }
       if (Store.state.ui.mapMode === 'nav') {
         Store.emit('nav_click', { x: wpt.x, y: wpt.y });
       } else if (Store.state.ui.mapMode === 'way') {
@@ -394,6 +402,8 @@
   C.MapView = {
     init: init,
     fit: fit,
+    /** 栅格是否已解码到位（app.js 用它决定选点按钮可用性） */
+    ready: function () { return !!texGeom; },
     /** 工具栏缩放：中心锚点 */
     zoom: function (f) { zoomAt(rect.w / 2, rect.h / 2, f); },
     invalidate: function () { needsDraw = true; },
@@ -406,7 +416,7 @@
       if (Store.state.ui.page === 'control') {
         if (flags & F.MAPTEX) ensureTexture();
         if (flags & F.POSE) {
-          var pose = Store.state.pose;
+          var pose = Store.poseUsable() ? Store.state.pose : null;
           if (pose) {
             trail.push([pose.x, pose.y]);
             if (trail.length > 400) trail.shift();

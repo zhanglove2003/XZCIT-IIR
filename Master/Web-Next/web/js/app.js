@@ -297,11 +297,15 @@
     }
     card.addEventListener('click', toggle);
     // 键盘可达：Enter / Space 等价于点（role/tabindex 由 renderVerdict 按
-    // 是否可展开动态设置，不可展开时不进 Tab 序）
+    // 是否可展开动态设置，不可展开时不进 Tab 序）。
+    // 时序对齐原生 button：Enter 走 keydown（可重复），Space 走 keyup
+    // （keydown 只拦滚动），否则按住空格会连发展开/收起。
     card.addEventListener('keydown', function (e) {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      e.preventDefault();
-      toggle();
+      if (e.key === 'Enter') { e.preventDefault(); toggle(); }
+      else if (e.key === ' ') e.preventDefault();
+    });
+    card.addEventListener('keyup', function (e) {
+      if (e.key === ' ') toggle();
     });
   }
 
@@ -488,12 +492,43 @@
     $('map').classList.toggle('cross', mode !== 'pan');
   }
 
+  /** 地图就绪与新鲜度：栅格断流超过阈值时在画布下方给一行时间提示。
+   *  只在翻转时改 DOM，不随 rAF 空转。 */
+  var mapStaleWas = null;
+  var mapAgeShown = -1;
+  function watchMap() {
+    var age = Store.mapAgeSec();   // 秒
+    var stale = age !== null && age * 1000 > Store.MAP_STALE_MS;
+    var el = $('map-age');
+    if (!el) return;
+    if (stale !== mapStaleWas) {
+      mapStaleWas = stale;
+      el.hidden = !stale;
+      if (!stale) mapAgeShown = -1;
+    }
+    if (!stale) return;
+    var sec = Math.round(age);
+    if (sec === mapAgeShown) return;
+    mapAgeShown = sec;
+    T(el, '地图已 ' + sec + ' 秒未更新');
+  }
+
+  /** 没有栅格时选点只会算出无意义的世界坐标：按钮不禁用（禁用后连原因都
+   *  点不出来），点一下就明白为什么。 */
+  function mapReadyOrExplain() {
+    if (C.MapView.ready()) return true;
+    toast('地图还没加载，无法选点');
+    return false;
+  }
+
   function bindMap() {
     // 地图内联登录卡已随地图并入控制页删除：登录统一走 #login-form。
     $('m-nav').addEventListener('click', function () {
+      if (!mapReadyOrExplain()) return;
       setMapMode(ui.mapMode === 'nav' ? 'pan' : 'nav');
     });
     $('m-way').addEventListener('click', function () {
+      if (!mapReadyOrExplain()) return;
       setMapMode(ui.mapMode === 'way' ? 'pan' : 'way');
     });
     $('m-clear').addEventListener('click', function () {
@@ -524,7 +559,7 @@
       // 全局扫描-地图匹配重定位（旧栈 relocalize.py 同款）：垫片用 /map 栅格
       // + 最近 /scan 做 360° 三阶段匹配求真实位姿，不依赖当前位姿——这正是
       // AMCL 漂移/丢失时的自救手段。画面若有位姿则附带（后端仅校验记录）。
-      var p = Store.state.pose;
+      var p = Store.poseUsable() ? Store.state.pose : null;
       var msg = { t: 'relocalize' };
       if (p && typeof p.x === 'number' && typeof p.y === 'number' && typeof p.th === 'number') {
         msg.x = Math.round(p.x * 1000) / 1000;
@@ -1214,11 +1249,26 @@
   }
 
   function renderPose() {
-    var pose = Store.state.pose;
-    if (!pose) return;
-    T($('mp-x'), num(pose.x, 1, ' m'));
-    T($('mp-y'), num(pose.y, 1, ' m'));
-    T($('mp-th'), typeof pose.th === 'number' ? (pose.th * 180 / Math.PI).toFixed(1) + '°' : '—');
+    // 过期位姿当没有：垫片 TF 断流后不再发帧，卡片留旧值会让人以为车没动
+    var usable = Store.poseUsable();
+    var pose = usable ? Store.state.pose : null;
+    T($('mp-x'), pose ? num(pose.x, 1, ' m') : '—');
+    T($('mp-y'), pose ? num(pose.y, 1, ' m') : '—');
+    T($('mp-th'), pose && typeof pose.th === 'number'
+      ? (pose.th * 180 / Math.PI).toFixed(1) + '°' : '—');
+    var note = $('mp-note');
+    if (note) note.hidden = usable;
+  }
+
+  /** 位姿新鲜度不在脏位上（断流是「没有新帧」），每帧 rAF 比对一次状态，
+   *  只在新鲜↔过期翻转时补一次卡片与画布重绘。 */
+  var poseWasUsable = null;
+  function watchPose() {
+    var now = Store.poseUsable();
+    if (now === poseWasUsable) return;
+    poseWasUsable = now;
+    renderPose();
+    C.MapView.invalidate();
   }
 
   function renderRoute() {
@@ -1252,6 +1302,8 @@
 
     Scheduler.frame(camFrame);
     Scheduler.frame(C.Radar.create($('radar'), ['control']).frame);
+    Scheduler.frame(watchPose);
+    Scheduler.frame(watchMap);
     C.MapView.init($('map'));
     Scheduler.frame(C.MapView.frame);
 
