@@ -122,7 +122,7 @@
 
 **文件**：`web/js/app.js`、`web/index.html`、`web/styles/layout.css`、`web/styles/micro.css`
 
-- [ ] 完成 　　验收：＿＿＿＿
+- [x] 完成 　　验收：手动 tab 底部出现「WASD / 方向键移动 · 空格急停」提示（截图为证）；侧栏收起/展开有 width+padding 过渡（DOM 实测 `transition: width, padding`），`prefers-reduced-motion` 下关闭；`.kv b` 截断时才挂 `title`（T() 统一路径，未截断不弹 tooltip）。产物 md5 `dba3425944fbc4077099f0072732ec01`。
 
 ---
 

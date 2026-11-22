@@ -25,6 +25,10 @@
     if (el._lastText !== text) {
       el._lastText = text;
       el.textContent = text;
+      // 值被省略号截断时给出完整值（hover 才能看到）；没截断就不挂
+      // title，免得每个数字都弹出同文案的 tooltip。
+      if (el.scrollWidth > el.clientWidth + 1) el.title = text;
+      else el.removeAttribute('title');
     }
   }
 

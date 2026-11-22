@@ -50,6 +50,13 @@ h1, h2, h3, h4 { text-wrap: balance; }
   position: sticky;
   top: 0;
   height: 100dvh;
+  /* 收起/展开不再是宽度突变；两档宽度由 --sidebar-w 决定，补间它
+   * （padding 同步补间，否则文字先跳再缩）。reduce 下整段关掉。 */
+  transition: width 0.18s ease, padding 0.18s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar { transition: none; }
 }
 
 .brand {
@@ -603,6 +610,14 @@ body.side-collapsed .theme-toggle { align-self: center; }
   z-index: 2;
 
   canvas { display: block; width: 100%; height: 100%; }
+}
+
+/* 键盘提示：一行浅色小字，不占位、不抢眼——只在手动 tab 底部出现 */
+.kbd-hint {
+  margin: 10px 0 0;
+  font-size: var(--fs-s);
+  color: var(--dim);
+  text-align: center;
 }
 
 .pad {
