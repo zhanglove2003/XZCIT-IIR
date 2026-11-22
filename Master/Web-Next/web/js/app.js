@@ -58,6 +58,40 @@
     }
   }
 
+  /**
+   * 危险按钮的二次确认：第一次点击只把按钮切成「确认态」（文案换成确认
+   * 语 + warn 描边），3 秒内再点才执行；超时或失焦自动还原。不弹窗——
+   * 极简裁决下危险操作原地确认即可；急停（btn-estop）不走这里，必须一击
+   * 生效。返回 true 表示「已执行」，调用方好决定要不要续做。
+   */
+  function ui_confirm(el, text, onOk) {
+    if (!el) return false;
+    var armed = el._cfm;
+    if (armed) {
+      clearTimeout(armed.timer);
+      el._cfm = null;
+      el.textContent = armed.orig;
+      el.classList.remove('cfm');
+      el.removeEventListener('blur', armed.reset);
+      onOk();
+      return true;
+    }
+    var orig = el.textContent;
+    function reset() {
+      if (!el._cfm) return;
+      clearTimeout(el._cfm.timer);
+      el._cfm = null;
+      el.textContent = orig;
+      el.classList.remove('cfm');
+      el.removeEventListener('blur', reset);
+    }
+    el._cfm = { orig: orig, timer: setTimeout(reset, 3000), reset: reset };
+    el.textContent = text;
+    el.classList.add('cfm');
+    el.addEventListener('blur', reset);
+    return false;
+  }
+
   function toast(message, kind) {
     if (!message) return;
     var wrap = $('toasts');
@@ -447,8 +481,11 @@
       setMapMode(ui.mapMode === 'way' ? 'pan' : 'way');
     });
     $('m-clear').addEventListener('click', function () {
-      ui.draft.length = 0;
-      Store.mark(F.ROUTE);
+      if (!ui.draft.length) return;
+      ui_confirm($('m-clear'), '再点确认清空', function () {
+        ui.draft.length = 0;
+        Store.mark(F.ROUTE);
+      });
     });
     $('m-zin').addEventListener('click', function () { C.MapView.zoom(1.3); });
     $('m-zout').addEventListener('click', function () { C.MapView.zoom(1 / 1.3); });
@@ -522,11 +559,17 @@
     });
     $('btn-patrol-start').addEventListener('click', function () {
       if (!requireAuth('开始巡航')) return;
-      C.WS.send({ t: 'patrol_start' });
+      // 巡航一旦启动车会自己动：走二次确认（第一次点击只切确认态）
+      ui_confirm($('btn-patrol-start'), '再点确认发车', function () {
+        C.WS.send({ t: 'patrol_start' });
+      });
     });
     $('btn-motion-stop').addEventListener('click', function () {
       if (!requireAuth('全局停止')) return;
-      C.WS.send({ t: 'motion_stop' });
+      // 全局停止会断运动许可、车立刻停：误触代价高，走二次确认
+      ui_confirm($('btn-motion-stop'), '再点确认全局停止', function () {
+        C.WS.send({ t: 'motion_stop' });
+      });
     });
     $('btn-motion-rearm').addEventListener('click', function () {
       if (!requireAuth('恢复')) return;

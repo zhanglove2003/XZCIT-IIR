@@ -312,6 +312,23 @@
   background: color-mix(in oklab, var(--accent) 12%, var(--bg2));
 }
 
+/* 二次确认态（app.js ui_confirm）：按钮自己变色喊「再点一次」，
+ * 3 秒后自动还原。用 warn 色而不是 bad——还没执行，只是待确认。 */
+.btn.cfm {
+  --ring-c: var(--warn);
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 14%, var(--card));
+
+  &:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--warn) 20%, var(--card));
+  }
+}
+/* 全局停止是实心红钮，确认态要压过它自己的底色 */
+.btn.estop.cfm {
+  color: #fff;
+  background: color-mix(in oklab, var(--warn) 72%, #000);
+}
+
 /* ---------------- 错落进场：卡片按页内序号（--i，app.js boot 时写入）依次浮入
  * 曲线用快启动缓出（--ease-out-soft）：卡片一出现立即移动，缓速落位；
  * 位移/缩放收敛到 12px/0.985，动得更少才显得顺。 ---------------- */
