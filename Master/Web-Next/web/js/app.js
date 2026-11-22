@@ -720,18 +720,38 @@
     $('log-search').addEventListener('input', function (e) {
       logFilter.q = e.target.value.trim().toLowerCase(); renderLogs();
     });
+    // 更多筛选 popover：外点 / Esc 关闭，关闭后焦点回填触发按钮
+    // （键盘用户不能“打开后焦点掉进虚空”）
+    function closeMore() {
+      var pop = $('log-more-pop');
+      if (pop.hidden) return;
+      pop.hidden = true;
+      $('btn-log-more').setAttribute('aria-expanded', 'false');
+    }
     $('btn-log-more').addEventListener('click', function (e) {
       e.stopPropagation();
       var pop = $('log-more-pop');
-      pop.hidden = !pop.hidden;
-      $('btn-log-more').setAttribute('aria-expanded', String(!pop.hidden));
+      var opening = pop.hidden;
+      pop.hidden = !opening;
+      $('btn-log-more').setAttribute('aria-expanded', String(opening));
+      // 打开后把焦点送进 popover（第一个单选项），Esc 才有“回到按钮”的落点
+      if (opening) {
+        var first = pop.querySelector('input[name="log-dir"]');
+        if (first) first.focus();
+      } else {
+        $('btn-log-more').focus();
+      }
     });
     document.addEventListener('click', function (e) {
       var pop = $('log-more-pop');
-      if (!pop.hidden && !pop.contains(e.target) && e.target !== $('btn-log-more')) {
-        pop.hidden = true;
-        $('btn-log-more').setAttribute('aria-expanded', 'false');
-      }
+      if (!pop.hidden && !pop.contains(e.target) && e.target !== $('btn-log-more')) closeMore();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      if ($('log-more-pop').hidden) return;
+      e.stopPropagation();
+      closeMore();
+      $('btn-log-more').focus();
     });
     document.querySelectorAll('input[name="log-dir"]').forEach(function (r) {
       r.addEventListener('change', function (e) {

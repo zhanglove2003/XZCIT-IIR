@@ -88,7 +88,7 @@
 
 **文件**：`web/js/app.js`（`bindLogs`）
 
-- [ ] 完成 　　验收：＿＿＿＿
+- [x] 完成 　　验收：打开「更多筛选」后焦点落在第一个单选项（`log-dir`），按 Esc 关闭并回到触发按钮（DOM 实测 `{"open":true,"focusInPopover":"log-dir","closedByEsc":true,"focusBackTo":"btn-log-more"}`）；刷新按钮进行中禁用并显示「刷新中…」，失败落到批次 3 的错误行。产物 md5 `a363f59d23a16b277e37fd529f1cfd1d`。
 
 ---
 
