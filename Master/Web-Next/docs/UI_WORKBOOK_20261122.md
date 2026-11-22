@@ -148,3 +148,38 @@ ssh opi 'cd /home/orangepi/web_next_deploy && md5sum web_next.new && mv web_next
 ```
 
 截图存 `docs/ui-shots/<批次>-<宽度>-<页>.png`。
+
+---
+
+## 批次 7 — modern-web-guidance 审计（2026-11-22）
+
+用 `modern-web-guidance`（skill 版本 `2026_11_09-5bcc021b`）检索了
+`confirm destructive action` / `loading skeleton placeholder` / `tablist keyboard navigation`
+`efficient-background-processing` / `accessibility` / `slider` / `color`，逐条对账已落地代码。
+
+**改了（commit `51b84ca`，上板 md5 `83dcbffc3dc1e8033dab0929ed9d46c3`）**
+
+| 项 | 问题 | 处理 |
+|---|---|---|
+| 音量条样式 | 只加了 `accent-color`，轨道/填充/滑块全交给 UA，暗色主题下轨道几乎看不见；无可见焦点环 | 接管 `::-webkit-slider-runnable-track/thumb`、`::-moz-range-track/progress/thumb`（**分块声明**，合并成逗号列表整条会被丢弃）；填充用 `progress()+attr()`，不支持时退 `--spk-pct`；`:focus-visible` 焦点环；`pointer: coarse` 加高命中区；`forced-colors` 下退回系统色实线 |
+| 音量条语义 | 只有 `aria-label`；右侧「音量 43%」的 `<b>` 与滑块值重复朗读 | 加真 `<label class="visually-hidden" for="spk-vol">`，去掉 `aria-label`；`aria-valuetext` 随拖动/回写更新；`#spk-vol-v` 设 `aria-hidden` |
+| 地图等待态 | 提示文字先画、机器人箭头后画，箭头压在首行文字中间糊成一团（截图实证） | 等待态先画文字，箭头改画在文案上方 26px |
+
+**核过、不改的（附理由）**
+
+| 项 | 结论 |
+|---|---|
+| `.page { content-visibility: hidden }` | 切页时零布局/绘制，比 `auto` 更彻底；不加 `contain-intrinsic-size` 也不会跳滚动条（页高由 `.page-inner` 撑开，隐藏页不占位）— `interactions-in-complex-layouts` 的适用场景是「可视区内大块区域」，这里不适用 |
+| `contentvisibilityautostatechange` 暂停轮询 | 地图/雷达本就只在 `page === 'control'` 时绘制；WS 是单条长连接，不按可见性暂停更稳（板端还有看门狗） |
+| 判读条 `role="button"` | `<article>` 加 `role=button` 是被允许的（不是 `li` 这类容器），且不可展开时移除 role/tabindex，符合 `accessibility` 的 tab order 要求 |
+| Toast `aria-live="polite"` | 全站唯一一个 live region，符合「每页一个 polite 区」的建议；锁停断言级告警另走判读条，不抢话 |
+| `<dialog>` | 刻意不用：极简裁决用按钮内联二次确认（`ui_confirm`），无焦点陷阱负担 |
+
+**新发现但未在本批处理的**
+
+| 项 | 说明 |
+|---|---|
+| 地图等待态箭头实际不显示 | `Store.state.pose` 在控制页似乎为空（右侧位姿卡读的是别的字段），地图里 `if (pose)` 一直为假；改动后等待态箭头仍不画。属导航数据链问题，非 UI 缺陷，留给定位链修复后回归 |
+| 内嵌 webview 主题钳制 | 宿主设置了 `prefers-color-scheme`，页面 `renderedScheme()` 被系统值拉回，`#theme-toggle` 点了不切色。判断为 webview 行为，真机浏览器待复核 |
+| `T()` 每次改文本读 `scrollWidth` | 调度器在 rAF 内写完再读，无强制同步布局；若后续出现 INP 问题再改成 `ResizeObserver` 缓存宽度 |
+
