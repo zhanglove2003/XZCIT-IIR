@@ -1,0 +1,826 @@
+/* =====================================================================
+ * C50C layout.css — Sidebar + Header + 4 页响应式 Grid 布局
+ * 蓝图 §3.1/§5.1：扁平一级导航；非活跃页 content-visibility:hidden
+ * + HTML inert（app.js 负责切 inert 属性），浏览器完全跳过其布局、
+ * 绘制与命中测试（§5.2.3）。
+ * ===================================================================== */
+
+* { box-sizing: border-box; }
+
+/* hidden 属性必须永远生效：作者样式（如 .ctl-grid 的 display:grid）会盖过 UA 的
+ * [hidden] { display:none }，导致登录卡与整套控制件同时渲染（实测踩坑 2026-11-21） */
+[hidden] { display: none !important; }
+
+/* 控件原生气泡样式清零：UA 给 button 的 2px outset 边框会叠在阴影环外圈形成
+ * 一层"粗线"（实测踩坑 2026-11-21），必须清掉，外观一律由组件样式接管 */
+button, input, select, textarea { font: inherit; }
+button { appearance: none; border: 0; background: none; }
+input, select, textarea { border: 0; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font);
+  font-size: var(--fs-s);
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+  display: flex;
+  /* 视觉规范：所有比例字体的数字走等宽数位，动态数值不抖动 */
+  font-variant-numeric: tabular-nums;
+}
+
+/* 标题换行平衡：多行标题不孤悬单字 */
+h1, h2, h3, h4 { text-wrap: balance; }
+
+/* ---------------- 侧边栏 ---------------- */
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px 14px;
+  background: var(--bg2);
+  box-shadow: inset -1px 0 0 var(--line);
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+  font-size: var(--fs-s);
+  letter-spacing: 0.06em;
+  padding: 4px 8px;
+
+  /* 收起/展开钮归位侧栏本体（用户定版）：宽态贴 brand 行右缘，
+   * 收起态顶替 brand 成图标列首钮（此时藏圆点，58px 内放不下两个图标） */
+  > .icon-btn { margin-left: auto; }
+}
+
+.brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 22%, transparent);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-s);
+  color: var(--dim);
+  text-decoration: none;
+  font-weight: 550;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    flex: none;
+  }
+
+  span { white-space: nowrap; }
+
+  &:hover { background: var(--ghosthover); color: var(--text); }
+
+  &[aria-current="page"] {
+    background: color-mix(in oklab, var(--accent) 13%, transparent);
+    color: var(--accent);
+  }
+}
+
+.theme-toggle {
+  align-self: flex-start;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--ring-c, var(--line)), var(--elev-ctl-rest);
+
+  svg { width: 17px; height: 17px; fill: none; stroke: currentColor; }
+  .ico-sun { fill: currentColor; stroke: currentColor; }
+  .ico-moon { fill: currentColor; }
+
+  &:hover .ico-sun { rotate: 90deg; }
+  &:hover .ico-moon { rotate: -18deg; }
+  .ico-sun, .ico-moon { transition: rotate var(--spring-gentle) 0.5s; }
+}
+
+/* 顶栏图标按钮（侧栏收起/展开）：与 theme-toggle 同款圆形幽灵钮 */
+.icon-btn {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--dim);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--ring-c, var(--line)), var(--elev-ctl-rest);
+
+  svg { width: 17px; height: 17px; fill: none; stroke: currentColor; }
+  &:hover { color: var(--text); }
+
+  &[aria-expanded="false"] svg { transform: scaleX(-1); }
+}
+
+/* 侧栏收起态（#btn-side 切换 + localStorage 记忆）：形态与 700px 窄屏同款，
+ * 只缩成图标列，不整栏滑出——nav 图标仍是入口 */
+body.side-collapsed { --sidebar-w: 58px; }
+body.side-collapsed .sidebar { padding: 14px 10px; }
+body.side-collapsed .nav-item span { display: none; }
+body.side-collapsed .nav-item { justify-content: center; padding: 11px 0; }
+body.side-collapsed .brand { font-size: 0; gap: 0; justify-content: center; }
+body.side-collapsed .brand-dot { display: none; }
+body.side-collapsed .theme-toggle { align-self: center; }
+
+/* ---------------- 主区壳层 ---------------- */
+
+.shell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 22px;
+  /* 底部不再加分隔线（用户定版）：毛玻璃底 + 下方内容自然衔接 */
+  background: color-mix(in oklab, var(--bg) 82%, transparent);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+
+  h1 {
+    margin: 0;
+    font-size: var(--fs-m);
+    font-weight: 650;
+    outline: none;
+  }
+}
+
+.topbar-status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chip {
+  font-size: var(--fs-s);
+  color: var(--dim);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 3px 11px;
+  box-shadow: 0 0 0 1px var(--ring-c, var(--line)), var(--elev-ctl-rest);
+  white-space: nowrap;
+
+  &.mono { font-family: var(--mono); }
+}
+
+/* 延迟芯片定宽：RTT 位数变化（7 → 14 → 1234 ms）时顶栏不再跟着挪位。
+ * 74px 按 4 位数 + " ms" 估，等宽数字居中；换字体时按最长串复测。 */
+#chip-rtt {
+  width: 74px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- 页面容器 ---------------- */
+
+.pages { flex: 1; min-width: 0; }
+
+.page {
+  /* 非活跃路由：跳过布局/绘制/命中测试（尺寸收敛为 0） */
+  content-visibility: hidden;
+
+  &.active { content-visibility: visible; }
+}
+
+.page-inner {
+  /* 顶部留白加大（用户定版）：顶栏与首卡之间多透气，别贴着 */
+  padding: 30px 22px 26px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+/* ---------------- 概览网格 ---------------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  /* 行距加大（用户定版）：判读条与卡片、卡片与卡片纵向多透气；列距不变 */
+  gap: 20px 14px;
+}
+
+/* 问题聚合判读条：结论先行；异常卡以整卡底色 tint 跳出，不靠逐个扫读。
+ * 有异常时整卡可点，展开逐条具体原因（verdict-item），再点收起 */
+.verdict { grid-column: 1 / -1; }
+.verdict.expandable { cursor: pointer; }
+.verdict-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 22px;
+}
+.verdict-row b { font-size: var(--fs-m); font-weight: 600; }
+.verdict-chev {
+  flex: none;
+  margin-left: auto;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  color: var(--dim);
+  visibility: hidden;
+  transition: transform var(--ease-out-soft) 0.2s;
+}
+.verdict.expandable .verdict-chev { visibility: visible; }
+.verdict.expanded .verdict-chev { transform: rotate(180deg); }
+.verdict-list {
+  display: none;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.verdict.expanded .verdict-list { display: block; }
+.verdict-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 0;
+}
+.verdict-item b {
+  flex: none;
+  font-size: var(--fs-s);
+  font-weight: 650;
+  color: var(--bad);
+}
+.verdict-item span { font-size: var(--fs-s); color: var(--dim); }
+.card.alarming { background: color-mix(in oklab, var(--bad) 5%, var(--card)); }
+.card.alarming h3 { color: var(--bad); }
+
+.card h3 {
+  margin: 0 0 10px;
+  font-size: var(--fs-s);
+  font-weight: 650;
+  color: var(--dim);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .st { margin-left: auto; font-weight: 500; }
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+
+  > span { color: var(--dim); }
+
+  b {
+    font-size: var(--fs-m);      /* 键值读数一律中号（三级刻度 14/24/48） */
+    line-height: 1.2;
+    font-weight: 500;            /* 24px 下 600 显钝锋利，500 柔和 */
+    text-align: right;
+    /* 行内三件套（标签+值+后缀图标）时值占满中段，右缘贴图标；超宽省略号截断 */
+    flex: 1 1 auto;
+    min-width: 0;
+    /* 值一律单行：超宽省略号截断，绝不折行（WiFi 长串靠文案缩短配合） */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &.mono { font-family: var(--mono); }
+    &.big { font-size: var(--fs-m); font-weight: 600; }
+  }
+
+  /* 行尾小图标位（如 WiFi 信号格）：固定尺寸，随值颜色 */
+  > svg.sig {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    align-self: center;
+
+    rect { fill: var(--bg2); transition: fill 0.2s; }
+    rect.on { fill: currentColor; }
+  }
+}
+
+.st {
+  font-size: var(--fs-s);
+  color: var(--dim);
+
+  &.mono { font-family: var(--mono); }
+}
+
+/* 电池 */
+.bat-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+
+  .big { font-size: var(--fs-l); font-weight: 600; }
+  .st { margin-left: auto; }
+}
+
+.bat-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg2);
+  overflow: hidden;
+  margin: 8px 0 10px;
+
+  span {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: var(--ok);
+    transition: width var(--spring-gentle) 0.5s;
+  }
+}
+
+/* 系统占用圆形仪表：2×2 SVG 环，环内百分比，弧随占用走；≥85% 整环变红。
+ * r=30 → 周长 2πr≈188.4956，dashoffset = 周长×(1-占用)；rotate(-90°) 让弧从 12 点起顺时针。 */
+.sys-donuts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 6px;
+  justify-items: center;
+  padding: 2px 0;
+}
+
+.sys-donut {
+  display: grid;
+  justify-items: center;
+  row-gap: 4px;
+
+  &.warn .val { stroke: var(--bad); }
+  &.warn > b { color: var(--bad); }
+  &.hot .val { stroke: var(--warn); } /* 温度预警档：环变黄，数字仍靠 warn-t */
+
+  > b { grid-area: 1 / 1; align-self: center; font-size: var(--fs-s); }
+  > span { font-size: var(--fs-s); color: var(--dim); }
+
+  svg {
+    grid-area: 1 / 1;
+    width: 72px;
+    height: 72px;
+    transform: rotate(-90deg);
+  }
+
+  circle {
+    fill: none;
+    stroke-width: 7;
+  }
+
+  .track { stroke: var(--bg2); }
+
+  .val {
+    stroke: var(--accent);
+    stroke-linecap: round;
+    stroke-dasharray: 188.4956;
+    stroke-dashoffset: 188.4956; /* 初始空环，JS 按占用写入 */
+    transition: stroke-dashoffset var(--ease-out-soft) 0.5s, stroke 0.2s;
+  }
+}
+
+/* ---------------- 控制页 ---------------- */
+
+.login-wrap {
+  display: grid;
+  place-items: center;
+  min-height: calc(100dvh - 150px);
+}
+
+.auth-card {
+  width: min(340px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: var(--fs-s);
+    color: var(--dim);
+
+    input {
+      font: inherit;
+      color: var(--text);
+      background: var(--bg2);
+      border-radius: var(--radius-s);
+      padding: 9px 11px;
+      box-shadow: 0 0 0 1px var(--ring-c, var(--line)), var(--elev-ctl-rest);
+
+      &:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+    }
+  }
+}
+
+.form-err {
+  margin: 4px 0 0;
+  font-size: var(--fs-s);
+  color: var(--bad);
+  min-height: 1em;
+  overflow-wrap: anywhere;
+}
+
+/* 地图页内联登录卡（侧栏 268px 窄版）：与 .auth-card 同三件套 + 同字段样式，
+   共用 app.js 的 submitLogin；未登录显示、已登录 hidden */
+#map-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: var(--fs-s);
+    color: var(--dim);
+
+    input {
+      font: inherit;
+      color: var(--text);
+      background: var(--bg2);
+      border-radius: var(--radius-s);
+      padding: 9px 11px;
+      box-shadow: 0 0 0 1px var(--ring-c, var(--line)), var(--elev-ctl-rest);
+
+      &:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+    }
+  }
+}
+
+/* 手动控制内分栏（手动控制 / 传感器设置 / 地图）：标签栏在外，每个 pane
+ * 各自是一套网格；切栏只切 hidden，不重排、不改路由 */
+.seg-group.ctl-tabs { margin-bottom: 14px; gap: 12px; }
+.ctl-pane {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(300px, 1fr);
+  grid-template-areas: "pad cam";
+  gap: 14px;
+  align-items: start;
+}
+/* 地图 pane 不吃 pad/cam 两栏网格：内部 .map-grid 自带地图+侧栏布局 */
+#ctl-pane-map {
+  display: block;
+  grid-template-columns: none;
+  grid-template-areas: none;
+}
+.sensor-zone {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+}
+/* 分区小字说明：可重启 / 状态监测——解释两区卡片为何有无按钮 */
+.sensor-cap {
+  font-size: var(--fs-s);
+  font-weight: 650;
+  color: var(--dim);
+}
+.sensor-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: 14px;
+}
+
+.pad-card { grid-area: pad; }
+.cam-card { grid-area: cam; }
+
+/* 雷达 HUD：赛车游戏式透明浮层，直接叠在相机画面右上角，不遮挡视野。
+ * 浮层本身保持透明（无底色/边框/投影）；放开命中以收滚轮缩放与双击
+ * 复位（canvas-radar.js 在 canvas 上挂 wheel/dblclick）。 */
+.cam-wrap { position: relative; }
+.radar-pip {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 30%;
+  min-width: 150px;
+  max-width: 220px;
+  aspect-ratio: 16 / 10;
+  z-index: 2;
+
+  canvas { display: block; width: 100%; height: 100%; }
+}
+
+.pad {
+  display: grid;
+  grid-template-columns: repeat(3, 64px);
+  grid-template-rows: repeat(2, 64px);
+  gap: 8px;
+  justify-content: center;
+  margin: 4px 0 12px;
+}
+
+.ctl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 9px 0;
+  flex-wrap: wrap;
+
+  .mono { font-family: var(--mono); }
+}
+
+.gear {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 6px;
+  border-radius: var(--radius-s);
+  background: var(--bg2);
+  color: var(--dim);
+  cursor: pointer;
+  text-align: center;
+  font: inherit;
+  box-shadow: 0 0 0 1px var(--ring-c, var(--line)), var(--elev-ctl-rest);
+
+  b { font-size: var(--fs-s); color: var(--text); font-weight: 600; }
+  span { font-size: var(--fs-s); font-family: var(--mono); }
+
+  &.active {
+    --ring-c: var(--accent);
+    background: color-mix(in oklab, var(--accent) 12%, var(--bg2));
+    b { color: var(--accent); }
+  }
+}
+
+.seg {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: var(--radius-s);
+  background: var(--bg2);
+  color: var(--dim);
+  font: inherit;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--ring-c, var(--line)), var(--elev-ctl-rest);
+
+  &.active {
+    --ring-c: var(--accent);
+    color: var(--accent);
+    background: color-mix(in oklab, var(--accent) 12%, var(--bg2));
+  }
+}
+
+input[type="range"] { flex: 1; accent-color: var(--accent); }
+input[type="number"] {
+  width: 74px;
+  font: inherit;
+  font-family: var(--mono);
+  color: var(--text);
+  background: var(--bg2);
+  border-radius: var(--radius-s);
+  padding: 6px 8px;
+  box-shadow: 0 0 0 1px var(--ring-c, var(--line)), var(--elev-ctl-rest);
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 4px;
+  font-weight: 600;
+  cursor: pointer;
+
+  input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+}
+
+#cam {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: block;
+  border-radius: var(--radius-s);
+  background: var(--bg2);
+}
+
+/* ---------------- 地图页 ---------------- */
+
+.map-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 268px;
+  gap: 14px;
+  align-items: start;
+}
+
+.map-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+
+  h3 { margin: 0; }
+}
+
+.map-mode { font-size: var(--fs-s); color: var(--accent); min-height: 1em; }
+.spacer { flex: 1; }
+
+.btn.sq {
+  width: 34px;
+  padding: 7px 0;
+  text-align: center;
+}
+
+#map {
+  width: 100%;
+  height: min(72vh, 640px);
+  display: block;
+  border-radius: var(--radius-s);
+  background: var(--bg2);
+  touch-action: none;
+  cursor: grab;
+
+  &.grabbing { cursor: grabbing; }
+  &.cross { cursor: crosshair; }
+}
+
+.map-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  .card { padding: 14px; }
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 9px;
+
+  .btn { flex: 1; }
+}
+
+/* 巡逻异常详情行：当前航点 i/n + 停止原因 + 锁停原因，字段缺失显示「—」 */
+.patrol-detail {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.wp-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-s);
+  color: var(--dim);
+  max-height: 108px;
+  overflow: auto;
+
+  li {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+  }
+}
+
+/* ---------------- 日志页 ---------------- */
+
+.log-card .map-toolbar { margin-bottom: 12px; }
+
+/* 日志筛选：时间 + 类型 + 搜索外露；更多筛选走浮层（浮层是独立表面，自有一层框） */
+.seg-group { display: inline-flex; gap: 4px; }
+.seg-group .seg { flex: 0 0 auto; padding: 6px 11px; }
+.log-toolbar select, .log-toolbar input[type="search"] {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg2);
+  border-radius: var(--radius-s);
+  padding: 6px 9px;
+  border: 0;
+}
+.log-toolbar select { max-width: 160px; }
+.log-toolbar input[type="search"] { width: 150px; }
+.more-wrap { position: relative; }
+.popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 160px;
+  padding: 11px 14px;
+  background: var(--card);
+  border-radius: var(--radius-s);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 1px 2px color-mix(in oklab, #000 9%, transparent),
+    0 12px 32px -10px color-mix(in oklab, #000 18%, transparent);
+}
+.pop-title { font-size: var(--fs-s); color: var(--dim); font-weight: 600; }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-s);
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.log-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-s);
+  max-height: 66vh;
+  overflow: auto;
+
+  li {
+    display: flex;
+    gap: 9px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    align-items: baseline;
+
+    &:nth-child(odd) { background: var(--bg2); }
+  }
+
+  .log-t { color: var(--dim); flex: none; }
+  .log-kind {
+    flex: none;
+    font-size: var(--fs-s);
+    font-weight: 700;
+    border-radius: 5px;
+    padding: 1px 6px;
+    letter-spacing: 0.05em;
+
+    &.rx { color: var(--accent); background: color-mix(in oklab, var(--accent) 14%, transparent); }
+    &.tx { color: var(--ok); background: var(--oksoft); }
+  }
+  .log-detail {
+    overflow-wrap: anywhere;
+    color: var(--text);
+    min-width: 0;
+  }
+}
+
+/* ---------------- 响应式 ---------------- */
+
+@media (max-width: 960px) {
+  .ctl-pane {
+    grid-template-columns: 1fr;
+    grid-template-areas: "pad" "cam";
+  }
+  .map-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  :root { --sidebar-w: 58px; }
+  .sidebar { padding: 14px 10px; }
+  .nav-item span { display: none; }
+  .brand { font-size: 0; gap: 0; justify-content: center; }
+  .brand-dot { display: none; }
+  .nav-item { justify-content: center; padding: 11px 0; }
+}
