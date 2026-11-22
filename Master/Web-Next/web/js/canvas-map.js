@@ -208,7 +208,17 @@
       ctx.fillStyle = dark ? 'rgba(231,233,239,0.4)' : 'rgba(27,30,38,0.45)';
       ctx.font = '12px ui-monospace, monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(decodeFailed ? '栅格解压失败' : '等待地图…', w / 2, h / 2);
+      ctx.fillText(decodeFailed ? '栅格解压失败' : '等待地图…', w / 2, h / 2 + 4);
+      // 等待态不能让人干瞪眼：把最可能的排查入口写在这儿（垫片一停，
+      // /map 就永远不来，这与 AMCL 无关）
+      ctx.font = '11px ui-monospace, monospace';
+      ctx.globalAlpha = 0.72;
+      ctx.fillText(
+        decodeFailed ? '刷新页面重试；仍失败请重启 c50c-web-next' : '若长时间无图，检查垫片服务 c50c-web-bridge',
+        w / 2,
+        h / 2 + 24,
+      );
+      ctx.globalAlpha = 1;
     }
 
     var status = Store.state.status;

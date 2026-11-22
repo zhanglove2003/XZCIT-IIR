@@ -600,11 +600,40 @@
   // 全部在前端即时过滤渲染——无分页、无加载动画。
   var logFilter = { time: 'all', type: '', dir: '', q: '' };
 
+  // 日志抓取：失败不再静默吞掉——页顶挂一行错误 + 「重试」，成功自动撤掉。
+  // 失败时不覆盖上一次的数据，避免界面闪空。
+  var logErr = '';
   function fetchLogs() {
+    var btn = $('btn-log-refresh');
+    if (btn) { btn.disabled = true; T(btn, '刷新中…'); }
+    function done() {
+      if (btn) { btn.disabled = false; T(btn, '刷新'); }
+    }
     fetch('/api/wslog')
-      .then(function (r) { return r.json(); })
-      .then(function (d) { Store.applyLogs(d); })
-      .catch(function () { /* 下轮再取 */ });
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (d) {
+        logErr = '';
+        Store.applyLogs(d);
+        renderLogErr();
+      })
+      .catch(function (e) {
+        logErr = '控制帧读取失败（' + (e && e.message ? e.message : '网络不可达') + '）';
+        renderLogErr();
+      })
+      .then(done, done);
+  }
+
+  function renderLogErr() {
+    var box = $('log-err');
+    if (!box) return;
+    if (!logErr) { box.hidden = true; box.innerHTML = ''; return; }
+    box.hidden = false;
+    box.innerHTML = '<div class="err-row"><span></span><button class="btn ghost" type="button">重试</button></div>';
+    box.firstChild.firstChild.textContent = logErr;
+    box.querySelector('button').addEventListener('click', fetchLogs);
   }
 
   function hhmmss(unixSec) {
@@ -664,6 +693,12 @@
     T($('log-count'), shown + '/' + data.items.length);
     T($('log-age'), data.lastFrameAge == null ? '无帧' : '最后帧 ' + data.lastFrameAge + 's 前');
     var list = $('log-list');
+    // 有帧但筛掉光了 ≠ 没有帧：前者提示改条件，后者提示桥没在跑
+    if (!shown) {
+      html = '<li class="empty-state">' +
+        (data.items.length ? '没有符合条件的记录' : '还没有控制帧，检查垫片服务 c50c-web-bridge') +
+        '</li>';
+    }
     if (list._lastHtml !== html) { list._lastHtml = html; list.innerHTML = html; }
   }
 
@@ -799,9 +834,30 @@
     return sig > -90 ? 1 : 0;
   }
 
+  /** 概览卡片首帧前的占位：值位换成微光条，别让一屏「—」看着像坏了。
+   * 一旦 status 到达就整卡还原成正常内容（次数由 _skelDone 保证只做一次）。 */
+  function overviewSkeleton() {
+    document.querySelectorAll('.page[data-page="overview"] .card .kv b').forEach(function (b) {
+      if (b._skel) return;
+      b._skel = 1;
+      b._skelText = b.textContent;
+      b.innerHTML = '<span class="skeleton"></span>';
+    });
+  }
+
   function renderOverview() {
     var st = Store.state.status;
     if (!st) return;
+    // 首帧到达：把骨架占位撤掉（值由下面的 T() 覆盖）
+    if (document.querySelector('.page[data-page="overview"] .skeleton')) {
+      document.querySelectorAll('.page[data-page="overview"] .kv b').forEach(function (b) {
+        if (!b._skel) return;
+        b._skel = 0;
+        if (b.firstChild && b.firstChild.classList && b.firstChild.classList.contains('skeleton')) {
+          b.textContent = b._skelText || '—';
+        }
+      });
+    }
 
     var modeLabel = st.mode === 'fake' ? '仿真' : '实车';
     if (st.boot && st.boot.initializing) {
@@ -1162,6 +1218,7 @@
 
     window.addEventListener('hashchange', function () { applyRoute(pageFromHash(), false); });
     applyRoute(pageFromHash(), true);
+    overviewSkeleton();
 
     fetchLogs();
     C.WS.boot();

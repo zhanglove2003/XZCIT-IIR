@@ -70,7 +70,7 @@
 
 **文件**：`web/index.html`、`web/js/app.js`、`web/js/canvas-map.js`、`web/styles/layout.css`
 
-- [ ] 完成 　　验收：＿＿＿＿
+- [x] 完成 　　验收：日志搜索无命中显示「没有符合条件的记录」（DOM 实测）；把 `fetch` 打桩成 reject 后点刷新，页顶出现红色错误行「控制帧读取失败（网络不可达(测试)）」+ 重试按钮，且原有日志不被清空；地图等待态在「等待地图…」下补了一行「若长时间无图，检查垫片服务 c50c-web-bridge」；概览首帧前 `.kv b` 显示骨架条，status 到达后自动撤掉。产物 md5 `0fdc86ea16c1a9e5e8888b8017dddb17`。
 
 ---
 

@@ -463,6 +463,58 @@ body.side-collapsed .theme-toggle { align-self: center; }
   overflow-wrap: anywhere;
 }
 
+/* ---------------- 加载态 / 空态（全站共用三件套） ----------------
+ * 极简裁决下「一切正常」不许占位，所以只有真等数据时才出现：
+ * .skeleton 是还没拿到首帧时的值位占位，.empty-state 是筛选后确实
+ * 什么都没有时的一句话（不是装饰）。(@media reduce 下不动画) */
+.skeleton {
+  display: inline-block;
+  width: 2.6em;
+  height: 1em;
+  border-radius: 6px;
+  background: var(--bg2);
+  vertical-align: middle;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--bg2) 0%,
+      color-mix(in oklab, var(--text) 10%, var(--bg2)) 50%,
+      var(--bg2) 100%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-sweep 1.15s ease-in-out infinite;
+  }
+  @keyframes skeleton-sweep {
+    from { background-position: 160% 0; }
+    to { background-position: -60% 0; }
+  }
+}
+
+.empty-state {
+  padding: 26px 12px;
+  text-align: center;
+  font-size: var(--fs-s);
+  color: var(--dim);
+}
+
+/* 抓取失败行：一句话 + 「重试」，复用 .form-err 的语义色，不新造配色 */
+.err-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-top: 8px;
+  border-radius: var(--radius-s);
+  background: var(--badsoft);
+  color: var(--bad);
+  font-size: var(--fs-s);
+
+  .btn { padding: 4px 12px; }
+}
+
 /* 地图页内联登录卡（侧栏 268px 窄版）：与 .auth-card 同三件套 + 同字段样式，
    共用 app.js 的 submitLogin；未登录显示、已登录 hidden */
 #map-login-form {
