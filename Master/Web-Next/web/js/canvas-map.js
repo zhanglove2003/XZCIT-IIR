@@ -205,10 +205,11 @@
       ctx.drawImage(tex, tl.x, tl.y, g.w * g.res * view.scale, g.h * g.res * view.scale);
       ctx.imageSmoothingEnabled = true;
     } else {
+      var waiting = decodeFailed ? '栅格解压失败' : '等待地图…';
       ctx.fillStyle = dark ? 'rgba(231,233,239,0.4)' : 'rgba(27,30,38,0.45)';
       ctx.font = '12px ui-monospace, monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(decodeFailed ? '栅格解压失败' : '等待地图…', w / 2, h / 2 + 4);
+      ctx.fillText(waiting, w / 2, h / 2 + 4);
       // 等待态不能让人干瞪眼：把最可能的排查入口写在这儿（垫片一停，
       // /map 就永远不来，这与 AMCL 无关）
       ctx.font = '11px ui-monospace, monospace';
@@ -219,6 +220,25 @@
         h / 2 + 24,
       );
       ctx.globalAlpha = 1;
+
+      // 提示文字先画、箭头后画：箭头压在（可能更长的）首行文字中间会糊成一团。
+      // 有历史位姿时把箭头画在文案上方一档。
+      var wp = Store.state.pose;
+      if (wp) {
+        var wy = h / 2 - 26;
+        ctx.save();
+        ctx.translate(w / 2, wy);
+        ctx.rotate(-wp.th);
+        ctx.fillStyle = dark ? 'rgba(255,141,61,0.85)' : 'rgba(217,107,16,0.85)';
+        ctx.beginPath();
+        ctx.moveTo(11, 0);
+        ctx.lineTo(-7, 6.5);
+        ctx.lineTo(-3.5, 0);
+        ctx.lineTo(-7, -6.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
     }
 
     var status = Store.state.status;

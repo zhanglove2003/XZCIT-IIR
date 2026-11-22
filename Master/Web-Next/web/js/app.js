@@ -559,6 +559,8 @@
     var vol = $('spk-vol');
     vol.addEventListener('input', function () {
       T($('spk-vol-v'), vol.value + '%');
+      vol.setAttribute('aria-valuetext', vol.value + '%');
+      vol.style.setProperty('--spk-pct', vol.value + '%');
     });
     vol.addEventListener('change', function () {
       if (!requireAuth('调节音量')) return;
@@ -1177,8 +1179,11 @@
       var volVal = audio && typeof audio === 'object' ? audio.volume : null;
       if (typeof volVal === 'number') {
         if (document.activeElement !== spkVol) spkVol.value = volVal;
+        spkVol.setAttribute('aria-valuetext', volVal + '%');
+        spkVol.style.setProperty('--spk-pct', spkVol.value + '%');
         T($('spk-vol-v'), volVal + '%');
       } else {
+        spkVol.setAttribute('aria-valuetext', '不可用');
         T($('spk-vol-v'), '—');
       }
     }

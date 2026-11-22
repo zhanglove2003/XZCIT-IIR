@@ -681,6 +681,126 @@ body.side-collapsed .theme-toggle { align-self: center; }
 }
 
 input[type="range"] { flex: 1; accent-color: var(--accent); }
+
+/* 屏幕阅读器可见、视觉隐藏（滑块之前的 <label> 用） */
+.visually-hidden:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  inline-size: 1px !important;
+  block-size: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+/* ---------------- 喇叭音量条 ----------------
+ * 只给原生 range 加 accent-color 时，轨道/填充/滑块全交给 UA：暗色主题
+ * 下轨道几乎看不见，各浏览器长相也不一致。这里接管轨道与滑块，WebKit 与
+ * Firefox 伪元素必须分块声明（合并成逗号列表整条规则会被丢弃）。
+ * 填充量优先用 progress()+attr() 直接读 value；不支持时退到 app.js 同步
+ * 的 --spk-pct。 */
+#spk-vol {
+  --spk-track: 6px;
+  --spk-thumb: 18px;
+
+  inline-size: 100%;
+  block-size: 32px;          /* 命中区够点 */
+  margin: 2px 0 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+#spk-vol:disabled { cursor: not-allowed; opacity: 0.5; }
+
+@media (pointer: coarse) {
+  #spk-vol { block-size: 44px; --spk-thumb: 22px; }
+}
+
+#spk-vol::-webkit-slider-runnable-track {
+  block-size: var(--spk-track);
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--spk-pct, 0%),
+    var(--line2) var(--spk-pct, 0%)
+  );
+}
+
+#spk-vol::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  inline-size: var(--spk-thumb);
+  block-size: var(--spk-thumb);
+  margin-block-start: calc((var(--spk-track) - var(--spk-thumb)) / 2);
+  border: 0;
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+#spk-vol::-moz-range-track {
+  block-size: var(--spk-track);
+  border: 0;
+  border-radius: 999px;
+  background: var(--line2);
+}
+
+#spk-vol::-moz-range-progress {
+  block-size: var(--spk-track);
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+#spk-vol::-moz-range-thumb {
+  inline-size: var(--spk-thumb);
+  block-size: var(--spk-thumb);
+  border: 0;
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+#spk-vol:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* 强制配色模式会清掉渐变与阴影：轨道退回系统色 + 实线边框，滑块加描边，
+ * 否则音量条会变成一条看不见的空白 */
+@media (forced-colors: active) {
+  #spk-vol::-webkit-slider-runnable-track,
+  #spk-vol::-moz-range-track {
+    background: Canvas;
+    border: 1px solid CanvasText;
+  }
+  #spk-vol::-moz-range-progress { background: Highlight; }
+  #spk-vol::-webkit-slider-thumb,
+  #spk-vol::-moz-range-thumb {
+    background: ButtonText;
+    box-shadow: none;
+    outline: 1px solid Canvas;
+  }
+}
+
+/* 支持 progress() 时直接由 value 属性算填充，不依赖 JS */
+@supports (opacity: progress(1, 0, 100)) {
+  #spk-vol::-webkit-slider-runnable-track {
+    background: linear-gradient(
+      to right,
+      var(--accent) calc(progress(attr(value type(<number>), 70), 0, 100) * 100%),
+      var(--line2) calc(progress(attr(value type(<number>), 70), 0, 100) * 100%)
+    );
+  }
+}
+
 input[type="number"] {
   width: 74px;
   font: inherit;
