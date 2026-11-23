@@ -1,16 +1,26 @@
 # =====================================================================
-# XZCIT-IIR 标签自动发布
+# XZCIT-IIR 标签自动发布（香橙派部署包 + STM32F407 固件）
 #
 # 触发：
-#   - 推送 v* 标签（建议在 feat 分支上打 tag）
+#   - 推送 v* 标签（建议在 feat 分支上打 tag，例如 feat/differential）
 #   - workflow_dispatch 手动演练（不创建 Release，仅产出 Artifacts）
+#
+# 发布前门禁（任一失败即中止发布）：
+#   gate-rust-test        —— Master/Web-Next 的 cargo test
+#   gate-stm32-host-test  —— tests/Makefile 宿主机 C 单测
 #
 # 产物：
 #   1. web-next-<tag>-aarch64-linux-musl.tar.gz
 #      香橙派全静态部署包：web_next 二进制 + web/ + deploy 脚本与 systemd 单元
 #   2. stm32f407-firmware-<tag>.tar.gz + 独立 Diff_Car.hex/.bin
-#      根 Makefile（HAL）现场编译，不使用仓库内历史预编译文件
+#      根 Makefile（HAL 主固件）现场编译，不使用仓库里历史预编译文件
 #   3. SHA256SUMS.txt 全量校验文件
+#
+# 编译入口核对结论：
+#   根 Makefile              → HAL 主固件，TARGET=Diff_Car，产出 build/Diff_Car.{elf,hex,bin}
+#   STM32F407_StdPeriph/CMakeLists.txt → 旧栈（StdPeriph）回退工程，产物同为 Diff_Car.*，
+#                              但树不同（FWLIB/USER/HARDWARE），不参与本流水线发布。
+#   因此这里统一用根 Makefile 编译「当前主固件」。
 # =====================================================================
 name: XZCIT Release
 
@@ -28,11 +38,11 @@ concurrency:
   cancel-in-progress: false   # 发布流水线不允许中途互相取消
 
 env:
-  # tag 推送 → 用 tag 名；手动演练 → 用 manual-<run编号>，避免分支名带斜杠破坏文件名。
+  # tag 推送 → 用 tag 名；手动演练 → manual-<run编号>，避免分支名带斜杠破坏文件名。
   TAG_NAME: ${{ github.event_name == 'push' && github.ref_name || format('manual-{0}', github.run_number) }}
 
 jobs:
-  # ── 发布前门禁：单测不过，不发版 ────────────────────────────────
+  # ── 门禁一：Web-Next 单测 ───────────────────────────────────────
   gate-rust-test:
     name: gate-rust-test
     runs-on: ubuntu-24.04
@@ -51,6 +61,7 @@ jobs:
       - name: cargo test（Web-Next 单测）
         run: cargo test
 
+  # ── 门禁二：STM32 宿主机 C 单测 ─────────────────────────────────
   gate-stm32-host-test:
     name: gate-stm32-host-test
     runs-on: ubuntu-24.04
@@ -60,7 +71,7 @@ jobs:
       - name: 宿主机 C 单测（tests/Makefile，编译并运行全部测试）
         run: make -C tests -j4
 
-  # ── 香橙派 Web-Next 静态部署包（aarch64 musl）──────────────────
+  # ── 产物一：香橙派 Web-Next 全静态部署包（aarch64 musl）──────────
   build-web-next:
     name: build-web-next-aarch64-musl
     needs: gate-rust-test
@@ -91,7 +102,10 @@ jobs:
           test -f "$BIN" || { echo "::error::未找到 $BIN"; exit 1; }
           file "$BIN"
           file "$BIN" | grep -q "ARM aarch64" || { echo "::error::不是 aarch64 ELF"; exit 1; }
-          file "$BIN" | grep -qi "statically linked" || { echo "::error::不是全静态链接，禁止发布"; exit 1; }
+          file "$BIN" | grep -qi "statically linked" || {
+            echo "::error::不是全静态链接，禁止发布"
+            exit 1
+          }
 
       - name: 打包部署产物（web_next + web/ + deploy 脚本与 systemd 单元）
         run: |
@@ -102,7 +116,8 @@ jobs:
           cp -r web "$STAGE/web"
           cp deploy/ros_bridge_shim.py deploy/relocalize.py "$STAGE/deploy/"
           cp deploy/*.service "$STAGE/deploy/"
-          tar czf "$RUNNER_TEMP/web-next-${{ env.TAG_NAME }}-aarch64-linux-musl.tar.gz" -C "$STAGE" .
+          tar czf "$RUNNER_TEMP/web-next-${{ env.TAG_NAME }}-aarch64-linux-musl.tar.gz" \
+            -C "$STAGE" .
           ls -lh "$RUNNER_TEMP"/web-next-*.tar.gz
 
       - uses: actions/upload-artifact@v4
@@ -111,7 +126,7 @@ jobs:
           path: ${{ runner.temp }}/web-next-*.tar.gz
           if-no-files-found: error
 
-  # ── STM32F407 固件产物（根 Makefile / HAL，现场编译）────────────
+  # ── 产物二：STM32F407 固件（根 Makefile / HAL，现场编译）─────────
   build-firmware:
     name: build-stm32-firmware
     needs: gate-stm32-host-test

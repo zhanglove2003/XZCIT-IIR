@@ -1,34 +1,47 @@
 # =====================================================================
 # XZCIT-IIR 持续集成
 #
-# 分支治理规则（与分支保护配置配套，见分支保护清单）：
-#   - main        ：纯发布分支，不跑 CI、不设 PR 限制（不在任何触发器里）。
-#   - dev / dev/* ：日常开发分支，允许直接 push，推送即触发全套检查。
-#   - feat / feat/*：受保护分支，禁止直接 push；只允许从 dev 通过 PR 合入，
-#                   PR 时必须通过 branch-policy 与 ci-gate 门禁。
+# 分支治理（与仓库分支保护配套，清单见本节注释末）：
+#   - main       ：纯文本/门面分支。**不跑 CI、不设 PR 限制**。
+#                  本文件的 push / pull_request 触发器里绝不出现 main。
+#   - dev 系     ：日常开发分支，允许直接 push，推送即触发全套检查（无需 PR）。
+#   - feat 系    ：功能集成/受保护分支。禁止直接 push，只允许从 dev 系
+#                  通过 PR 合入，且 PR 必须通过 branch-policy + ci-gate。
 #
-# 结构说明：
-#   - changes：dorny/paths-filter 按目录过滤变更，未命中路径的 Job 直接 skip。
-#   - ci-gate：if: always() 的汇总门禁（feat 分支唯一 Required Status Check），
-#     所有前置必要 Job 结果为 success / skipped 才放行，任一 failure /
-#     cancelled 即失败——避免路径过滤跳过导致 PR 卡住。
+# 分支名兼容说明：
+#   仓库实际使用带车型后缀的分支（dev/differential、feat/differential…），
+#   因此触发器写作 `dev` + `dev/**`、`feat` + `feat/**`。语义与
+#   「只有 dev / feat」一致：dev 系 → feat 系，只是额外允许车型后缀。
+#
+# 结构：
+#   changes       —— dorny/paths-filter 按目录过滤，未命中的技术栈 Job 直接 skip
+#   branch-policy —— PR 目标是 feat 系时，校验来源分支必须是 dev 系
+#   hygiene       —— 每次必跑：残留文件拦截 + Python 语法兜底 + ruff 静态检查
+#   ci-gate       —— if: always() 的汇总门禁，feat 系唯一 Required Status Check
+#
+# 分支保护勾选清单（GitHub 网页端 Settings → Rules / Branches）：
+#   feat / feat/* ：禁止直接 push、要求 PR 合并、Required check = `ci-gate`
+#   dev  / dev/*  ：不做 PR 拦截（允许直接 push），不绑定 Required check
+#   main          ：不做 PR 拦截，不绑定任何 Required check（不跑 CI）
 # =====================================================================
 name: XZCIT CI
 
 on:
+  # dev 系允许直接 push，推送即跑全套。
   push:
     branches:
       - dev
       - 'dev/**'
+  # 只有发往 feat 系的 PR 才跑（feat 禁止直接 push，只能走 PR）。
   pull_request:
     branches:
       - feat
       - 'feat/**'
-  # 手动触发：仅用于在受保护分支（feat）上制造一次真实的 ci-gate 运行记录。
+  # 手动触发：仅用于在 feat 上制造一次真实的 ci-gate 运行记录。
   # 原因：GitHub 分支保护的 required status checks 候选列表只收录
-  # "在受保护分支上真实跑过的 check"；feat 平时不接受 push、也没有以它自身
+  # 「在受保护分支上真实跑过的 check」。feat 平时不接受 push，也没有以它自身
   # 为 head 的 PR，配门禁时搜不到 ci-gate。手动跑一次即可补齐这条记录。
-  # 手动触发不改变任何自动触发语义，不影响分支治理规则。
+  # 手动触发不改变任何自动触发语义。
   workflow_dispatch:
 
 permissions:
@@ -38,6 +51,10 @@ concurrency:
   # 同一分支连续推送只保留最新一次运行，避免浪费算力。
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # 统一 py_compile 的字节码落点，避免在仓库里生成 __pycache__。
+  PYTHONPYCACHEPREFIX: ${{ github.workspace }}/.pycache-ci
 
 jobs:
   # ── 变更过滤：决定哪些技术栈 Job 需要跑 ─────────────────────────
@@ -51,24 +68,32 @@ jobs:
       stm32:    ${{ steps.filter.outputs.stm32 }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 手动触发时下面用 <sha>~1 当 paths-filter 基线，必须能取到父提交；
+          # PR / push 场景 paths-filter 自己会取目标分支，这个深度对它无害。
+          fetch-depth: 2
       - name: 按目录过滤变更
         id: filter
         uses: dorny/paths-filter@v3
         with:
-          # 手动触发时没有 github.event.before，dorny/paths-filter 会因缺少基线报错，
-          # 导致全部 Job 被 skip（ci-gate 照样绿，但等于没验证）。
-          # 用 <sha>~1 兜底，让 diff 覆盖整条待验证的变更，真实跑全套。
-          # push / pull_request 场景不受影响（仍走各自的原生基线）。
+          # 手动触发时没有 github.event.before，dorny/paths-filter 会因缺少基线
+          # 报错导致全部 Job 被 skip（ci-gate 照样绿，但等于没验证）。
+          # 用 <sha>~1 兜底，让 diff 覆盖整条待验证变更。
+          # push / pull_request 场景不受影响（走各自原生基线）。
           base: ${{ github.event_name == 'workflow_dispatch' && format('{0}~1', github.sha) || '' }}
           filters: |
+            # Rust：整个 Web-Next（含 build.rs、Cargo.toml、src/）
             rust:
               - 'Master/Web-Next/**'
+            # 前端：静态资源目录，或把资源编进二进制的 main.rs
             frontend:
               - 'Master/Web-Next/web/**'
               - 'Master/Web-Next/src/main.rs'
+            # ROS 2 Python：工作空间、导航配置、部署脚本与 systemd 单元
             ros:
               - 'Master/ROS/**'
               - 'Master/Web-Next/deploy/**'
+            # STM32：HAL 主固件树 + 宿主机单测 + 旧栈回退目录 + 根 Makefile
             stm32:
               - 'App/**'
               - 'Drivers/**'
@@ -81,6 +106,7 @@ jobs:
   branch-policy:
     name: branch-policy
     runs-on: ubuntu-24.04
+    # 只对 PR 事件有意义；push 事件下本 Job 直接 skip（ci-gate 允许 skip）。
     if: github.event_name == 'pull_request'
     steps:
       - name: 校验 PR 来源分支必须为 dev
@@ -89,7 +115,7 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
         run: |
           set -euo pipefail
-          # 本工作流只对目标为 feat / feat/* 的 PR 触发，防御性再校验一次。
+          # 本工作流只对目标为 feat 系的 PR 触发，这里防御性再校验一次。
           if [ "$BASE_REF" != "feat" ] && [[ "$BASE_REF" != feat/* ]]; then
             echo "目标分支为 $BASE_REF，不在 feat 管控范围内，跳过校验。"
             exit 0
@@ -107,31 +133,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # 需要完整历史做本次新增文件的 diff
+          fetch-depth: 0   # 需要完整历史做「本次新增文件」的 diff
 
       - name: 拦截本次新增的残留文件（*.orig / *.bak / *.uvguix.*）
         env:
-          EVENT_NAME:      ${{ github.event_name }}
-          BEFORE_SHA:      ${{ github.event.before }}
-          PR_BASE_SHA:     ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA:        ${{ github.sha }}
+          EVENT_NAME:  ${{ github.event_name }}
+          BEFORE_SHA:  ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA:    ${{ github.sha }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "pull_request" ]; then
             BASE="$PR_BASE_SHA"
-          elif [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+          elif [ -n "${BEFORE_SHA:-}" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
             BASE="$BEFORE_SHA"
+          elif BASE="$(git rev-parse -q --verify "$HEAD_SHA~1" 2>/dev/null)"; then
+            # 新分支首次推送 / 手动触发：before 全 0。用 HEAD~1 作基线——
+            # 分支上的提交都是有父的，这样只覆盖本次引入的变更。
+            echo "::warning::无 before 基线（新分支首次推送或手动触发），改用 HEAD~1。"
           else
-            # 新分支首次推送：本分支上引入的所有文件都视为"本次新增"。
-            BASE="$(git hash-object -t tree /dev/null)"
-            echo "::warning::新分支首次推送，将全量扫描该分支引入的文件。"
-          fi
-          if ! git cat-file -e "$BASE" 2>/dev/null; then
-            BASE="$(git hash-object -t tree /dev/null)"
-            echo "::warning::基准提交 $BASE 不在历史中（疑似强推），退化为全量扫描。"
+            # 仓库里现存 26 个历史遗留残留（MDK-ARM/、STM32F407_StdPeriph/），
+            # 无父提交时无法区分「本次新增」与「历史遗留」，只告警不判失败，
+            # 否则门禁会永远红。
+            echo "::warning::无任何父提交（根提交），无法区分新增与历史残留，跳过拦截。"
+            exit 0
           fi
           ADDED="$(git diff --name-only --diff-filter=A "$BASE" "$HEAD_SHA" || true)"
-          # 只拦"新增"，历史遗留的 .orig/.uvguix.* 不背锅（diff-filter=A）。
+          # 只拦「新增」，历史遗留的 .orig/.uvguix.* 不背锅（diff-filter=A）。
+          # 注意：仓库现存 26 个历史遗留残留（MDK-ARM/、STM32F407_StdPeriph/），
+          # 绝不能改成全量扫描，否则门禁一上来就是红的。
           BAD="$(printf '%s\n' "$ADDED" | grep -E '\.(orig|bak)$|\.uvguix\.' || true)"
           if [ -n "$BAD" ]; then
             echo "::error::检测到本次新增的残留文件，禁止提交（Keil 冲突备份 / merge 副本）："
@@ -143,60 +173,59 @@ jobs:
       - name: Python 语法兜底（Master/**/*.py）
         run: |
           set -euo pipefail
-          # 只做编译级语法校验，不做风格检查（风格归各 Job 的专项工具）。
+          # 只做编译级语法校验，不做风格检查（风格归 ruff 步骤）。
+          # Master/Web/opi_robot 属于旧栈回退保命代码：这里只读校验，不改不删。
           find Master -name "*.py" -type f -print0 | xargs -0 -n1 python3 -m py_compile
           echo "py_compile 通过。"
 
-      # ruff 是 Rust 编译出来的静态二进制，不依赖 Python 环境，也不依赖 ROS。
-      # 原先把它塞进 ros:humble-ros-base 容器里，apt 装 pip 再 pip 装 ruff，
-      # 实测单这一步耗时 119 秒，占 ros2-python 整个 Job 的 68%，而真正的
-      # colcon build 只要 2 秒、colcon test 只要 29 秒——纯属本末倒置。
-      # 挪到宿主机 + 官方预编译包，下载解压约 3 秒。
+      # ruff 是 Rust 编译出的静态二进制，不依赖 Python 环境，也不依赖 ROS 容器。
+      # 放宿主机 + 官方预编译包约 3 秒；塞进 ros 容器里 apt→pip 装要 119 秒。
       - name: 安装 ruff（官方静态二进制，不依赖 pip / apt）
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
-          # 踩过的坑：tar 提取时若指定成员名，必须与归档内完整路径一致。
-          # 归档里是 ruff-x86_64-unknown-linux-gnu/ruff，写 `... --strip-components=1 ruff`
-          # 会报 "ruff: 归档中找不到" 并 exit 2（本地已复现）。
-          # 这里解到临时目录再 install，既避开该问题，出错信息也更明确。
           tmp="$(mktemp -d)"
           curl -sSfL --retry 3 --retry-delay 2 \
             -o "$tmp/ruff.tar.gz" \
             "https://github.com/astral-sh/ruff/releases/latest/download/ruff-x86_64-unknown-linux-gnu.tar.gz"
+          # 归档内是 ruff-x86_64-unknown-linux-gnu/ruff；解到临时目录再 install，
+          # 避免 `tar --strip-components=1 ruff` 报「归档中找不到」。
           tar -xzf "$tmp/ruff.tar.gz" -C "$tmp" --strip-components=1
           install -m 0755 "$tmp/ruff" "$HOME/.local/bin/ruff"
           rm -rf "$tmp"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/ruff" --version
 
-      - name: ruff 静态检查（棘轮模式：只查本次变更的 .py）
-        # 存量代码上已有 84 个 F401/F811/F841（多为测试文件的未用导入），
-        # 全量检查会让门禁永远红。棘轮模式：新增/修改过的文件必须干净，
+      - name: ruff 静态检查（棘轮：只查本次变更的 .py）
+        # 存量代码有 84 个 F401/F811/F841（多为测试文件未用导入），
+        # 全量检查会让门禁永远红。棘轮模式：新增/修改的文件必须干净，
         # 存量债务不拦截。想改全量时去掉 diff 逻辑直接传目录即可。
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME:  ${{ github.event_name }}
+          BEFORE_SHA:  ${{ github.event.before }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.sha }}
+          HEAD_SHA:    ${{ github.sha }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "pull_request" ]; then
             BASE="$PR_BASE_SHA"
-          elif [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+          elif [ -n "${BEFORE_SHA:-}" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
             BASE="$BEFORE_SHA"
+          elif BASE="$(git rev-parse -q --verify "$HEAD_SHA~1" 2>/dev/null)"; then
+            # 新分支首次推送 / 手动触发：before 全 0，用 HEAD~1 作棘轮基线。
+            # 绝不能用空树——那会把 84 个存量 F401/F811/F841 全算成新增。
+            echo "::warning::无 before 基线，改用 HEAD~1 作 ruff 棘轮基准。"
           else
-            BASE="$(git hash-object -w -t tree /dev/null)"
-            echo "::warning::新分支首次推送，ruff 将扫描该分支引入的全部 .py。"
+            echo "::warning::无任何父提交（根提交），ruff 棘轮无可比基线，跳过。"
+            exit 0
           fi
           if ! git cat-file -e "$BASE" 2>/dev/null; then
-            # 基准提交不在本地历史（浅克隆/强推等），退而求其次用上一个提交；
-            # 再不行就写入空树对象做全量 diff（-w 必须带上，否则对象不在库里）。
-            if BASE="$(git rev-parse -q --verify HEAD~1 2>/dev/null)"; then
+            # 基准提交不可达（浅克隆/强推）：退用 HEAD~1，再不行就跳过。
+            if BASE="$(git rev-parse -q --verify "$HEAD_SHA~1" 2>/dev/null)"; then
               echo "::warning::基准提交不可达，改用 HEAD~1 作 ruff 棘轮基准。"
             else
-              BASE="$(git hash-object -w -t tree /dev/null)"
-              echo "::warning::首次提交，ruff 将扫描全部 .py。"
+              echo "::warning::基准提交不可达且无父提交，ruff 棘轮跳过。"
+              exit 0
             fi
           fi
           CHANGED="$(git diff --name-only --diff-filter=AM "$BASE" "$HEAD_SHA" \
@@ -210,7 +239,7 @@ jobs:
           # shellcheck disable=SC2086
           ruff check --select F401,F811,F841 $(echo "$CHANGED" | tr '\n' ' ')
 
-  # ── Rust Web-Next（独立 Axum 后端，非 rclrs）────────────────────
+  # ── Rust Web-Next（独立 Axum 后端，非 rclrs / colcon-cargo）──────
   rust-web-next:
     name: rust-web-next
     runs-on: ubuntu-24.04
@@ -222,7 +251,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # edition = "2024" 要求 rustc >= 1.85，stable 起步即满足。
+      # Cargo.toml 的 edition = "2024" 要求 rustc >= 1.85，stable 起步即满足。
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -240,7 +269,8 @@ jobs:
       - name: cargo test
         run: cargo test
 
-      # 合入 feat 的 PR 才做交叉编译检查，确认 build.rs 垫片在 CI 环境可用。
+      # 合入 feat 的 PR 才做交叉编译检查：确认 build.rs 的 rust-lld 垫片
+      # 在干净 CI 环境里可用（本机已验证：产出全静态 aarch64 ELF）。
       - name: aarch64-musl 交叉编译检查（仅合入 feat 的 PR）
         if: github.event_name == 'pull_request' && (github.base_ref == 'feat' || startsWith(github.base_ref, 'feat/'))
         run: |
@@ -248,7 +278,7 @@ jobs:
           cargo build --release --target aarch64-unknown-linux-musl
           file target/aarch64-unknown-linux-musl/release/web_next
 
-  # ── 前端（无 npm 构建的原生脚本，不做任何打包）─────────────────
+  # ── 前端（原生 ES Modules，无 package.json、无 npm 构建）─────────
   web-frontend:
     name: web-frontend
     runs-on: ubuntu-24.04
@@ -277,11 +307,12 @@ jobs:
           done
           exit $status
 
-      # web_next 是单二进制内置静态资源（include_str!/include_bytes!），
-      # 这里保证：目录里的每个资源都已注册进 main.rs，且在页面/CSS 中引用。
+      # web_next 是单二进制内置静态资源（include_str!/include_bytes!）。
+      # 这里保证：web/js|styles|fonts 下每个文件都已注册进 main.rs，
+      # 且在 index.html 或 CSS 中被引用——防止新增资源忘记接线。
       - name: 校验静态资源注册与引用
         run: |
-          python3 - <<'PYEOF'
+          python3 -I - <<'PYEOF'
           import pathlib, re, sys
           root = pathlib.Path("Master/Web-Next")
           mainrs = (root / "src/main.rs").read_text(encoding="utf-8")
@@ -292,7 +323,7 @@ jobs:
           registered = set(re.findall(
               r'include_(?:str|bytes)!\("\.\./(web/[^"]+)"\)', mainrs))
 
-          # 2) index.html 引用的资源（href/src = "/..."）+ CSS url() 引用的资源
+          # 2) index.html 引用的资源（href/src = "/..."）+ CSS url() 引用
           referenced = set(re.findall(
               r'(?:href|src)\s*=\s*["\']?/((?:js|styles|fonts)/[\w.\-]+)', index))
           for css in (root / "web/styles").glob("*.css"):
@@ -330,49 +361,47 @@ jobs:
       image: ros:humble-ros-base
     defaults:
       run:
-        shell: bash   # 镜像默认 shell 是 sh，不认识 set -o pipefail
+        shell: bash   # 镜像默认 shell 是 sh，不认识 pipefail
     env:
-      # 容器以 root 运行，而 checkout 出来的工作区属主是 runner 用户（uid 1001），
-      # git 会报 "detected dubious ownership" 并以 exit 128 中断。
-      # 用 GIT_CONFIG_* 环境变量注入 safe.directory（Git 2.31+），
-      # 避免写 /github/home/.gitconfig 时撞上该目录不可写的权限问题。
+      # 容器以 root 运行，checkout 出的工作区属主是 runner 用户，
+      # git 会报 "detected dubious ownership" 并 exit 128。
+      # 用 GIT_CONFIG_* 注入 safe.directory，避免写 /github/home/.gitconfig。
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: "safe.directory"
       GIT_CONFIG_VALUE_0: "*"
     steps:
-      # ruff 静态检查已整体挪到 hygiene Job（宿主机 + 官方静态二进制，约 3 秒）。
-      # 容器里那套 apt 装 pip、pip 装 ruff 的链路实测耗时 119 秒，占本 Job 的 68%，
-      # 而 colcon build 只要 2 秒、colcon test 只要 29 秒，完全不成比例。
-      # 本 Job 从此只负责 ROS 容器的构建与测试。
+      # ruff 已整体挪到 hygiene Job（宿主机静态二进制，约 3 秒）。
+      # 本 Job 只负责 ROS 容器的构建与测试。
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 1   # 基线比对只读工作区文件，不依赖 git 历史
+          fetch-depth: 1
 
       # 注意：不能用 set -u，ROS 的 setup.bash 引用了未定义变量
-      # （AMENT_TRACE_SETUP_FILES 等），-u 会直接炸。GitHub 默认 shell
-      # 已带 -e -o pipefail，这里不重复 set。
+      # （AMENT_TRACE_SETUP_FILES 等），-u 会直接炸。
+      # GitHub 默认 shell 已带 -e -o pipefail，这里不重复 set。
       - name: colcon build
         run: |
           source /opt/ros/humble/setup.bash
           cd Master/ROS/ros2_ws
           colcon build --symlink-install
 
-      - name: colcon test（执行全量测试，成败交由下一步的基线比定）
+      - name: colcon test（全量执行，成败交由下一步的基线比对定）
         run: |
           # 每个 run 步骤都是独立 shell，工作目录回到 $GITHUB_WORKSPACE，
           # 必须先 cd 进工作空间再 source install/setup.bash。
           source /opt/ros/humble/setup.bash
           cd Master/ROS/ros2_ws
           source install/setup.bash
-          # 仓库现有 179 个存量失败（134 个是测试引用了从未入库的本机文件），
-          # 这里不能因 set -e 中断，真正的门禁在下一步做基线比对。
+          # 仓库现有存量失败（部分测试引用了从未入库的本机文件），
+          # 不能因 set -e 中断；真正的门禁在下一步做基线比对。
+          # pytest 的 skip（无实机硬件 / 无 Chrome）不判失败。
           colcon test --event-handlers console_direct- || true
 
       - name: 测试结果基线比对（基线外的新失败判为回归）
         # 与 ruff 棘轮同一思路：存量债务不阻断，新增回归必须拦。
-        # 详见 .github/scripts/compare_ros2_tests.py 的注释。
+        # skip 不算失败。详见 .github/scripts/compare_ros2_tests.py。
         run: |
-          # colcon test-result 仅作人类可读的汇总（它会把存量失败也算进去，
+          # colcon test-result 仅作人类可读汇总（它把存量失败也算进去，
           # 所以不能拿它的退出码当门禁），真正的判定交给基线比对脚本。
           cd Master/ROS/ros2_ws
           colcon test-result --verbose 2>&1 | tail -40 || true
@@ -388,7 +417,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # tests/Makefile 的 all 目标"边编译边运行"，PASS 直接打印。
+      # tests/Makefile 的 all 目标「边编译边运行」，PASS 直接打印。
       - name: 宿主机 C 单测（tests/Makefile，编译并运行全部测试）
         run: make -C tests -j4
 
@@ -400,8 +429,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             gcc-arm-none-eabi libnewlib-arm-none-eabi
 
-      # 根 Makefile 为当前主固件入口（HAL，TARGET=Diff_Car，产物 hex/bin）。
-      # STM32F407_StdPeriph 为旧栈回退代码，CI 只读检查、不自动改删。
+      # 根 Makefile 是当前主固件入口（HAL，TARGET=Diff_Car，产物 hex/bin）。
+      # STM32F407_StdPeriph 是旧栈回退代码，CI 只读检查、不自动改删。
       - name: 交叉编译主固件（根 Makefile / HAL）
         run: |
           set -euo pipefail
@@ -411,6 +440,10 @@ jobs:
           ls -l build/Diff_Car.hex build/Diff_Car.bin
 
   # ── 汇总门禁：feat 分支唯一 Required Status Check ───────────────
+  # 为什么需要它：paths-filter 会让未命中路径的 Job skip，而 GitHub 把
+  # skip 的必需检查视为「未完成」，PR 会永久卡在 waiting。
+  # 用 always() 的单一汇总 Job 兜住：前置 Job 是 success 或 skipped 即放行，
+  # 任一 failure / cancelled 则失败。feat 分支只需勾选 ci-gate 一项。
   ci-gate:
     name: ci-gate
     runs-on: ubuntu-24.04
@@ -426,13 +459,13 @@ jobs:
     steps:
       - name: 汇总门禁（必要 Job 均须 success / skipped）
         env:
-          R_CHANGES:   ${{ needs.changes.result }}
-          R_POLICY:    ${{ needs.branch-policy.result }}
-          R_HYGIENE:   ${{ needs.hygiene.result }}
-          R_RUST:      ${{ needs.rust-web-next.result }}
-          R_FRONTEND:  ${{ needs.web-frontend.result }}
-          R_ROS:       ${{ needs.ros2-python.result }}
-          R_STM32:     ${{ needs.stm32-host-tests.result }}
+          R_CHANGES:  ${{ needs.changes.result }}
+          R_POLICY:   ${{ needs.branch-policy.result }}
+          R_HYGIENE:  ${{ needs.hygiene.result }}
+          R_RUST:     ${{ needs.rust-web-next.result }}
+          R_FRONTEND: ${{ needs.web-frontend.result }}
+          R_ROS:      ${{ needs.ros2-python.result }}
+          R_STM32:    ${{ needs.stm32-host-tests.result }}
         run: |
           set -euo pipefail
           fail=0
