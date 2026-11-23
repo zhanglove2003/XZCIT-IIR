@@ -179,20 +179,40 @@ jobs:
           echo "py_compile 通过。"
 
       # ruff 是 Rust 编译出的静态二进制，不依赖 Python 环境，也不依赖 ROS 容器。
-      # 放宿主机 + 官方预编译包约 3 秒；塞进 ros 容器里 apt→pip 装要 119 秒。
-      - name: 安装 ruff（官方静态二进制，不依赖 pip / apt）
+      #
+      # 为什么钉版本 + 缓存：原脚本用 releases/latest/download，实测两次抖动到
+      # 724s / 119s（GitHub 美国 → astral-sh 发布页链路不稳），把整个 Job 拖垮。
+      # 改成「固定版本号 + actions/cache 缓存二进制」：
+      #   - 命中缓存：0 网络，约 1s
+      #   - 未命中：下载 ~10MB 后可复用，且版本号固定不会突然变行为
+      # 升级 ruff 时只改 RUFF_VERSION 一处（缓存键随之变化，自动失效旧缓存）。
+      - name: 恢复 ruff 二进制缓存
+        id: ruff-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/ruff
+          key: ruff-0.17.6-${{ runner.os }}-${{ runner.arch }}
+
+      - name: 安装 ruff（缓存未命中时，固定版本 0.17.6）
+        if: steps.ruff-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
+          RUFF_VERSION=0.17.6
           mkdir -p "$HOME/.local/bin"
           tmp="$(mktemp -d)"
-          curl -sSfL --retry 3 --retry-delay 2 \
+          # 固定版本号（不是 latest），配合 --max-time 防止链路卡死拖垮 Job。
+          curl -sSfL --retry 3 --retry-delay 2 --max-time 120 \
             -o "$tmp/ruff.tar.gz" \
-            "https://github.com/astral-sh/ruff/releases/latest/download/ruff-x86_64-unknown-linux-gnu.tar.gz"
+            "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz"
           # 归档内是 ruff-x86_64-unknown-linux-gnu/ruff；解到临时目录再 install，
           # 避免 `tar --strip-components=1 ruff` 报「归档中找不到」。
           tar -xzf "$tmp/ruff.tar.gz" -C "$tmp" --strip-components=1
           install -m 0755 "$tmp/ruff" "$HOME/.local/bin/ruff"
           rm -rf "$tmp"
+          "$HOME/.local/bin/ruff" --version
+
+      - name: 让 ruff 进入 PATH
+        run: |
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/ruff" --version
 
@@ -269,12 +289,37 @@ jobs:
       - name: cargo test
         run: cargo test
 
-      # 合入 feat 的 PR 才做交叉编译检查：确认 build.rs 的 rust-lld 垫片
-      # 在干净 CI 环境里可用（本机已验证：产出全静态 aarch64 ELF）。
-      - name: aarch64-musl 交叉编译检查（仅合入 feat 的 PR）
-        if: github.event_name == 'pull_request' && (github.base_ref == 'feat' || startsWith(github.base_ref, 'feat/'))
+  # ── aarch64 交叉编译（独立 Job，与上面并行）──────────────────────
+  # 为什么拆出来：交叉编译要 30s，原本串在 rust-web-next 里，把该 Job 从 47s
+  # 拖到 77s，成为整个流水线的关键路径。拆成独立 Job 后两个并行跑，
+  # 关键路径回落到 max(clippy+test 47s, 交叉编译 38s) ≈ 47s。
+  # 触发条件不变：只有合入 feat 系 PR 时跑（验证 build.rs 的 rust-lld 垫片）。
+  rust-cross-aarch64:
+    name: rust-cross-aarch64
+    runs-on: ubuntu-24.04
+    needs: changes
+    if: >-
+      needs.changes.outputs.rust == 'true' &&
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'feat' || startsWith(github.base_ref, 'feat/'))
+    defaults:
+      run:
+        working-directory: Master/Web-Next
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      # rust-cache 的自动键已含 job id，与宿主机 x86 那个 Job 的缓存天然隔离，
+      # 不需要额外指定 key。
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: Master/Web-Next
+
+      - name: cargo build --release --target aarch64-unknown-linux-musl
         run: |
-          rustup target add aarch64-unknown-linux-musl
           cargo build --release --target aarch64-unknown-linux-musl
           file target/aarch64-unknown-linux-musl/release/web_next
 
@@ -452,6 +497,7 @@ jobs:
       - branch-policy
       - hygiene
       - rust-web-next
+      - rust-cross-aarch64
       - web-frontend
       - ros2-python
       - stm32-host-tests
@@ -481,6 +527,7 @@ jobs:
           check "branch-policy"    "$R_POLICY"
           check "hygiene"          "$R_HYGIENE"
           check "rust-web-next"    "$R_RUST"
+          check "rust-cross-aarch64" "$R_RUST_CROSS"
           check "web-frontend"     "$R_FRONTEND"
           check "ros2-python"      "$R_ROS"
           check "stm32-host-tests" "$R_STM32"
