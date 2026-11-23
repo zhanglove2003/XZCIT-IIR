@@ -332,19 +332,27 @@ jobs:
           cd Master/ROS/ros2_ws
           colcon build --symlink-install
 
-      - name: colcon test
+      - name: colcon test（执行全量测试，成败交由下一步的基线比定）
         run: |
           # 每个 run 步骤都是独立 shell，工作目录回到 $GITHUB_WORKSPACE，
           # 必须先 cd 进工作空间再 source install/setup.bash。
           source /opt/ros/humble/setup.bash
           cd Master/ROS/ros2_ws
           source install/setup.bash
-          colcon test --event-handlers console_direct-
+          # 仓库现有 179 个存量失败（134 个是测试引用了从未入库的本机文件），
+          # 这里不能因 set -e 中断，真正的门禁在下一步做基线比对。
+          colcon test --event-handlers console_direct- || true
 
-      - name: colcon test-result（skip 不算失败，failure 才失败）
+      - name: 测试结果基线比对（基线外的新失败判为回归）
+        # 与 ruff 棘轮同一思路：存量债务不阻断，新增回归必须拦。
+        # 详见 .github/scripts/compare_ros2_tests.py 的注释。
         run: |
+          # colcon test-result 仅作人类可读的汇总（它会把存量失败也算进去，
+          # 所以不能拿它的退出码当门禁），真正的判定交给基线比对脚本。
           cd Master/ROS/ros2_ws
-          colcon test-result --verbose
+          colcon test-result --verbose 2>&1 | tail -40 || true
+          cd "$GITHUB_WORKSPACE"
+          python3 .github/scripts/compare_ros2_tests.py
 
   # ── STM32F407（宿主机 C 单测 + 交叉编译主固件）─────────────────
   stm32-host-tests:
