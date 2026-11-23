@@ -217,5 +217,7 @@ ssh opi 'cd /home/orangepi/web_next_deploy && md5sum web_next.new && mv web_next
 
 验证：无头 Chrome 对 0%/43%/100%/disabled × 深浅两主题截图核对（`docs/ui-shots/batch9-slider-{light,dark}-4states.png`）。上板 `8e16d0406759db58a4a33fea1a072f84`（两端 md5 一致，active）。
 
+**9b 追补（同日）**：用户指出活动段「开头还有空隙」——起端从滑块半径处起，左侧留了 10px 灰缝。改为左端贴轨道起点（`inset-inline-start: 0`，右端仍落在滑块圆心下：`宽 = 半径 + (100%−滑块)×ratio`），0% 时整段缩进滑块白脸底下。79% 场景像素级复验：填充左缘=轨道起点（24 CSS）、右侧被滑块盖到圆心（195.2），起点无灰像素。上板 `d6c5cab5975951d34b885ad8d49d96d0`，截图 `batch9b-slider-nogap-79pct.png`。
+
 
 
