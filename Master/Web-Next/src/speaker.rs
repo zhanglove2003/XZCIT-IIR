@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// 提示音参数：3 声 880 Hz / 120 ms，间隔 90 ms（总时长 ~0.54 s）。
 const TONE_HZ: f64 = 880.0;
@@ -98,7 +98,11 @@ fn run(cmd: &str, args: &[String]) -> Result<String, String> {
                 return if st.success() {
                     Ok(text)
                 } else {
-                    Err(if text.is_empty() { format!("{cmd} 退出码 {:?}", st.code()) } else { text })
+                    Err(if text.is_empty() {
+                        format!("{cmd} 退出码 {:?}", st.code())
+                    } else {
+                        text
+                    })
                 };
             }
             Ok(None) if std::time::Instant::now() < deadline => {
@@ -118,7 +122,15 @@ fn run(cmd: &str, args: &[String]) -> Result<String, String> {
 pub fn play_test_tone() -> Result<Value, String> {
     let path = write_test_tone().map_err(|e| format!("生成测试音失败：{e}"))?;
     let dev = format!("plughw:{},0", card());
-    let res = run("aplay", &["-q".into(), "-D".into(), dev.clone(), path.display().to_string()]);
+    let res = run(
+        "aplay",
+        &[
+            "-q".into(),
+            "-D".into(),
+            dev.clone(),
+            path.display().to_string(),
+        ],
+    );
     let _ = std::fs::remove_file(&path);
     res.map(|_| json!({ "device": dev, "tones": TONE_COUNT }))
 }
@@ -133,7 +145,11 @@ fn amixer_stdout(args: &[&str]) -> Result<String, String> {
         .map_err(|e| format!("无法启动 amixer：{e}"))?;
     let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
     if !out.status.success() {
-        return Err(if err.is_empty() { "amixer 执行失败".into() } else { err });
+        return Err(if err.is_empty() {
+            "amixer 执行失败".into()
+        } else {
+            err
+        });
     }
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
@@ -186,7 +202,13 @@ pub fn set_volume(pct: u32) -> Result<u32, String> {
     let pct = pct.min(100);
     run(
         "amixer",
-        &["-c".into(), card().to_string(), "sset".into(), "PCM".into(), format!("{pct}%")],
+        &[
+            "-c".into(),
+            card().to_string(),
+            "sset".into(),
+            "PCM".into(),
+            format!("{pct}%"),
+        ],
     )?;
     // 回读实际值：amixer 会把百分比取整到原始刻度，回读保证滑块显示的是真值
     let applied = volume_percent().unwrap_or(pct);

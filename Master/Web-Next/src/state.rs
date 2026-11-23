@@ -49,13 +49,21 @@ pub struct BatteryView {
 
 impl BatteryView {
     pub fn no_data() -> Self {
-        Self { voltage_v: None, percent: None, charging: false, state: "unknown", text: "无数据" }
+        Self {
+            voltage_v: None,
+            percent: None,
+            charging: false,
+            state: "unknown",
+            text: "无数据",
+        }
     }
 
     /// 按现场标定（24.5V 满电 / >25.0V 充电中）推算电量与状态。
     /// 百分比是仪表估计，不是库仑计量（锂电开路曲线非线性、带载有瞬时压降）。
     pub fn from_voltage(voltage_v: Option<f64>) -> Self {
-        let Some(voltage) = voltage_v else { return Self::no_data() };
+        let Some(voltage) = voltage_v else {
+            return Self::no_data();
+        };
         let raw = (voltage - BAT_EMPTY_V) / (BAT_FULL_V - BAT_EMPTY_V) * 100.0;
         let (state, text, charging) = if voltage > BAT_CHARGING_V {
             ("ok", "充电中", true)
@@ -328,12 +336,36 @@ impl StatusPayload {
                 wheels: None,
                 hz: None,
             },
-            imu: ImuView { state: "unknown", age: None, hz: None },
+            imu: ImuView {
+                state: "unknown",
+                age: None,
+                hz: None,
+            },
             cmd: CmdViews {
-                nav: CmdView { state: "unknown", age: None, vx_m_s: None, wz_rad_s: None },
-                demo: CmdView { state: "unknown", age: None, vx_m_s: None, wz_rad_s: None },
-                manual: CmdView { state: "unknown", age: None, vx_m_s: None, wz_rad_s: None },
-                auto: CmdView { state: "unknown", age: None, vx_m_s: None, wz_rad_s: None },
+                nav: CmdView {
+                    state: "unknown",
+                    age: None,
+                    vx_m_s: None,
+                    wz_rad_s: None,
+                },
+                demo: CmdView {
+                    state: "unknown",
+                    age: None,
+                    vx_m_s: None,
+                    wz_rad_s: None,
+                },
+                manual: CmdView {
+                    state: "unknown",
+                    age: None,
+                    vx_m_s: None,
+                    wz_rad_s: None,
+                },
+                auto: CmdView {
+                    state: "unknown",
+                    age: None,
+                    vx_m_s: None,
+                    wz_rad_s: None,
+                },
             },
             safety: serde_json::Value::Null,
             drive_safety: DriveSafetyView {
@@ -355,7 +387,11 @@ impl StatusPayload {
             sys: serde_json::Value::Null,
             host: serde_json::Value::Null,
             lidar_detail: serde_json::Value::Null,
-            boot: BootView { initializing: false, remain_s: 0.0, hold_s: BOOT_HOLD_S },
+            boot: BootView {
+                initializing: false,
+                remain_s: 0.0,
+                hold_s: BOOT_HOLD_S,
+            },
             srv_epoch,
             nodes: NodesView {
                 camera_node: "offline",
@@ -374,7 +410,10 @@ impl StatusPayload {
                 manual: serde_json::Value::Null,
             },
             battery: BatteryView::no_data(),
-            cruise: CruiseView { on: false, available: false },
+            cruise: CruiseView {
+                on: false,
+                available: false,
+            },
             patrol: serde_json::Value::Null,
             moving: Vec::new(),
         }
@@ -397,7 +436,9 @@ impl StateStore {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
-        Self { inner: RwLock::new(StatusPayload::initial(mode, srv_epoch)) }
+        Self {
+            inner: RwLock::new(StatusPayload::initial(mode, srv_epoch)),
+        }
     }
 
     /// 读取整份快照（与 `/ws` 推送的 `{t:"status"}` 同构，供 `/api/state`）。
@@ -420,5 +461,7 @@ pub fn init_global(mode: &'static str) -> &'static StateStore {
 
 /// 取全局快照中心；未初始化视为程序装配错误。
 pub fn global() -> &'static StateStore {
-    STATE.get().expect("StateStore not initialized: call init_global() in main")
+    STATE
+        .get()
+        .expect("StateStore not initialized: call init_global() in main")
 }

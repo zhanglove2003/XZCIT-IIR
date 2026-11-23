@@ -16,7 +16,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::Config;
 
@@ -125,11 +125,7 @@ fn run_cmd(name: &str, abs: &[&str], args: &[&str]) -> Option<String> {
 fn line_value<'a>(out: &'a str, key: &str) -> Option<&'a str> {
     out.lines().map(str::trim).find_map(|l| {
         let rest = l.strip_prefix(key)?;
-        let v = rest
-            .strip_prefix(':')
-            .map(str::trim)
-            .unwrap_or(rest)
-            .trim();
+        let v = rest.strip_prefix(':').map(str::trim).unwrap_or(rest).trim();
         (!v.is_empty()).then_some(v)
     })
 }
@@ -185,11 +181,7 @@ pub fn quality_signal(dbm: i64) -> i64 {
 
 /// 频段：freq >= 5000 → "5 GHz"，否则 "2.4 GHz"（前端约定）。
 pub fn band_of(freq_mhz: i64) -> &'static str {
-    if freq_mhz >= 5000 {
-        "5 GHz"
-    } else {
-        "2.4 GHz"
-    }
+    if freq_mhz >= 5000 { "5 GHz" } else { "2.4 GHz" }
 }
 
 /// 解析 `ip -4 -o addr show dev <iface>` 的 stdout，取首个 inet v4
@@ -214,7 +206,9 @@ fn find_wlan_iface() -> Option<String> {
     entries.flatten().find_map(|e| {
         let path = e.path();
         if path.join("wireless").is_dir() {
-            path.file_name().and_then(|n| n.to_str()).map(str::to_string)
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .map(str::to_string)
         } else {
             None
         }
@@ -262,7 +256,11 @@ fn collect() -> Value {
     let rssi = iw_link.signal_dbm;
     let quality = iw_link.signal_dbm.map(quality_signal);
     let band = iw_link.freq_mhz.map(band_of);
-    let state = if iw_link.connected { "connected" } else { "no-conn" };
+    let state = if iw_link.connected {
+        "connected"
+    } else {
+        "no-conn"
+    };
 
     json!({
         "iface": iface,

@@ -22,14 +22,14 @@ use std::f64::consts::PI;
 use std::io::Write;
 use std::sync::{Arc, OnceLock, RwLock};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
+use crate::Config;
 use crate::safety::{self, Hub};
 use crate::state::{
     BatteryView, BootView, ChassisView, CmdView, CmdViews, CruiseView, DriveSafetyView, ImuView,
     NodesView, StateStore, StatusPayload, TaskState, TaskView,
 };
-use crate::Config;
 
 /// 仿真循环周期（fake_source.py:18 `CYCLE_S = 24.0`）。
 pub const CYCLE_S: f64 = 24.0;
@@ -118,7 +118,11 @@ fn camera_rows(width: u32, height: u32, phase: f64) -> Vec<Vec<u8>> {
         let mut row = vec![0u8; width * 3];
         if y < horizon {
             let t = y as f64 / horizon.max(1) as f64;
-            let (r, g, b) = ((18.0 + 30.0 * t) as u8, (24.0 + 40.0 * t) as u8, (38.0 + 62.0 * t) as u8);
+            let (r, g, b) = (
+                (18.0 + 30.0 * t) as u8,
+                (24.0 + 40.0 * t) as u8,
+                (38.0 + 62.0 * t) as u8,
+            );
             for px in row.chunks_exact_mut(3) {
                 px[0] = r;
                 px[1] = g;
@@ -147,8 +151,7 @@ fn camera_rows(width: u32, height: u32, phase: f64) -> Vec<Vec<u8>> {
     // 目标块随相位左右移动，模拟场景里有人或箱子
     let block_w = ((width / 12) as i64).max(10);
     let block_h = ((height / 4) as i64).max(16);
-    let target_cx =
-        (width as f64 * (0.5 + 0.32 * phase.sin())) as i64;
+    let target_cx = (width as f64 * (0.5 + 0.32 * phase.sin())) as i64;
     let top = horizon as i64 - block_h + (6.0 * (phase * 2.0).sin()) as i64;
     for yy in top.max(0)..(top + block_h).min(height as i64) {
         let y = yy as usize;
@@ -156,8 +159,7 @@ fn camera_rows(width: u32, height: u32, phase: f64) -> Vec<Vec<u8>> {
         let shade_span = block_h.max(1) as f64;
         for xx in (target_cx - block_w / 2).max(0)..(target_cx + block_w / 2).min(width as i64) {
             let x = xx as usize;
-            let shade =
-                200.0 - 40.0 * ((yy - top) as f64 / shade_span);
+            let shade = 200.0 - 40.0 * ((yy - top) as f64 / shade_span);
             let shade = shade.clamp(0.0, 255.0) as u8;
             row[x * 3] = shade;
             row[x * 3 + 1] = 60;
@@ -336,11 +338,7 @@ fn ray_hit(px: f64, py: f64, angle: f64) -> f64 {
             best = best.min(t);
         }
     }
-    if best.is_finite() {
-        best
-    } else {
-        0.0
-    }
+    if best.is_finite() { best } else { 0.0 }
 }
 
 fn round2(v: f64) -> f64 {
@@ -464,9 +462,8 @@ impl FakeEngine {
             self.cmd_source = "manual";
             return ctl.manual.cmd;
         }
-        let auto_active = ctl.patrol.status == "running"
-            || ctl.nav.state == "active"
-            || ctl.cruise_on;
+        let auto_active =
+            ctl.patrol.status == "running" || ctl.nav.state == "active" || ctl.cruise_on;
         if auto_active && ctl.locked {
             // 巡航门锁停（启动即锁停 / license_lost / 会话失效）：
             // 自动任务零速等待恢复；无任务在跑时脚本演示照常。
@@ -499,7 +496,10 @@ impl FakeEngine {
     }
 
     /// 航点跟随：到点推进下标，闭环回绕计圈（patrol.py 巡逻语义）。
-    fn follow_patrol(&mut self, ctl: &mut std::sync::MutexGuard<'_, safety::Control>) -> (f64, f64) {
+    fn follow_patrol(
+        &mut self,
+        ctl: &mut std::sync::MutexGuard<'_, safety::Control>,
+    ) -> (f64, f64) {
         let Some(route) = ctl.patrol.route.clone() else {
             return (0.0, 0.0);
         };
@@ -544,7 +544,11 @@ impl FakeEngine {
         let (px, py, th) = self.pose;
         let err = wrap_pi((ty - py).atan2(tx - px) - th);
         let wz = (2.2 * err).clamp(-1.2, 1.2);
-        let vx = if err.abs() > 0.7 { 0.0 } else { speed * (1.0 - err.abs() / 0.7).max(0.3) };
+        let vx = if err.abs() > 0.7 {
+            0.0
+        } else {
+            speed * (1.0 - err.abs() / 0.7).max(0.3)
+        };
         (vx, wz)
     }
 
@@ -574,7 +578,10 @@ impl FakeEngine {
         } else if cycle < 18.0 {
             let k = (cycle - 14.0) / 4.0;
             // 转向积分恰为一个半圈（π），转完后朝返程方向
-            ((0.42 * (1.0 - k)).max(0.0), (PI / 4.0) * (1.0 - (2.0 * PI * k).cos()))
+            (
+                (0.42 * (1.0 - k)).max(0.0),
+                (PI / 4.0) * (1.0 - (2.0 * PI * k).cos()),
+            )
         } else {
             (0.0, 0.0)
         }
@@ -597,7 +604,11 @@ impl FakeEngine {
         // 超声波近距闩：低于阈值置位；只能由 ultrasonic_rearm 显式恢复。
         let us = ray_hit(nx, ny, th2).min(3.99);
         if us < US_NEAR_M {
-            self.hub.control.lock().expect("control poisoned").us_latched = true;
+            self.hub
+                .control
+                .lock()
+                .expect("control poisoned")
+                .us_latched = true;
         }
     }
 
@@ -727,7 +738,11 @@ impl FakeEngine {
             nav_fresh || manual_cmd.is_some(),
             self.cmd.0,
             self.cmd.1,
-            if nav_fresh || manual_cmd.is_some() { Some(0.0) } else { None },
+            if nav_fresh || manual_cmd.is_some() {
+                Some(0.0)
+            } else {
+                None
+            },
             manual_cmd.is_some(),
             false, // 电池低电走真实电压，Fake 不伪造低电量回充
             patrol_frame.get("status").and_then(Value::as_str) == Some("running"),
@@ -768,7 +783,10 @@ impl FakeEngine {
         };
         let mut nav_full = nav_view;
         if let Value::Object(map) = &mut nav_full {
-            map.insert("safety".into(), serde_json::to_value(&ds_view).unwrap_or(Value::Null));
+            map.insert(
+                "safety".into(),
+                serde_json::to_value(&ds_view).unwrap_or(Value::Null),
+            );
         }
 
         let (scan_valid, scan_frames, image_fps) = {
@@ -776,7 +794,14 @@ impl FakeEngine {
             (media.scan_valid, media.scan_seq, media.image_fps)
         };
 
-        let boot = boot_view(&self.hub.control.lock().expect("control poisoned").boot_marker);
+        let boot = boot_view(
+            &self
+                .hub
+                .control
+                .lock()
+                .expect("control poisoned")
+                .boot_marker,
+        );
 
         let payload = StatusPayload {
             t: "status",
@@ -789,17 +814,30 @@ impl FakeEngine {
                 vy_m_s: Some(0.0),
                 wz_rad_s: Some(round4(wz)),
                 stop_flag: Some(if stop_flag { 1 } else { 0 }),
-                stop_text: if stop_flag { "软件失能" } else { "软件未失能；就绪未知" },
+                stop_text: if stop_flag {
+                    "软件失能"
+                } else {
+                    "软件未失能；就绪未知"
+                },
                 drive_ready,
                 mileage_m: Some(round2(self.mileage)),
                 ultrasonic_m: Some(us_m),
                 wheels: Some(wheels),
                 hz: Some(20.0),
             },
-            imu: ImuView { state: "fresh", age: Some(0.0), hz: Some(20.0) },
+            imu: ImuView {
+                state: "fresh",
+                age: Some(0.0),
+                hz: Some(20.0),
+            },
             cmd: CmdViews {
                 nav: cmd_view(nav_cmd),
-                demo: CmdView { state: "unknown", age: None, vx_m_s: None, wz_rad_s: None },
+                demo: CmdView {
+                    state: "unknown",
+                    age: None,
+                    vx_m_s: None,
+                    wz_rad_s: None,
+                },
                 manual: cmd_view(manual_cmd),
                 auto: cmd_view(auto_cmd),
             },
@@ -840,7 +878,10 @@ impl FakeEngine {
             },
             task,
             battery,
-            cruise: CruiseView { on: cruise_on, available: true },
+            cruise: CruiseView {
+                on: cruise_on,
+                available: true,
+            },
             patrol: patrol_frame,
             moving: Vec::new(),
         };
@@ -898,7 +939,11 @@ pub(crate) fn wheel_view(vx_m_s: f64, wz_rad_s: f64) -> Value {
 /// 标记文件是墙上时钟秒（浮点）；文件不存在/读不出/已超时 → 已结束。
 /// ros 模式的状态装配复用同一实现，故 pub(crate)。
 pub(crate) fn boot_view(marker: &std::path::Path) -> BootView {
-    let mut view = BootView { initializing: false, remain_s: 0.0, hold_s: crate::state::BOOT_HOLD_S };
+    let mut view = BootView {
+        initializing: false,
+        remain_s: 0.0,
+        hold_s: crate::state::BOOT_HOLD_S,
+    };
     let Ok(text) = std::fs::read_to_string(marker) else {
         return view;
     };
@@ -939,5 +984,7 @@ pub async fn maybe_start(cfg: &Arc<Config>) {
     hub.control.lock().expect("control poisoned").current_map_id = Some(map_id);
     let engine = FakeEngine::new(store, hub, "fake");
     tokio::spawn(engine.run());
-    eprintln!("--fake：FakeEngine 已启动（20Hz 底盘 / 10Hz 雷达 / 5Hz 相机 / 1Hz 地图 / 24s 周期脚本）");
+    eprintln!(
+        "--fake：FakeEngine 已启动（20Hz 底盘 / 10Hz 雷达 / 5Hz 相机 / 1Hz 地图 / 24s 周期脚本）"
+    );
 }

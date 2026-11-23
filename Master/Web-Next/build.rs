@@ -46,9 +46,7 @@ fn main() {
     // 解析 rustc sysroot（RUSTC 由 cargo 注入 build script，跟随实际编译器）
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
     let sysroot = match Command::new(&rustc).args(["--print", "sysroot"]).output() {
-        Ok(out) if out.status.success() => {
-            String::from_utf8_lossy(&out.stdout).trim().to_string()
-        }
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
         _ => {
             eprintln!("web_next build.rs: rustc --print sysroot failed; default linker unchanged");
             return;
@@ -71,8 +69,8 @@ fn main() {
     // 全部输入对象均为 aarch64（musl 交叉产物），故丢弃一切 `-m <值>` 对，
     // 末尾强制 `-m aarch64linux`；gcc 其余传参（-plugin 等）lld 按 GNU 兼容
     // 语义接受/忽略。
-    let shim_dir = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR set by cargo"))
-        .join("lld_shim");
+    let shim_dir =
+        PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR set by cargo")).join("lld_shim");
     fs::create_dir_all(&shim_dir).expect("create lld shim dir");
     let shim = shim_dir.join("ld");
     let script = "#!/bin/bash\n\

@@ -19,11 +19,10 @@ mod ws_video;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::http::{header, StatusCode};
+use axum::Router;
+use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::get;
-use axum::Router;
-
 
 /// `OPI_WEB_PORT` 默认端口（蓝图 §4.1）。
 const DEFAULT_PORT: u16 = 8088;
@@ -75,16 +74,25 @@ impl Config {
             }
             i += 1;
         }
-        let password_sha256 =
-            std::env::var("OPI_WEB_PASSWORD_SHA256").ok().filter(|v| !v.is_empty());
-        let bridge_token = std::env::var("OPI_BRIDGE_TOKEN").ok().filter(|v| !v.is_empty());
+        let password_sha256 = std::env::var("OPI_WEB_PASSWORD_SHA256")
+            .ok()
+            .filter(|v| !v.is_empty());
+        let bridge_token = std::env::var("OPI_BRIDGE_TOKEN")
+            .ok()
+            .filter(|v| !v.is_empty());
         let boot_marker = std::env::var("OPI_BOOT_MARKER")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
                 let home = std::env::var("HOME").unwrap_or_default();
                 PathBuf::from(home).join(DEFAULT_BOOT_MARKER)
             });
-        Config { fake, port, password_sha256, bridge_token, boot_marker }
+        Config {
+            fake,
+            port,
+            password_sha256,
+            bridge_token,
+            boot_marker,
+        }
     }
 }
 
@@ -118,7 +126,10 @@ const FONT_BOLD: &[u8] = include_bytes!("../web/fonts/HarmonyOSSansSC-Bold.woff2
 
 async fn index() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, NO_STORE)],
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, NO_STORE),
+        ],
         INDEX_HTML,
     )
 }
@@ -129,7 +140,10 @@ async fn favicon() -> impl IntoResponse {
 
 fn static_asset(body: &'static str, content_type: &'static str) -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, NO_STORE)],
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CACHE_CONTROL, NO_STORE),
+        ],
         body,
     )
 }
@@ -151,7 +165,10 @@ async fn api_state() -> impl IntoResponse {
     let payload = state::global().snapshot();
     let body = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
     (
-        [(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, NO_STORE)],
+        [
+            (header::CONTENT_TYPE, "application/json"),
+            (header::CACHE_CONTROL, NO_STORE),
+        ],
         body,
     )
 }
@@ -161,7 +178,10 @@ async fn api_state() -> impl IntoResponse {
 async fn api_wslog() -> impl IntoResponse {
     let body = safety::global().ws_log_snapshot().to_string();
     (
-        [(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, NO_STORE)],
+        [
+            (header::CONTENT_TYPE, "application/json"),
+            (header::CACHE_CONTROL, NO_STORE),
+        ],
         body,
     )
 }
@@ -177,7 +197,11 @@ async fn main() {
     let store = state::init_global(mode);
     // 控制中枢（许可/手动/锁停/巡逻/导航/环形日志）先于数据源装配。
     safety::init_hub(&cfg);
-    eprintln!("srv_epoch={} mode={mode} port={}", store.snapshot().srv_epoch, cfg.port);
+    eprintln!(
+        "srv_epoch={} mode={mode} port={}",
+        store.snapshot().srv_epoch,
+        cfg.port
+    );
 
     // --fake 时启动 FakeEngine 仿真源（20Hz 底盘 / 10Hz 雷达 / 5Hz 相机 /
     // 1Hz 地图 / 5Hz 位姿）；ros 模式启动 /bridge 桥接层与 20Hz 看护装配
@@ -197,19 +221,55 @@ async fn main() {
         .route("/api/state", get(api_state))
         .route("/api/wslog", get(api_wslog))
         .route("/favicon.ico", get(favicon))
-        .route("/styles/tokens.css", get(|| async { static_asset(TOKENS_CSS, CSS_TYPE) }))
-        .route("/styles/layout.css", get(|| async { static_asset(LAYOUT_CSS, CSS_TYPE) }))
-        .route("/styles/micro.css", get(|| async { static_asset(MICRO_CSS, CSS_TYPE) }))
-        .route("/js/app.js", get(|| async { static_asset(APP_JS, JS_TYPE) }))
-        .route("/js/store.js", get(|| async { static_asset(STORE_JS, JS_TYPE) }))
-        .route("/js/scheduler.js", get(|| async { static_asset(SCHEDULER_JS, JS_TYPE) }))
+        .route(
+            "/styles/tokens.css",
+            get(|| async { static_asset(TOKENS_CSS, CSS_TYPE) }),
+        )
+        .route(
+            "/styles/layout.css",
+            get(|| async { static_asset(LAYOUT_CSS, CSS_TYPE) }),
+        )
+        .route(
+            "/styles/micro.css",
+            get(|| async { static_asset(MICRO_CSS, CSS_TYPE) }),
+        )
+        .route(
+            "/js/app.js",
+            get(|| async { static_asset(APP_JS, JS_TYPE) }),
+        )
+        .route(
+            "/js/store.js",
+            get(|| async { static_asset(STORE_JS, JS_TYPE) }),
+        )
+        .route(
+            "/js/scheduler.js",
+            get(|| async { static_asset(SCHEDULER_JS, JS_TYPE) }),
+        )
         .route("/js/ws.js", get(|| async { static_asset(WS_JS, JS_TYPE) }))
-        .route("/js/canvas-map.js", get(|| async { static_asset(CANVAS_MAP_JS, JS_TYPE) }))
-        .route("/js/canvas-radar.js", get(|| async { static_asset(CANVAS_RADAR_JS, JS_TYPE) }))
-        .route("/js/spotlight.js", get(|| async { static_asset(SPOTLIGHT_JS, JS_TYPE) }))
-        .route("/fonts/HarmonyOSSansSC-Regular.woff2", get(|| async { static_bytes(FONT_REGULAR, FONT_TYPE) }))
-        .route("/fonts/HarmonyOSSansSC-Medium.woff2", get(|| async { static_bytes(FONT_MEDIUM, FONT_TYPE) }))
-        .route("/fonts/HarmonyOSSansSC-Bold.woff2", get(|| async { static_bytes(FONT_BOLD, FONT_TYPE) }))
+        .route(
+            "/js/canvas-map.js",
+            get(|| async { static_asset(CANVAS_MAP_JS, JS_TYPE) }),
+        )
+        .route(
+            "/js/canvas-radar.js",
+            get(|| async { static_asset(CANVAS_RADAR_JS, JS_TYPE) }),
+        )
+        .route(
+            "/js/spotlight.js",
+            get(|| async { static_asset(SPOTLIGHT_JS, JS_TYPE) }),
+        )
+        .route(
+            "/fonts/HarmonyOSSansSC-Regular.woff2",
+            get(|| async { static_bytes(FONT_REGULAR, FONT_TYPE) }),
+        )
+        .route(
+            "/fonts/HarmonyOSSansSC-Medium.woff2",
+            get(|| async { static_bytes(FONT_MEDIUM, FONT_TYPE) }),
+        )
+        .route(
+            "/fonts/HarmonyOSSansSC-Bold.woff2",
+            get(|| async { static_bytes(FONT_BOLD, FONT_TYPE) }),
+        )
         .route("/ws", get(ws_control::endpoint))
         .route("/ws/video", get(ws_video::endpoint));
     // /bridge 两端点仅 ros 模式挂载：fake 模式路由零变化（契约
@@ -221,8 +281,14 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", cfg.port))
         .await
         .unwrap_or_else(|e| {
-            panic!("监听 0.0.0.0:{} 失败：{e}（8088 被旧服务占用时用 --port 换端口）", cfg.port)
+            panic!(
+                "监听 0.0.0.0:{} 失败：{e}（8088 被旧服务占用时用 --port 换端口）",
+                cfg.port
+            )
         });
-    eprintln!("C50C Web-Next 监听 http://0.0.0.0:{}（Ctrl-C 退出）", cfg.port);
+    eprintln!(
+        "C50C Web-Next 监听 http://0.0.0.0:{}（Ctrl-C 退出）",
+        cfg.port
+    );
     axum::serve(listener, app).await.expect("HTTP 服务异常退出");
 }

@@ -21,7 +21,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::Config;
 
@@ -125,7 +125,12 @@ fn mem_pct() -> Option<u32> {
 /// 根分区占用百分比：`df -P /` 的 Capacity 列（timeout 兜底）。
 fn disk_pct() -> Option<u32> {
     let out = Command::new("timeout")
-        .args([format!("{DF_TIMEOUT_SECS}s"), "df".to_string(), "-P".to_string(), "/".to_string()])
+        .args([
+            format!("{DF_TIMEOUT_SECS}s"),
+            "df".to_string(),
+            "-P".to_string(),
+            "/".to_string(),
+        ])
         .output()
         .ok()?;
     if !out.status.success() {
@@ -153,7 +158,11 @@ fn collect(prev: Option<(u64, u64)>) -> (Value, Option<(u64, u64)>) {
     let cpu = match (prev, cur) {
         (Some((pt, pi)), Some((ct, ci))) if ct > pt => {
             let busy = (ct - pt) - (ci.saturating_sub(pi));
-            Some((((busy as f64) / (ct - pt) as f64) * 100.0).round().clamp(0.0, 100.0) as u32)
+            Some(
+                (((busy as f64) / (ct - pt) as f64) * 100.0)
+                    .round()
+                    .clamp(0.0, 100.0) as u32,
+            )
         }
         _ => None,
     };

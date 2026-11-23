@@ -17,7 +17,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// 单次录音硬上限（秒），传递给 `arecord -d` 并配看护任务兜底。
 pub const MAX_RECORD_SECS: u64 = 60;
@@ -66,7 +66,11 @@ struct MicState {
 
 impl MicState {
     fn new() -> Self {
-        Self { phase: MicPhase::Idle, generation: 0, last: None }
+        Self {
+            phase: MicPhase::Idle,
+            generation: 0,
+            last: None,
+        }
     }
 
     fn phase_name(&self) -> &'static str {
@@ -118,7 +122,10 @@ impl MicState {
     }
 
     /// 结束录音前抢占 `Stopping` 槽；`expected_gen` 仅用于自动停止定时器校验代次。
-    fn try_take_recording(&mut self, expected_gen: Option<u64>) -> Result<Option<ActiveRec>, String> {
+    fn try_take_recording(
+        &mut self,
+        expected_gen: Option<u64>,
+    ) -> Result<Option<ActiveRec>, String> {
         match &self.phase {
             MicPhase::Recording(rec) if expected_gen.map_or(true, |g| rec.generation == g) => {
                 let prev = std::mem::replace(&mut self.phase, MicPhase::Stopping);
@@ -180,11 +187,17 @@ struct PhaseResetGuard {
 
 impl PhaseResetGuard {
     fn for_starting() -> Self {
-        Self { expected_starting: true, armed: true }
+        Self {
+            expected_starting: true,
+            armed: true,
+        }
     }
 
     fn for_stopping() -> Self {
-        Self { expected_starting: false, armed: true }
+        Self {
+            expected_starting: false,
+            armed: true,
+        }
     }
 
     fn disarm(&mut self) {
@@ -334,11 +347,10 @@ pub fn start_recording() -> Result<StartInfo, String> {
     };
     let mut guard = PhaseResetGuard::for_starting();
 
-    let target = crate::audio::capture_device()
-        .ok_or_else(|| "未检测到可用麦克风设备".to_string())?;
+    let target =
+        crate::audio::capture_device().ok_or_else(|| "未检测到可用麦克风设备".to_string())?;
     configure_usb_mic_capture(target.card);
-    let raw_path =
-        std::env::temp_dir().join(format!("wbnext-mic-raw-{}.pcm", std::process::id()));
+    let raw_path = std::env::temp_dir().join(format!("wbnext-mic-raw-{}.pcm", std::process::id()));
     let _ = std::fs::remove_file(&raw_path);
 
     let mut child = Command::new("arecord")
@@ -403,7 +415,11 @@ pub fn start_recording() -> Result<StartInfo, String> {
         st.snapshot()
     };
 
-    Ok(StartInfo { generation: my_gen, label: target.label, snapshot })
+    Ok(StartInfo {
+        generation: my_gen,
+        label: target.label,
+        snapshot,
+    })
 }
 
 /// 结束录音成功后的回传摘要。
@@ -416,8 +432,7 @@ pub struct StopInfo {
 
 /// 手动结束当前录音并保存为标准 WAV；阻塞操作，放 `spawn_blocking` 中运行。
 pub fn stop_recording() -> Result<StopInfo, String> {
-    stop_inner(None)?
-        .ok_or_else(|| "当前未在录音".to_string())
+    stop_inner(None)?.ok_or_else(|| "当前未在录音".to_string())
 }
 
 /// 仅当仍在运行对应代次的录音时自动结束；若已被用户手动停止则返回 `Ok(None)`。
@@ -460,8 +475,7 @@ fn stop_inner(expected_gen: Option<u64>) -> Result<Option<StopInfo>, String> {
     let filtered = highpass_filter_pcm16(&raw[..pcm_len]);
     let (norm_pcm, peak) = analyze_and_normalize_pcm16(&filtered);
     let wav_bytes = build_wav_pcm16_mono(&norm_pcm, SAMPLE_RATE);
-    let wav_path =
-        std::env::temp_dir().join(format!("wbnext-mic-rec-{}.wav", std::process::id()));
+    let wav_path = std::env::temp_dir().join(format!("wbnext-mic-rec-{}.wav", std::process::id()));
     let tmp_path = wav_path.with_extension("wav.tmp");
     std::fs::write(&tmp_path, &wav_bytes).map_err(|e| format!("写入录音文件失败：{e}"))?;
     std::fs::rename(&tmp_path, &wav_path).map_err(|e| {
@@ -474,13 +488,22 @@ fn stop_inner(expected_gen: Option<u64>) -> Result<Option<StopInfo>, String> {
 
     let snapshot = {
         let mut st = slot().lock().map_err(|_| "麦克风状态锁异常".to_string())?;
-        st.last = Some(SavedRec { wav_path, duration_s, device: rec.device });
+        st.last = Some(SavedRec {
+            wav_path,
+            duration_s,
+            device: rec.device,
+        });
         st.phase = MicPhase::Idle;
         guard.disarm();
         st.snapshot()
     };
 
-    Ok(Some(StopInfo { duration_s, peak, label, snapshot }))
+    Ok(Some(StopInfo {
+        duration_s,
+        peak,
+        label,
+        snapshot,
+    }))
 }
 
 /// 已抢占播放槽的作业句柄；若未调用 `finish_play` 即丢弃，自动还原 `Idle`。
@@ -509,7 +532,15 @@ pub fn begin_play() -> Result<(PlayJob, Value), String> {
     let (wav_path, duration_s) = st.try_begin_play()?;
     let device = format!("plughw:{},0", crate::audio::es8388_card().unwrap_or(2));
     let snapshot = st.snapshot();
-    Ok((PlayJob { wav_path, duration_s, device, finished: false }, snapshot))
+    Ok((
+        PlayJob {
+            wav_path,
+            duration_s,
+            device,
+            finished: false,
+        },
+        snapshot,
+    ))
 }
 
 /// 在车体喇叭上播放已保存录音，阻塞至结束或超时；放 `spawn_blocking` 中运行。
@@ -602,7 +633,10 @@ mod tests {
         assert_eq!(st.try_begin_start().unwrap(), 1);
         assert_eq!(st.try_begin_start().unwrap_err(), "正在录音中");
         assert_eq!(st.try_begin_play().unwrap_err(), "正在录音中，请先结束录音");
-        assert_eq!(st.try_take_recording(None).unwrap_err(), "录音正在启动，请稍后再结束");
+        assert_eq!(
+            st.try_take_recording(None).unwrap_err(),
+            "录音正在启动，请稍后再结束"
+        );
 
         // 模拟存在有效 WAV 文件后抢占播放槽
         let wav_path =
@@ -654,7 +688,10 @@ mod tests {
     }
 
     fn decode_samples(bytes: &[u8]) -> Vec<i16> {
-        bytes.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect()
+        bytes
+            .chunks_exact(2)
+            .map(|c| i16::from_le_bytes([c[0], c[1]]))
+            .collect()
     }
 
     #[test]
@@ -697,7 +734,8 @@ mod tests {
         let sr = 16_000usize;
         let samples: Vec<i16> = (0..sr)
             .map(|i| {
-                let s = 5000.0 + 4000.0 * (std::f64::consts::TAU * 1000.0 * i as f64 / sr as f64).sin();
+                let s =
+                    5000.0 + 4000.0 * (std::f64::consts::TAU * 1000.0 * i as f64 / sr as f64).sin();
                 s as i16
             })
             .collect();

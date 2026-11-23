@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::Config;
 
@@ -369,7 +369,10 @@ pub fn init_hub(cfg: &Config) -> &'static Hub {
             live_sessions: HashSet::new(),
             live_controls: HashSet::new(),
         }),
-        wslog: Mutex::new(WsLog { items: Vec::new(), last_frame_ms: 0 }),
+        wslog: Mutex::new(WsLog {
+            items: Vec::new(),
+            last_frame_ms: 0,
+        }),
         conn_seq: AtomicU64::new(1),
     };
     HUB.get_or_init(|| hub)
@@ -377,7 +380,8 @@ pub fn init_hub(cfg: &Config) -> &'static Hub {
 
 /// 取全局中枢；未初始化视为装配错误。
 pub fn global() -> &'static Hub {
-    HUB.get().expect("Hub not initialized: call init_hub() in main")
+    HUB.get()
+        .expect("Hub not initialized: call init_hub() in main")
 }
 
 impl Hub {
@@ -551,9 +555,9 @@ impl Hub {
     /// （std Mutex 不可重入，禁止在持锁时再走 locking 包装）。
     fn license_snapshot_locked(ctl: &Control, now: u64) -> Value {
         let lic = &ctl.license;
-        let age_s = lic.last_rx_ms.map(|t| {
-            (now.saturating_sub(t) as f64 / 1000.0 * 1000.0).round() / 1000.0
-        });
+        let age_s = lic
+            .last_rx_ms
+            .map(|t| (now.saturating_sub(t) as f64 / 1000.0 * 1000.0).round() / 1000.0);
         json!({
             "session": lic.session,
             "seq": lic.last_seq,
@@ -713,7 +717,10 @@ impl Hub {
             return false;
         };
         let user_ok = ct_eq(username.as_bytes(), b"admin");
-        let pass_ok = ct_eq(sha256_hex(password.as_bytes()).as_bytes(), configured.as_bytes());
+        let pass_ok = ct_eq(
+            sha256_hex(password.as_bytes()).as_bytes(),
+            configured.as_bytes(),
+        );
         if user_ok && pass_ok {
             ctl.manual.authenticated.insert(conn);
             // 最新登录顶替旧登录（2026-11-23 用户裁决）：发放一次性顶替凭证。
@@ -732,7 +739,12 @@ impl Hub {
     }
 
     pub fn manual_authenticated(&self, conn: u64) -> bool {
-        self.control.lock().expect("control poisoned").manual.authenticated.contains(&conn)
+        self.control
+            .lock()
+            .expect("control poisoned")
+            .manual
+            .authenticated
+            .contains(&conn)
     }
 
     /// 手动接管（manual_start）。成功后回发 manual_started 由调用方负责。
@@ -778,8 +790,7 @@ impl Hub {
             ("left", 0.0, -1.0),
             ("right", 0.0, 1.0),
         ];
-        let Some((_, x_sign, z_sign)) =
-            directions.iter().find(|(name, _, _)| *name == direction)
+        let Some((_, x_sign, z_sign)) = directions.iter().find(|(name, _, _)| *name == direction)
         else {
             return Err("未知控制方向".to_string());
         };
@@ -815,7 +826,7 @@ impl Hub {
         m.owner = Some(conn);
         m.last_heartbeat_ms = now;
         m.deadline_ms = deadline;
-        m.steal_warned = false;   // 重新持有：允许下一次被顶替提示
+        m.steal_warned = false; // 重新持有：允许下一次被顶替提示
         Ok(())
     }
 
@@ -832,9 +843,7 @@ impl Hub {
             // owner 为 None = 空闲（自己刚被锁停拦截/还没持到），静默，
             // 不报「被接管」误报。
             if let Some(o) = ctl.manual.owner {
-                if o != conn
-                    && ctl.manual.authenticated.contains(&conn)
-                    && !ctl.manual.steal_warned
+                if o != conn && ctl.manual.authenticated.contains(&conn) && !ctl.manual.steal_warned
                 {
                     ctl.manual.steal_warned = true;
                     return Some("手动控制权已被其他页面接管".to_string());
@@ -843,8 +852,8 @@ impl Hub {
             return None;
         }
         ctl.manual.steal_warned = false;
-        let timeout = now.saturating_sub(ctl.manual.last_heartbeat_ms)
-            > MANUAL_HEARTBEAT_TIMEOUT_MS;
+        let timeout =
+            now.saturating_sub(ctl.manual.last_heartbeat_ms) > MANUAL_HEARTBEAT_TIMEOUT_MS;
         let expired = ctl.manual.deadline_ms.is_some_and(|d| now >= d);
         if timeout || expired {
             Self::manual_stop_locked(&mut ctl);
@@ -880,8 +889,8 @@ impl Hub {
         let now = now_ms();
         let mut ctl = self.control.lock().expect("control poisoned");
         if ctl.manual.owner.is_some() {
-            let timeout = now.saturating_sub(ctl.manual.last_heartbeat_ms)
-                > MANUAL_HEARTBEAT_TIMEOUT_MS;
+            let timeout =
+                now.saturating_sub(ctl.manual.last_heartbeat_ms) > MANUAL_HEARTBEAT_TIMEOUT_MS;
             let expired = ctl.manual.deadline_ms.is_some_and(|d| now >= d);
             if timeout || expired {
                 Self::manual_stop_locked(&mut ctl);
@@ -923,11 +932,7 @@ impl Hub {
     // -- 多航点巡航（patrol.py::validate_route / PatrolRunner 的仿真化） --
 
     /// 保存路线（patrol_save）。绑定当前地图标识，文案逐字对齐旧实现。
-    pub fn patrol_save(
-        &self,
-        raw_points: &Value,
-        map_id: Option<&str>,
-    ) -> (bool, String) {
+    pub fn patrol_save(&self, raw_points: &Value, map_id: Option<&str>) -> (bool, String) {
         let mut ctl = self.control.lock().expect("control poisoned");
         let Some(cur) = ctl.current_map_id.clone() else {
             return (
@@ -960,14 +965,15 @@ impl Hub {
         for p in list {
             // 蓝图 §4.3(1)：[{x,y},...]；旧实现：[[x,y],...]。两者都收。
             let (x, y) = match p {
-                Value::Array(arr) if arr.len() >= 2 => {
-                    match (arr[0].as_f64(), arr[1].as_f64()) {
-                        (Some(x), Some(y)) => (x, y),
-                        _ => return (false, "航点坐标不是数字".to_string()),
-                    }
-                }
+                Value::Array(arr) if arr.len() >= 2 => match (arr[0].as_f64(), arr[1].as_f64()) {
+                    (Some(x), Some(y)) => (x, y),
+                    _ => return (false, "航点坐标不是数字".to_string()),
+                },
                 Value::Object(obj) => {
-                    match (obj.get("x").and_then(Value::as_f64), obj.get("y").and_then(Value::as_f64)) {
+                    match (
+                        obj.get("x").and_then(Value::as_f64),
+                        obj.get("y").and_then(Value::as_f64),
+                    ) {
                         (Some(x), Some(y)) => (x, y),
                         _ => return (false, "航点坐标不是数字".to_string()),
                     }
@@ -1000,8 +1006,16 @@ impl Hub {
                 );
             }
         }
-        ctl.patrol.route = Some(Route { map_id: cur, points: pts });
-        let n = ctl.patrol.route.as_ref().map(|r| r.points.len()).unwrap_or(0);
+        ctl.patrol.route = Some(Route {
+            map_id: cur,
+            points: pts,
+        });
+        let n = ctl
+            .patrol
+            .route
+            .as_ref()
+            .map(|r| r.points.len())
+            .unwrap_or(0);
         (true, format!("已保存 {n} 个航点"))
     }
 
@@ -1016,7 +1030,10 @@ impl Hub {
             return (false, "没有已保存的路线".to_string());
         };
         let Some(cur) = ctl.current_map_id.clone() else {
-            return (false, "当前地图未知（未指定地图文件），不能保存路线".to_string());
+            return (
+                false,
+                "当前地图未知（未指定地图文件），不能保存路线".to_string(),
+            );
         };
         if route.map_id != cur {
             Self::lock_locked(&mut ctl, "global_stop");
@@ -1043,9 +1060,10 @@ impl Hub {
         let ctl = self.control.lock().expect("control poisoned");
         let licensed = Self::license_fresh_locked(&ctl, now);
         let patrol = &ctl.patrol;
-        let route_pts: Option<Vec<Vec<f64>>> = patrol.route.as_ref().map(|r| {
-            r.points.iter().map(|(x, y)| vec![*x, *y]).collect()
-        });
+        let route_pts: Option<Vec<Vec<f64>>> = patrol
+            .route
+            .as_ref()
+            .map(|r| r.points.iter().map(|(x, y)| vec![*x, *y]).collect());
         let goal = match (&patrol.route, patrol.status) {
             (Some(r), "running") => {
                 let (x, y) = r.points[patrol.index.min(r.points.len() - 1)];
@@ -1183,10 +1201,7 @@ impl Hub {
         if ctl.nav.state == "sending" || ctl.nav.state == "active" {
             return Some("点图导航进行中，请先取消导航后再重定位");
         }
-        if matches!(
-            ctl.patrol.status,
-            "running" | "holding_goal" | "cancelling"
-        ) {
+        if matches!(ctl.patrol.status, "running" | "holding_goal" | "cancelling") {
             return Some("巡航运行中，请先停止巡航后再重定位");
         }
         None
@@ -1231,8 +1246,12 @@ impl Hub {
 
     /// 控制页未登录时的提示只发一次的判定辅助（web_debug.py:2620-2628）。
     pub fn manual_logged_in(&self, conn: u64) -> bool {
-        self.control.lock().expect("control poisoned")
-            .manual.authenticated.contains(&conn)
+        self.control
+            .lock()
+            .expect("control poisoned")
+            .manual
+            .authenticated
+            .contains(&conn)
     }
 
     /// 任何实时消息都算会话存活（许可帧、view 心跳）。
@@ -1244,7 +1263,12 @@ impl Hub {
 
     /// 视频通道：是否存在「已登录且在控制页」的会话（推相机）。
     pub fn has_live_control(&self) -> bool {
-        !self.control.lock().expect("control poisoned").live_controls.is_empty()
+        !self
+            .control
+            .lock()
+            .expect("control poisoned")
+            .live_controls
+            .is_empty()
     }
 
     /// 会话看护节拍（patrol.py::patrol_tick + _patrol_session_lost）：
@@ -1346,7 +1370,10 @@ mod tests {
                 live_sessions: HashSet::new(),
                 live_controls: HashSet::new(),
             }),
-            wslog: Mutex::new(WsLog { items: Vec::new(), last_frame_ms: 0 }),
+            wslog: Mutex::new(WsLog {
+                items: Vec::new(),
+                last_frame_ms: 0,
+            }),
             conn_seq: AtomicU64::new(1),
         }
     }
@@ -1357,7 +1384,8 @@ mod tests {
     #[test]
     fn test_license_release_only_holder_and_readopt() {
         let hub = test_hub();
-        hub.license_accept("sess-a", 1, None).expect("首次心跳 Adopt");
+        hub.license_accept("sess-a", 1, None)
+            .expect("首次心跳 Adopt");
 
         // 非持有者释放：无效，持有会话不动
         assert!(!hub.license_release("sess-b"));
@@ -1376,7 +1404,8 @@ mod tests {
         }
 
         // 释放后同会话号（seq 继续递增）可直接重新 Adopt
-        hub.license_accept("sess-a", 2, None).expect("释放后重新 Adopt");
+        hub.license_accept("sess-a", 2, None)
+            .expect("释放后重新 Adopt");
         let ctl = hub.control.lock().unwrap();
         assert_eq!(ctl.license.session.as_deref(), Some("sess-a"));
     }
@@ -1405,10 +1434,10 @@ mod tests {
         );
 
         // 登录发放凭证：窗口内新会话心跳立即接管，锁停一次（license_lost）
-        hub.control.lock().unwrap().password_sha256 =
-            Some(sha256_hex(b""));
+        hub.control.lock().unwrap().password_sha256 = Some(sha256_hex(b""));
         assert!(hub.manual_login(7, "admin", ""));
-        hub.license_accept("sess-new", 1, None).expect("登录顶替接管");
+        hub.license_accept("sess-new", 1, None)
+            .expect("登录顶替接管");
         {
             let ctl = hub.control.lock().unwrap();
             assert_eq!(ctl.license.session.as_deref(), Some("sess-new"));
@@ -1473,7 +1502,10 @@ mod tests {
         {
             let ctl = hub.control.lock().unwrap();
             assert_eq!(ctl.license.session.as_deref(), Some("sess-a"));
-            assert!(ctl.manual.login_takeover_at.is_some(), "凭证未被旁路页面消费");
+            assert!(
+                ctl.manual.login_takeover_at.is_some(),
+                "凭证未被旁路页面消费"
+            );
         }
 
         // 登录页 C 随后心跳：立即接管并消费凭证

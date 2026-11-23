@@ -15,7 +15,7 @@
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::Config;
 
@@ -105,9 +105,15 @@ fn card_of_in(path: &str, codec: &str) -> Option<u32> {
         // 注意：cards 文件每张卡下面还有一行设备名续行（非数字开头），
         // 必须跳过而不是退出——曾因 `?` 提前返回导致整卡探测恒 None。
         let mut parts = line.split_whitespace();
-        let Some(idx_str) = parts.next() else { continue };
-        let Ok(idx) = idx_str.parse::<u32>() else { continue };
-        let Some(name_raw) = parts.next() else { continue };
+        let Some(idx_str) = parts.next() else {
+            continue;
+        };
+        let Ok(idx) = idx_str.parse::<u32>() else {
+            continue;
+        };
+        let Some(name_raw) = parts.next() else {
+            continue;
+        };
         let name = name_raw.trim_matches(|c| c == '[' || c == ']');
         if name.contains(codec) {
             return Some(idx);
@@ -283,7 +289,10 @@ mod tests {
     #[test]
     fn select_capture_device_priority_order() {
         let cards = vec![
-            (2, "2 [rockchipes8388 ]: rockchip_es8388 - rockchip,es8388".into()),
+            (
+                2,
+                "2 [rockchipes8388 ]: rockchip_es8388 - rockchip,es8388".into(),
+            ),
             (3, "3 [webcam ]: usb-audio - hd 720p webcam".into()),
             (
                 4,
@@ -293,7 +302,11 @@ mod tests {
         // Timesintelli 矩阵麦 + Webcam + es8388 -> 选中 Timesintelli (card 4)
         assert_eq!(
             select_capture_device(&cards, &[(2, 0), (3, 0), (4, 0)], Some(2)),
-            Some(CaptureTarget { card: 4, alsa_dev: "plughw:4,0".into(), label: "USB 麦" })
+            Some(CaptureTarget {
+                card: 4,
+                alsa_dev: "plughw:4,0".into(),
+                label: "USB 麦"
+            })
         );
         // 拔掉矩阵麦后（仅剩 Webcam + 板载 es8388）-> 视为无可用矩阵麦克风 (None)
         assert_eq!(

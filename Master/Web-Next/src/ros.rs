@@ -40,21 +40,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Query};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::Router;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
+use crate::Config;
 use crate::fake::{self, GridPub};
 use crate::safety::{self, Hub};
 use crate::state::{
     BatteryView, ChassisView, CmdView, CmdViews, CruiseView, DriveSafetyView, ImuView, NodesView,
     StateStore, StatusPayload, TaskState, TaskView,
 };
-use crate::Config;
 
 // ---------------------------------------------------------------------------
 // 常数（对齐旧实现与契约）
@@ -120,7 +120,12 @@ struct RateMeter {
 
 impl RateMeter {
     fn new(window_s: f64) -> Self {
-        Self { window_s, n: 0, t0_ms: None, hz: 0.0 }
+        Self {
+            window_s,
+            n: 0,
+            t0_ms: None,
+            hz: 0.0,
+        }
     }
     /// 记一次到达，返回当前频率（窗口内保持上次值）。t0 用 Option：
     /// safety::now_ms() 在进程启动的头几毫秒就是合法的 0，不能用 0 当
@@ -330,16 +335,14 @@ pub struct CommandQueue {
 static QUEUE: OnceLock<CommandQueue> = OnceLock::new();
 
 fn queue_slot() -> &'static CommandQueue {
-    QUEUE.get_or_init(|| {
-        CommandQueue {
-            st: Mutex::new(QueueInner {
-                next_id: 1,
-                ring: VecDeque::new(),
-                patrol_slot: None,
-                last_cursor: 0,
-            }),
-            notify: tokio::sync::Notify::new(),
-        }
+    QUEUE.get_or_init(|| CommandQueue {
+        st: Mutex::new(QueueInner {
+            next_id: 1,
+            ring: VecDeque::new(),
+            patrol_slot: None,
+            last_cursor: 0,
+        }),
+        notify: tokio::sync::Notify::new(),
     })
 }
 
@@ -355,7 +358,12 @@ impl CommandQueue {
         if let Value::Object(map) = &mut body {
             map.insert("id".into(), json!(id));
         }
-        st.ring.push_back(QueuedCmd { id, body, replayable, delivered: false });
+        st.ring.push_back(QueuedCmd {
+            id,
+            body,
+            replayable,
+            delivered: false,
+        });
         while st.ring.len() > CMD_RING_MAX {
             // 溢出丢最老，但优先丢已投递条目：ring 中 delivered==true 的一定
             // 是值语义命令（边沿命令投递即出队，见 poll 的 retain），补投已
@@ -395,7 +403,10 @@ impl CommandQueue {
     fn pending(&self) -> bool {
         let st = self.st.lock().expect("queue poisoned");
         st.patrol_slot.is_some()
-            || st.ring.iter().any(|c| c.id > st.last_cursor && (c.replayable || !c.delivered))
+            || st
+                .ring
+                .iter()
+                .any(|c| c.id > st.last_cursor && (c.replayable || !c.delivered))
     }
 
     /// 长轮询：返回 (cmds, new_cursor)。值语义命令按 cursor 补投；边沿
@@ -510,7 +521,11 @@ fn acks_slot() -> &'static Mutex<HashMap<u64, tokio::sync::oneshot::Sender<Value
 /// 由调用方如实回显（不假装成功）。replayable 按契约 commandMap 的补投
 /// 列：cruise_enable=是（垫片重连且 cursor 未达时补投）、
 /// ultrasonic_rearm=否（单发边沿，重放会在无用户动作时清超声门锁）。
-async fn push_and_wait_ack(body: Value, replayable: bool, timeout_ms: u64) -> Result<Value, String> {
+async fn push_and_wait_ack(
+    body: Value,
+    replayable: bool,
+    timeout_ms: u64,
+) -> Result<Value, String> {
     let id = queue_slot().push(body, replayable);
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
     let registered = {
@@ -523,7 +538,10 @@ async fn push_and_wait_ack(body: Value, replayable: bool, timeout_ms: u64) -> Re
         Ok(Ok(ack)) => Ok(ack),
         _ => {
             acks_slot().lock().expect("acks poisoned").remove(&id);
-            Err(format!("垫片未在 {}ms 内确认命令（断连或离线）", timeout_ms))
+            Err(format!(
+                "垫片未在 {}ms 内确认命令（断连或离线）",
+                timeout_ms
+            ))
         }
     }
 }
@@ -616,19 +634,34 @@ pub fn router(cfg: &Arc<Config>) -> Router {
 
 async fn post_frames(headers: HeaderMap, body: Bytes) -> Response {
     if !token_ok(&headers) {
-        return json_response(StatusCode::UNAUTHORIZED, &json!({ "ok": false, "error": "unauthorized" }));
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            &json!({ "ok": false, "error": "unauthorized" }),
+        );
     }
     if body.len() > BODY_LIMIT_BYTES {
-        return json_response(StatusCode::PAYLOAD_TOO_LARGE, &json!({ "ok": false, "error": "body_too_large" }));
+        return json_response(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            &json!({ "ok": false, "error": "body_too_large" }),
+        );
     }
     let Ok(batch) = serde_json::from_slice::<Value>(&body) else {
-        return json_response(StatusCode::BAD_REQUEST, &json!({ "ok": false, "error": "bad_json" }));
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            &json!({ "ok": false, "error": "bad_json" }),
+        );
     };
     let Some(frames) = batch.get("frames").and_then(Value::as_array) else {
-        return json_response(StatusCode::BAD_REQUEST, &json!({ "ok": false, "error": "missing_frames" }));
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            &json!({ "ok": false, "error": "missing_frames" }),
+        );
     };
     if frames.len() > FRAME_BATCH_MAX {
-        return json_response(StatusCode::BAD_REQUEST, &json!({ "ok": false, "error": "too_many_frames" }));
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            &json!({ "ok": false, "error": "too_many_frames" }),
+        );
     }
     let now = safety::now_ms();
     let mut accepted = 0usize;
@@ -654,12 +687,18 @@ struct CmdQuery {
 
 async fn poll_commands(headers: HeaderMap, Query(q): Query<CmdQuery>) -> Response {
     if !token_ok(&headers) {
-        return json_response(StatusCode::UNAUTHORIZED, &json!({ "ok": false, "error": "unauthorized" }));
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            &json!({ "ok": false, "error": "unauthorized" }),
+        );
     }
     let wait = q.wait_ms.unwrap_or(20_000).min(CMD_WAIT_MAX_MS);
     let cursor = q.cursor.unwrap_or(0);
     let (cmds, new_cursor) = queue_slot().poll(cursor, wait).await;
-    json_response(StatusCode::OK, &json!({ "cmds": cmds, "cursor": new_cursor }))
+    json_response(
+        StatusCode::OK,
+        &json!({ "cmds": cmds, "cursor": new_cursor }),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -706,7 +745,10 @@ fn apply_img(frame: &Value) -> bool {
     };
     let w = frame.get("w").and_then(Value::as_u64).unwrap_or(0) as u32;
     let h = frame.get("h").and_then(Value::as_u64).unwrap_or(0) as u32;
-    let mime = frame.get("mime").and_then(Value::as_str).unwrap_or("image/jpeg");
+    let mime = frame
+        .get("mime")
+        .and_then(Value::as_str)
+        .unwrap_or("image/jpeg");
     let now = safety::now_ms();
     let fps = {
         let mut raw = raw_slot().lock().expect("raw poisoned");
@@ -792,7 +834,10 @@ fn apply_map(frame: &Value) -> bool {
             seq,
             w: w as usize,
             h: h as usize,
-            res: frame.get("res").and_then(Value::as_f64).unwrap_or(fake::GRID_RES),
+            res: frame
+                .get("res")
+                .and_then(Value::as_f64)
+                .unwrap_or(fake::GRID_RES),
             ox: frame.get("ox").and_then(Value::as_f64).unwrap_or(0.0),
             oy: frame.get("oy").and_then(Value::as_f64).unwrap_or(0.0),
             data_b64: Arc::from(d),
@@ -859,13 +904,29 @@ fn apply_lidar_diag(frame: &Value) -> bool {
     let mut raw = raw_slot().lock().expect("raw poisoned");
     raw.lidar_diag = Some(LidarDiagRaw {
         level: frame.get("level").and_then(Value::as_i64),
-        message: frame.get("message").and_then(Value::as_str).unwrap_or_default().to_string(),
-        state: frame.get("state").and_then(Value::as_str).unwrap_or("unknown").to_string(),
-        reason: frame.get("reason").and_then(Value::as_str).unwrap_or_default().to_string(),
+        message: frame
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        state: frame
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
+        reason: frame
+            .get("reason")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         age_s: frame.get("age_s").and_then(Value::as_f64),
         coverage: frame.get("coverage").and_then(Value::as_f64),
         reconnects: frame.get("reconnects").and_then(Value::as_i64),
-        port: frame.get("port").and_then(Value::as_str).unwrap_or_default().to_string(),
+        port: frame
+            .get("port")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         frames_ok: frame.get("frames_ok").and_then(Value::as_i64),
         frames_bad: frame.get("frames_bad").and_then(Value::as_i64),
     });
@@ -1014,9 +1075,16 @@ fn apply_nav_result(frame: &Value) -> bool {
         return false;
     };
     let status = frame.get("status").and_then(Value::as_str).unwrap_or("");
-    let text = frame.get("text").and_then(Value::as_str).unwrap_or("").to_string();
-    let plan_error =
-        frame.get("plan_error").and_then(Value::as_str).unwrap_or("").to_string();
+    let text = frame
+        .get("text")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let plan_error = frame
+        .get("plan_error")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     {
         let mut raw = raw_slot().lock().expect("raw poisoned");
         raw.last_plan_error = plan_error.clone();
@@ -1129,7 +1197,11 @@ fn on_nav_finished(rid: &str, status: &str, text: &str) -> (bool, bool) {
         } else {
             // _fail：锁停 + 撤回下游鉴权（patrol.py:574-576 →
             // web_debug.py:935-947 lock_stop 第一动作）。
-            let reason = if status == "cancelled" { "nav_cancelled" } else { "nav_failed" };
+            let reason = if status == "cancelled" {
+                "nav_cancelled"
+            } else {
+                "nav_failed"
+            };
             ctl.patrol.status = "stopped";
             ctl.patrol.stop_reason = reason.to_string();
             Hub::lock_locked(&mut ctl, reason);
@@ -1168,8 +1240,7 @@ fn set_nav_state(ctl: &mut safety::Control, status: &str, text: &str) {
 /// 必须有独立 20Hz tokio 任务，否则 350ms 许可超时锁停/手动超时归零/
 /// 会话失效在实车模式全部失效——安全项不是优化项）。
 async fn tick_task() {
-    let mut ticker =
-        tokio::time::interval(Duration::from_millis(crate::fake::TICK_MS));
+    let mut ticker = tokio::time::interval(Duration::from_millis(crate::fake::TICK_MS));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         ticker.tick().await;
@@ -1234,7 +1305,10 @@ fn nav_housekeeping_at(now: u64) {
 
     // 15s 在途未接受超时（patrol.py:613-620 overall_timeout）：取消并锁停。
     if ctl.nav.state == "sending"
-        && ctl.nav.goal_t_ms.is_some_and(|t| now.saturating_sub(t) > safety::NAV_GOAL_TIMEOUT_MS)
+        && ctl
+            .nav
+            .goal_t_ms
+            .is_some_and(|t| now.saturating_sub(t) > safety::NAV_GOAL_TIMEOUT_MS)
     {
         let rid = ctl.nav.rid.clone();
         ctl.nav.state = "failed";
@@ -1295,7 +1369,11 @@ fn nav_housekeeping_at(now: u64) {
                 ctl.patrol.sending_rid = Some(rid.clone());
                 ctl.nav.state = "sending";
                 ctl.nav.rid = Some(rid.clone());
-                ctl.nav.goal = Some(safety::Goal { x, y, yaw: Some(yaw) });
+                ctl.nav.goal = Some(safety::Goal {
+                    x,
+                    y,
+                    yaw: Some(yaw),
+                });
                 ctl.nav.goal_t_ms = Some(now);
                 ctl.nav.result.clear();
                 ctl.nav.error.clear();
@@ -1323,7 +1401,10 @@ fn maybe_push_patrol_frame() {
     }
     let frame = safety::global().patrol_status_frame();
     queue_slot().push_patrol_frame(frame);
-    intent_slot().lock().expect("intent poisoned").last_patrol_frame_ms = now;
+    intent_slot()
+        .lock()
+        .expect("intent poisoned")
+        .last_patrol_frame_ms = now;
 }
 
 // ---------------------------------------------------------------------------
@@ -1476,8 +1557,7 @@ pub fn request_nav_goal(x: f64, y: f64, th: Option<f64>) -> (bool, Value) {
             let (px, py, _) = media.pose;
             let dist = ((x - px).powi(2) + (y - py).powi(2)).sqrt();
             if dist < GOAL_MIN_DIST_M {
-                ctl.nav.error =
-                    format!("目标距车太近（{dist:.2} m < {GOAL_MIN_DIST_M} m）");
+                ctl.nav.error = format!("目标距车太近（{dist:.2} m < {GOAL_MIN_DIST_M} m）");
                 return (false, nav_view_locked(&ctl));
             }
         }
@@ -1526,7 +1606,14 @@ pub async fn request_relocalize_ros() -> (bool, Value) {
                 .and_then(Value::as_str)
                 .unwrap_or("垫片未回报原因")
                 .to_string();
-            (ok, if ok { detail } else { json!({ "error": error }) })
+            (
+                ok,
+                if ok {
+                    detail
+                } else {
+                    json!({ "error": error })
+                },
+            )
         }
         Err(e) => (false, json!({ "error": e })),
     }
@@ -1555,7 +1642,11 @@ pub fn cancel_nav_goal() -> (bool, Value) {
         ctl.patrol.stop_reason = "nav_cancelled".to_string();
     }
     let mut rids_to_cancel: Vec<String> = Vec::new();
-    for opt in [&ctl.nav.rid, &ctl.patrol.sending_rid, &ctl.patrol.pending_rid] {
+    for opt in [
+        &ctl.nav.rid,
+        &ctl.patrol.sending_rid,
+        &ctl.patrol.pending_rid,
+    ] {
         if let Some(r) = opt {
             if !rids_to_cancel.contains(r) {
                 rids_to_cancel.push(r.clone());
@@ -1638,8 +1729,6 @@ pub async fn ultrasonic_rearm_ros() -> (bool, &'static str) {
     }
 }
 
-
-
 // ---------------------------------------------------------------------------
 // 状态装配（ros 原始缓存 → StatusPayload，20Hz）
 // ---------------------------------------------------------------------------
@@ -1716,9 +1805,16 @@ fn drive_safety_view_of(payload: Option<&Value>, t_ms: Option<u64>, now: u64) ->
     let fresh = age <= ttl;
     DriveSafetyView {
         state: if fresh { "fresh" } else { "stale" },
-        allowed: if fresh { payload.get("allowed").and_then(Value::as_bool) } else { None },
+        allowed: if fresh {
+            payload.get("allowed").and_then(Value::as_bool)
+        } else {
+            None
+        },
         reason: if fresh {
-            payload.get("reason").and_then(Value::as_str).map(str::to_string)
+            payload
+                .get("reason")
+                .and_then(Value::as_str)
+                .map(str::to_string)
         } else {
             None
         },
@@ -1726,7 +1822,10 @@ fn drive_safety_view_of(payload: Option<&Value>, t_ms: Option<u64>, now: u64) ->
         seq: payload.get("seq").and_then(Value::as_i64),
         motion: payload.get("motion").cloned(),
         ultrasonic: if fresh {
-            payload.get("ultrasonic").filter(|u| u.is_object()).map(ultrasonic_view_of)
+            payload
+                .get("ultrasonic")
+                .filter(|u| u.is_object())
+                .map(ultrasonic_view_of)
         } else {
             None
         },
@@ -1803,7 +1902,12 @@ fn cmd_view_of(raw: &Raw, idx: usize, now: u64) -> CmdView {
             vx_m_s: Some(round4(c.vx)),
             wz_rad_s: Some(round4(c.wz)),
         },
-        None => CmdView { state, age, vx_m_s: None, wz_rad_s: None },
+        None => CmdView {
+            state,
+            age,
+            vx_m_s: None,
+            wz_rad_s: None,
+        },
     }
 }
 
@@ -1837,8 +1941,21 @@ fn assemble_status() {
     let patrol_frame = hub.patrol_status_frame();
     let mut nav_full = hub.nav_view();
 
-    let (chassis_v, imu, cmds, ds_view, safety_v, moving, nodes, lidar_detail, scan_hz, image_fps,
-     nav_fb, nav_fb_t, plan_error) = {
+    let (
+        chassis_v,
+        imu,
+        cmds,
+        ds_view,
+        safety_v,
+        moving,
+        nodes,
+        lidar_detail,
+        scan_hz,
+        image_fps,
+        nav_fb,
+        nav_fb_t,
+        plan_error,
+    ) = {
         let raw = raw_slot().lock().expect("raw poisoned");
         let chassis_v = chassis_view_of(&raw, now);
         let (imu_state, imu_age) = freshness(raw.imu_t, now, IMU_TIMEOUT_S);
@@ -1864,8 +1981,9 @@ fn assemble_status() {
         // 节点在线视图（web_debug.py::node_view）：camera/lidar/chassis 按
         // 6s 探测窗口；c50c_uart3_node = 参数服务在线（safety.online）；
         // web_bridge = 垫片 10s 帧批活性（契约修订：旧实现恒 online）。
-        let seen_recent =
-            |t: Option<u64>| t.is_some_and(|t| (now.saturating_sub(t) as f64) / 1000.0 < NODE_ONLINE_S);
+        let seen_recent = |t: Option<u64>| {
+            t.is_some_and(|t| (now.saturating_sub(t) as f64) / 1000.0 < NODE_ONLINE_S)
+        };
         let bridge_up = raw
             .last_batch_ms
             .is_some_and(|t| now.saturating_sub(t) < BRIDGE_OFFLINE_MS);
@@ -1880,8 +1998,16 @@ fn assemble_status() {
             media.scan_seq
         };
         let nodes = NodesView {
-            camera_node: if seen_recent(raw.nodes_seen.camera_node) { "online" } else { "offline" },
-            lidar_node: if seen_recent(raw.nodes_seen.lidar_node) { "online" } else { "offline" },
+            camera_node: if seen_recent(raw.nodes_seen.camera_node) {
+                "online"
+            } else {
+                "offline"
+            },
+            lidar_node: if seen_recent(raw.nodes_seen.lidar_node) {
+                "online"
+            } else {
+                "offline"
+            },
             c50c_uart3_node: if safety_online { "online" } else { "offline" },
             chassis_status_node: if seen_recent(raw.nodes_seen.chassis_status_node) {
                 "online"
@@ -1926,8 +2052,19 @@ fn assemble_status() {
         let nav_fb_t = raw.nav_feedback_t;
         let plan_error = raw.last_plan_error.clone();
         (
-            chassis_v, imu, cmds, ds_view, safety_v, moving, nodes, lidar_detail, scan_hz,
-            image_fps, nav_fb, nav_fb_t, plan_error,
+            chassis_v,
+            imu,
+            cmds,
+            ds_view,
+            safety_v,
+            moving,
+            nodes,
+            lidar_detail,
+            scan_hz,
+            image_fps,
+            nav_fb,
+            nav_fb_t,
+            plan_error,
         )
     };
 
@@ -1952,7 +2089,10 @@ fn assemble_status() {
     let nav_vx = cmds.nav.vx_m_s.unwrap_or(0.0);
     let nav_wz = cmds.nav.wz_rad_s.unwrap_or(0.0);
     let nav_age = if nav_fresh { cmds.nav.age } else { None };
-    let manual_active = manual_dbg.get("active").and_then(Value::as_bool).unwrap_or(false);
+    let manual_active = manual_dbg
+        .get("active")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let patrol_fresh = patrol_frame.get("status").and_then(Value::as_str) == Some("running");
     let task_state = TaskState::decide(
         nav_fresh,
@@ -1964,7 +2104,10 @@ fn assemble_status() {
         patrol_fresh,
     );
     let channel = chassis_v.state == "fresh"
-        || safety_v.get("online").and_then(Value::as_bool).unwrap_or(false);
+        || safety_v
+            .get("online")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
     let task = TaskView {
         state: task_state.as_str(),
         text: task_state.text(),
@@ -2010,7 +2153,8 @@ fn assemble_status() {
         battery,
         cruise: CruiseView {
             on: cruise_on,
-            available: raw_last_batch_ms().is_some_and(|t| now.saturating_sub(t) < BRIDGE_OFFLINE_MS),
+            available: raw_last_batch_ms()
+                .is_some_and(|t| now.saturating_sub(t) < BRIDGE_OFFLINE_MS),
         },
         patrol: patrol_frame,
         moving,
@@ -2075,20 +2219,21 @@ mod tests {
 
     #[test]
     fn test_token_check_constant_time() {
-
         let _guard = guard();
         init_all();
         let mut h = HeaderMap::new();
         assert!(!token_ok(&h), "缺令牌必须 401");
         h.insert("x-bridge-token", "wrong".parse().unwrap());
         assert!(!token_ok(&h), "错令牌必须 401");
-        h.insert("x-bridge-token", "0123456789abcdef0123456789abcdef".parse().unwrap());
+        h.insert(
+            "x-bridge-token",
+            "0123456789abcdef0123456789abcdef".parse().unwrap(),
+        );
         assert!(token_ok(&h), "对令牌必须放行");
     }
 
     #[test]
     fn test_media_frames_last_wins() {
-
         let _guard = guard();
         init_all();
         assert!(apply_frame(&frame(
@@ -2104,11 +2249,12 @@ mod tests {
         }
         assert!(apply_frame(&frame(
             "pose",
-            json!({ "pose": { "x": 1.234, "y": -0.5, "th": 1.5708 } })
+            // th 用 0.75：1.5708 会被 clippy::approx_constant 判为 PI/2 近似值。
+            json!({ "pose": { "x": 1.234, "y": -0.5, "th": 0.75 } })
         )));
         {
             let media = fake::media_slot().read().unwrap();
-            assert_eq!(media.pose, (1.234, -0.5, 1.5708));
+            assert_eq!(media.pose, (1.234, -0.5, 0.75));
             // now_ms() 在进程头几毫秒就是合法的 0，只判「不超过当前时刻」。
             assert!(media.pose_mono_ms <= safety::now_ms());
         }
@@ -2129,7 +2275,6 @@ mod tests {
 
     #[test]
     fn test_map_applier_decodes_and_binds_map_id() {
-
         let _guard = guard();
         init_all();
         // 栅格内容 [0,100,255] → zlib+base64
@@ -2157,7 +2302,6 @@ mod tests {
 
     #[test]
     fn test_command_queue_edge_never_replayed() {
-
         let _guard = guard();
         init_all();
         let q = queue_slot();
@@ -2177,16 +2321,23 @@ mod tests {
         assert_eq!(cmds.len(), 2, "首次轮询应拿到值语义+边沿两条");
         assert_eq!(cursor, id_edge, "cursor 推进到最后一条");
         // cursor 之后的轮询：值语义补投（cursor 之前的不补）
-        let (cmds2, _) = tokio::runtime::Runtime::new().unwrap().block_on(q.poll(id_edge, 0));
+        let (cmds2, _) = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(q.poll(id_edge, 0));
         assert!(cmds2.is_empty(), "cursor 已到最新：无命令");
         // 新值命令 + cursor 倒退（模拟重连）：值语义补投，边沿不补投
         let id_value2 = q.push(json!({ "c": "manual_cmd", "vx": 0.2, "wz": 0.0 }), true);
-        let (cmds3, cursor3) = tokio::runtime::Runtime::new().unwrap().block_on(q.poll(0, 0));
+        let (cmds3, cursor3) = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(q.poll(0, 0));
         let kinds: Vec<&str> = cmds3
             .iter()
             .map(|c| c.get("c").and_then(Value::as_str).unwrap_or(""))
             .collect();
-        assert!(kinds.contains(&"guard_authorize"), "值语义命令按 cursor 补投");
+        assert!(
+            kinds.contains(&"guard_authorize"),
+            "值语义命令按 cursor 补投"
+        );
         assert!(kinds.contains(&"manual_cmd"));
         assert!(!kinds.contains(&"rearm_request"), "边沿命令绝不重放");
         assert!(kinds.iter().any(|k| *k == "manual_cmd"));
@@ -2195,8 +2346,13 @@ mod tests {
         let _id_pending = q.push(json!({ "c": "manual_cmd", "vx": 0.0, "wz": 0.0 }), true);
         assert!(q.pending(), "push 后应有未投递命令");
         q.clear_undelivered();
-        let (cmds4, _) = tokio::runtime::Runtime::new().unwrap().block_on(q.poll(cursor3, 0));
-        assert!(cmds4.is_empty(), "hello 后未投递队列必须清空（按垫片当前 cursor）");
+        let (cmds4, _) = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(q.poll(cursor3, 0));
+        assert!(
+            cmds4.is_empty(),
+            "hello 后未投递队列必须清空（按垫片当前 cursor）"
+        );
         assert!(!q.pending());
         let _ = id_value;
     }
@@ -2237,11 +2393,17 @@ mod tests {
         }
         let id = q.push(json!({ "c": "relocalize" }), false);
         assert!(id > 0);
-        let (cmds, cursor) = tokio::runtime::Runtime::new().unwrap().block_on(q.poll(0, 0));
+        let (cmds, cursor) = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(q.poll(0, 0));
         assert_eq!(cmds.len(), 1);
         let c = &cmds[0];
         assert_eq!(c.get("c").and_then(Value::as_str), Some("relocalize"));
-        assert_eq!(c.get("id").and_then(Value::as_u64), Some(id), "命令带自身 id 供 cmd_ack 回执");
+        assert_eq!(
+            c.get("id").and_then(Value::as_u64),
+            Some(id),
+            "命令带自身 id 供 cmd_ack 回执"
+        );
         // 边沿触发：poll 过即不重放
         let (cmds2, _) = tokio::runtime::Runtime::new()
             .unwrap()
@@ -2251,7 +2413,6 @@ mod tests {
 
     #[test]
     fn test_manual_intent_reconcile_emits_zero() {
-
         let _guard = guard();
         init_all();
         queue_slot().st.lock().unwrap().ring.clear();
@@ -2269,7 +2430,10 @@ mod tests {
         {
             let st = queue_slot().st.lock().unwrap();
             let last = st.ring.back().unwrap();
-            assert_eq!(last.body.get("c").and_then(Value::as_str), Some("manual_cmd"));
+            assert_eq!(
+                last.body.get("c").and_then(Value::as_str),
+                Some("manual_cmd")
+            );
             assert_eq!(last.body.get("vx").and_then(Value::as_f64), Some(0.2));
             assert!(last.replayable);
         }
@@ -2283,17 +2447,23 @@ mod tests {
         {
             let st = queue_slot().st.lock().unwrap();
             let last = st.ring.back().unwrap();
-            assert_eq!(last.body.get("c").and_then(Value::as_str), Some("manual_zero"));
+            assert_eq!(
+                last.body.get("c").and_then(Value::as_str),
+                Some("manual_zero")
+            );
         }
         // 幂等：再对账不发重复 manual_zero
         let before = queue_slot().st.lock().unwrap().next_id;
         flush_manual_cmd();
-        assert_eq!(queue_slot().st.lock().unwrap().next_id, before, "无变化不再派发");
+        assert_eq!(
+            queue_slot().st.lock().unwrap().next_id,
+            before,
+            "无变化不再派发"
+        );
     }
 
     #[test]
     fn test_license_forward_and_authorize_true() {
-
         let _guard = guard();
         init_all();
         on_license_accepted("sess-1", 7, 350);
@@ -2319,13 +2489,25 @@ mod tests {
         // 下游 guard（motion_guard.py License.check）要求 session int≥1：
         // 浏览器 hex 会话经稳定映射转 int（评审 high-1）。
         let sess = frame.get("session").and_then(Value::as_i64);
-        assert!(sess.is_some_and(|v| v >= 1), "session 必须 int≥1: {:?}", frame);
-        assert_eq!(frame.get("seq").and_then(Value::as_i64), Some(7), "seq 原样转发");
+        assert!(
+            sess.is_some_and(|v| v >= 1),
+            "session 必须 int≥1: {:?}",
+            frame
+        );
+        assert_eq!(
+            frame.get("seq").and_then(Value::as_i64),
+            Some(7),
+            "seq 原样转发"
+        );
         let exp = frame.get("expires_mono").and_then(Value::as_f64).unwrap();
         // 锚点是 boot 相对单调（/proc/uptime），必须大于进程 uptime 秒
         // （boot 相对时间 ≥ 进程运行时间；guard 用 time.monotonic 比较）。
-        assert!(exp > safety::now_ms() as f64 / 1000.0,
-                "expires_mono 锚点必须是 boot 相对: {} vs uptime {}s", exp, safety::now_ms() as f64 / 1000.0);
+        assert!(
+            exp > safety::now_ms() as f64 / 1000.0,
+            "expires_mono 锚点必须是 boot 相对: {} vs uptime {}s",
+            exp,
+            safety::now_ms() as f64 / 1000.0
+        );
     }
 
     #[test]
@@ -2334,7 +2516,10 @@ mod tests {
         init_all();
         let a1 = session_int("aa11");
         let a2 = session_int("aa11");
-        assert_eq!(a1, a2, "同一浏览器会话恒映射同一 int（guard session_mismatch 比较）");
+        assert_eq!(
+            a1, a2,
+            "同一浏览器会话恒映射同一 int（guard session_mismatch 比较）"
+        );
         assert!(a1 >= 1);
         let b1 = session_int("bb22");
         assert_ne!(a1, b1, "页面接管（新 hex）分配新 int");
@@ -2375,14 +2560,20 @@ mod tests {
         }
         {
             let st = queue_slot().st.lock().unwrap();
-            assert!(st.ring.iter().any(|c| {
-                c.body.get("c").and_then(Value::as_str) == Some("guard_authorize")
-                    && c.body.get("value") == Some(&Value::Bool(false))
-            }), "guard_authorize(false) 必须入队");
-            assert!(st.ring.iter().any(|c| {
-                c.body.get("c").and_then(Value::as_str) == Some("nav_cancel")
-                    && c.body.get("rid").and_then(Value::as_str) == Some("p0-0-1")
-            }), "nav_cancel 必须入队");
+            assert!(
+                st.ring.iter().any(|c| {
+                    c.body.get("c").and_then(Value::as_str) == Some("guard_authorize")
+                        && c.body.get("value") == Some(&Value::Bool(false))
+                }),
+                "guard_authorize(false) 必须入队"
+            );
+            assert!(
+                st.ring.iter().any(|c| {
+                    c.body.get("c").and_then(Value::as_str) == Some("nav_cancel")
+                        && c.body.get("rid").and_then(Value::as_str) == Some("p0-0-1")
+                }),
+                "nav_cancel 必须入队"
+            );
         }
         // 测试卫生：本测试设置的 ctl 全局状态（cancel_request/locked/在途
         // rid）必须清掉——共享 ctl 的后续测试（如
@@ -2437,15 +2628,20 @@ mod tests {
         let delivered_left = st.ring.iter().filter(|c| c.delivered).count();
         // 未投递的原 CMD_RING_MAX/2 条中较新部分应保留
         let undelivered = st.ring.iter().filter(|c| !c.delivered).count();
-        assert!(undelivered >= CMD_RING_MAX / 2 - CMD_RING_MAX / 2, "sanity");
-        assert!(delivered_left < CMD_RING_MAX / 2,
-                "溢出应优先丢已投递条目: delivered_left={} undelivered={}",
-                delivered_left, undelivered);
+        // 原写法 `>= CMD_RING_MAX/2 - CMD_RING_MAX/2` 恒等于 `>= 0`，
+        // 对 usize 永远为真，被 clippy::absurd_extreme_comparisons 判为无效断言。
+        // 改为真正的不变式：溢出后未投递条目必须仍有保留。
+        assert!(undelivered > 0, "sanity: 溢出后应保留未投递条目");
+        assert!(
+            delivered_left < CMD_RING_MAX / 2,
+            "溢出应优先丢已投递条目: delivered_left={} undelivered={}",
+            delivered_left,
+            undelivered
+        );
     }
 
     #[test]
     fn test_rearm_batch_order_authorize_first() {
-
         let _guard = guard();
         init_all();
         on_rearm_ok();
@@ -2458,26 +2654,29 @@ mod tests {
         let a = kinds.iter().position(|k| *k == "guard_authorize").unwrap();
         let r = kinds.iter().position(|k| *k == "rearm_request").unwrap();
         assert!(a < r, "先补鉴权再发解停（顺序铁律 web_debug.py:555-560）");
-        let rearm = st.ring.iter().find(|c| {
-            c.body.get("c").and_then(Value::as_str) == Some("rearm_request")
-        }).unwrap();
+        let rearm = st
+            .ring
+            .iter()
+            .find(|c| c.body.get("c").and_then(Value::as_str) == Some("rearm_request"))
+            .unwrap();
         assert!(!rearm.replayable, "rearm_request 边沿触发永不补投");
     }
 
     #[test]
     fn test_mileage_integration_trapezoid() {
-
         let _guard = guard();
         let mut m = MileageIntegrator::default();
         m.update(1000, 1000); // 1 m/s @ t=1s：首帧只记录
         m.update(1000, 1500); // dt=0.5s（=MAX_STEP_S）@ 1 m/s → +0.5m
         m.update(1000, 4000); // dt=2.5s > 0.5s：丢帧不计入
-        assert!((m.trip() - 0.5).abs() < 1e-9, "正常步长积分 + 丢帧期间不计入");
+        assert!(
+            (m.trip() - 0.5).abs() < 1e-9,
+            "正常步长积分 + 丢帧期间不计入"
+        );
     }
 
     #[test]
     fn test_rate_meter_window() {
-
         let _guard = guard();
         let mut r = RateMeter::new(2.0);
         assert_eq!(r.tick(0), 0.0);
@@ -2488,7 +2687,6 @@ mod tests {
 
     #[test]
     fn test_drive_safety_view_ttl() {
-
         let _guard = guard();
         let now = 100_000;
         let payload = json!({ "allowed": true, "reason": "ok", "seq": 3, "ttl_s": 1.0 });
@@ -2504,7 +2702,6 @@ mod tests {
 
     #[test]
     fn test_nav_result_patrol_advance_and_fail_lock() {
-
         let _guard = guard();
         init_all();
         queue_slot().st.lock().unwrap().ring.clear();
@@ -2527,7 +2724,11 @@ mod tests {
             let ctl = hub.control.lock().unwrap();
             ctl.patrol.sending_rid.clone().unwrap()
         };
-        assert_eq!(ctl_rid(&hub), rid, "单一在途目标槽：nav.rid == patrol.sending_rid");
+        assert_eq!(
+            ctl_rid(&hub),
+            rid,
+            "单一在途目标槽：nav.rid == patrol.sending_rid"
+        );
         // accepted → pending
         assert!(apply_frame(&frame(
             "nav_result",
@@ -2557,10 +2758,13 @@ mod tests {
             // 直接把它当作 accepted 后 failed
             r
         };
-        apply_frame(&frame("nav_result", json!({ "rid": rid2, "status": "accepted", "text": "" })));
         apply_frame(&frame(
             "nav_result",
-            json!({ "rid": rid2, "status": "failed", "text": "导航中止（规划/控制失败）" })
+            json!({ "rid": rid2, "status": "accepted", "text": "" }),
+        ));
+        apply_frame(&frame(
+            "nav_result",
+            json!({ "rid": rid2, "status": "failed", "text": "导航中止（规划/控制失败）" }),
         ));
         {
             let ctl = hub.control.lock().unwrap();
@@ -2593,7 +2797,6 @@ mod tests {
 
     #[test]
     fn test_assemble_status_from_raw() {
-
         let _guard = guard();
         init_all();
         apply_frame(&frame(
@@ -2603,7 +2806,10 @@ mod tests {
                     "ultrasonic_front_mm": 1200, "level": 0, "message": "ok" }),
         ));
         apply_frame(&frame("imu", json!({ "hz": 19.8 })));
-        apply_frame(&frame("cmd", json!({ "which": "nav", "vx": 0.3, "vy": 0.0, "wz": -0.1 })));
+        apply_frame(&frame(
+            "cmd",
+            json!({ "which": "nav", "vx": 0.3, "vy": 0.0, "wz": -0.1 }),
+        ));
         apply_frame(&frame(
             "probe",
             json!({ "nodes_seen": { "camera_node": true, "lidar_node": true,
@@ -2631,10 +2837,13 @@ mod tests {
 
     #[test]
     fn test_frame_batch_limit_constant() {
-
-        let _guard = guard();        assert!(FRAME_BATCH_MAX == 256);
+        let _guard = guard();
+        assert!(FRAME_BATCH_MAX == 256);
         assert!(BODY_LIMIT_BYTES == 8 * 1024 * 1024);
-        assert!(BRIDGE_OFFLINE_MS == 10_000, "活性窗口必须大于 probe 周期 3s");
+        assert!(
+            BRIDGE_OFFLINE_MS == 10_000,
+            "活性窗口必须大于 probe 周期 3s"
+        );
     }
 
     #[test]
@@ -2643,7 +2852,10 @@ mod tests {
         init_all();
         assert!(RELOCALIZE_ACK_TIMEOUT_MS >= 30_000);
         let (tx, mut rx) = tokio::sync::oneshot::channel();
-        acks_slot().lock().expect("acks poisoned").insert(999_001, tx);
+        acks_slot()
+            .lock()
+            .expect("acks poisoned")
+            .insert(999_001, tx);
         assert!(apply_frame(&json!({
             "t": "cmd_ack",
             "id": 999_001,
@@ -2677,7 +2889,11 @@ mod tests {
         {
             let mut ctl = hub.control.lock().unwrap();
             ctl.nav.state = "failed";
-            ctl.nav.goal = Some(safety::Goal { x: 3.81, y: -0.30, yaw: None });
+            ctl.nav.goal = Some(safety::Goal {
+                x: 3.81,
+                y: -0.30,
+                yaw: None,
+            });
             ctl.nav.goal_t_ms = Some(1234);
             ctl.nav.error = "导航中止（规划/控制失败）".to_string();
             ctl.nav.rid = None;
@@ -2694,24 +2910,37 @@ mod tests {
             assert!(ctl.nav.goal.is_none());
             assert!(ctl.nav.error.is_empty());
         }
-        assert!(queue_slot().st.lock().unwrap().ring.is_empty(), "无在途 rid 时不发 nav_cancel");
+        assert!(
+            queue_slot().st.lock().unwrap().ring.is_empty(),
+            "无在途 rid 时不发 nav_cancel"
+        );
 
         // 2) 已在 idle 且无目标时再次取消应拒并提示
         let (ok2, view2) = cancel_nav_goal();
         assert!(!ok2);
-        assert_eq!(view2.get("error").and_then(Value::as_str), Some("当前没有导航目标"));
+        assert_eq!(
+            view2.get("error").and_then(Value::as_str),
+            Some("当前没有导航目标")
+        );
 
         // 3) 进行中的目标 → 回 idle、清 goal、下发 nav_cancel
         {
             let mut ctl = hub.control.lock().unwrap();
             ctl.nav.state = "active";
-            ctl.nav.goal = Some(safety::Goal { x: 0.0, y: 0.0, yaw: Some(0.0) });
+            ctl.nav.goal = Some(safety::Goal {
+                x: 0.0,
+                y: 0.0,
+                yaw: Some(0.0),
+            });
             ctl.nav.rid = Some("m42".to_string());
         }
         let (ok3, view3) = cancel_nav_goal();
         assert!(ok3);
         assert_eq!(view3.get("state").and_then(Value::as_str), Some("idle"));
-        assert_eq!(view3.get("result").and_then(Value::as_str), Some("canceled"));
+        assert_eq!(
+            view3.get("result").and_then(Value::as_str),
+            Some("canceled")
+        );
         assert!(view3.get("goal").is_some_and(Value::is_null));
         let st = queue_slot().st.lock().unwrap();
         assert!(st.ring.iter().any(|c| {
@@ -2742,7 +2971,10 @@ mod tests {
         nav_housekeeping_and_dispatch();
         let rid = {
             let ctl = hub.control.lock().unwrap();
-            ctl.patrol.sending_rid.clone().expect("patrol waypoint dispatched")
+            ctl.patrol
+                .sending_rid
+                .clone()
+                .expect("patrol waypoint dispatched")
         };
         assert!(apply_frame(&frame(
             "nav_result",
@@ -2772,9 +3004,12 @@ mod tests {
                 c.body.get("c").and_then(Value::as_str) == Some("nav_cancel")
                     && c.body.get("rid").and_then(Value::as_str) == Some(rid.as_str())
             }));
-            assert!(st.ring.iter().any(|c| {
-                c.body.get("c").and_then(Value::as_str) == Some("manual_zero")
-            }), "取消在途导航必须下发 manual_zero 立即刹停");
+            assert!(
+                st.ring
+                    .iter()
+                    .any(|c| { c.body.get("c").and_then(Value::as_str) == Some("manual_zero") }),
+                "取消在途导航必须下发 manual_zero 立即刹停"
+            );
         }
 
         // 取消回执到达后再跑 20Hz 对账，绝不可重新派发巡航目标
@@ -2792,9 +3027,16 @@ mod tests {
             assert!(ctl.patrol.cancel_request.is_none());
             assert_eq!(ctl.nav.state, "idle");
         }
-        assert!(queue_slot().st.lock().unwrap().ring.iter().all(|c| {
-            c.body.get("c").and_then(Value::as_str) != Some("nav_goal")
-        }), "取消后不得重新派发 nav_goal");
+        assert!(
+            queue_slot()
+                .st
+                .lock()
+                .unwrap()
+                .ring
+                .iter()
+                .all(|c| { c.body.get("c").and_then(Value::as_str) != Some("nav_goal") }),
+            "取消后不得重新派发 nav_goal"
+        );
 
         // 测试卫生：清理全局状态
         let mut ctl = hub.control.lock().unwrap();
