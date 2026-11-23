@@ -122,7 +122,9 @@ jobs:
       - name: 安装 arm-none-eabi 工具链
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi
+          # libnewlib-arm-none-eabi 提供 newlib 头文件，缺了它 arm_math.h 编不过。
+          sudo apt-get install -y --no-install-recommends \
+            gcc-arm-none-eabi libnewlib-arm-none-eabi
 
       - name: 现场编译主固件（根 Makefile / HAL，TARGET=Diff_Car）
         run: |

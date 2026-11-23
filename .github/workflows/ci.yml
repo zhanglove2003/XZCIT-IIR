@@ -254,6 +254,9 @@ jobs:
     if: needs.changes.outputs.ros == 'true'
     container:
       image: ros:humble-ros-base
+    defaults:
+      run:
+        shell: bash   # 镜像默认 shell 是 sh，不认识 set -o pipefail
     steps:
       - uses: actions/checkout@v4
         with:
@@ -337,7 +340,10 @@ jobs:
       - name: 安装 arm-none-eabi 工具链
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi
+          # libnewlib-arm-none-eabi 提供 newlib 头文件（string.h 等），
+          # 缺了它 arm_math.h 编不过（--no-install-recommends 会漏装）。
+          sudo apt-get install -y --no-install-recommends \
+            gcc-arm-none-eabi libnewlib-arm-none-eabi
 
       # 根 Makefile 为当前主固件入口（HAL，TARGET=Diff_Car，产物 hex/bin）。
       # STM32F407_StdPeriph 为旧栈回退代码，CI 只读检查、不自动改删。
