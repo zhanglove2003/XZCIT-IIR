@@ -166,6 +166,11 @@ pub struct Manual {
     pub stops: u64,
     /// 边沿去重：已就「被顶替」提示过本连接（防 150ms 心跳刷 toast）。
     pub steal_warned: bool,
+    /// 登录顶替凭证：最近一次登录成功时发放的一次性授权（发放时刻 ms）。
+    /// 登录后第一个带**新会话号**的许可心跳即可行使立即接管（2026-11-23
+    /// 用户裁决：最新登录顶替旧登录，不等旧会话 350ms 断流）。窗口 10s，
+    /// 过期/被行使/被更新登录覆盖自然失效。None = 无待行使的顶替权。
+    pub login_takeover_at: Option<u64>,
 }
 
 impl Manual {
@@ -181,6 +186,7 @@ impl Manual {
             beats: 0,
             stops: 0,
             steal_warned: false,
+            login_takeover_at: None,
         }
     }
 }
@@ -414,6 +420,14 @@ impl Hub {
 
     // -- 运动许可（patrol.py::MotionLicense） ------------------------------
 
+    /// 登录顶替凭证是否仍可行使（10s 窗口；单独提出便于测试注入时刻）。
+    fn login_takeover_active(ctl: &Control, now: u64) -> bool {
+        const LOGIN_TAKEOVER_WINDOW_MS: u64 = 10_000;
+        ctl.manual
+            .login_takeover_at
+            .is_some_and(|t| now.saturating_sub(t) <= LOGIN_TAKEOVER_WINDOW_MS)
+    }
+
     /// 校验并接受一条 `motion_license`。返回拒绝原因（patrol.py::accept）。
     pub fn license_accept(
         &self,
@@ -429,6 +443,11 @@ impl Hub {
             return Err("session_invalid");
         }
         let mut ctl = self.control.lock().expect("control poisoned");
+        // 登录顶替凭证（2026-11-23 用户裁决：最新登录顶替旧登录）：登录后
+        // 窗口内第一个带新会话号的心跳立即接管，不等旧会话 350ms 断流。
+        // 许可帧来自 Worker 独立连接、不携带登录身份，凭证只能按「登录后
+        // 下一帧」发放；未登录页面的重复心跳不会触发（凭证发放必经登录）。
+        let login_takeover = Self::login_takeover_active(&ctl, now);
         enum SessionMove {
             Keep,
             Adopt,
@@ -440,15 +459,22 @@ impl Hub {
                 None => (SessionMove::Adopt, false),
                 Some(cur) if cur == session_id => (SessionMove::Keep, false),
                 Some(_) => {
-                    let ended = match lic.last_rx_ms {
-                        None => true,
-                        Some(t) => now.saturating_sub(t) > LICENSE_TTL_MS,
-                    };
-                    if !ended {
-                        lic.rejected += 1;
-                        (SessionMove::Keep, true)
-                    } else {
+                    if login_takeover {
+                        // 登录授权的立即接管：旧页此后收 session_mismatch nak
+                        // （其 Worker 持续重发被拒即静默降级），安全语义不变——
+                        // 下方 Takeover 分支仍先锁停一次再换会话。
                         (SessionMove::Takeover, false)
+                    } else {
+                        let ended = match lic.last_rx_ms {
+                            None => true,
+                            Some(t) => now.saturating_sub(t) > LICENSE_TTL_MS,
+                        };
+                        if !ended {
+                            lic.rejected += 1;
+                            (SessionMove::Keep, true)
+                        } else {
+                            (SessionMove::Takeover, false)
+                        }
                     }
                 }
             }
@@ -462,7 +488,11 @@ impl Hub {
                 ctl.license.session = Some(session_id.to_string());
             }
             SessionMove::Takeover => {
-                // 旧代次已停止送许可：新页面接管，序号从头开始（patrol.py:723-734）。
+                // 旧代次已停止送许可（或被最新登录顶替）：新页面接管，序号
+                // 从头开始（patrol.py:723-734）。登录顶替行使一次即消费。
+                if login_takeover {
+                    ctl.manual.login_takeover_at = None;
+                }
                 ctl.license.session = Some(session_id.to_string());
                 ctl.license.last_seq = -1;
                 ctl.license.takeovers += 1;
@@ -657,6 +687,10 @@ impl Hub {
         let pass_ok = ct_eq(sha256_hex(password.as_bytes()).as_bytes(), configured.as_bytes());
         if user_ok && pass_ok {
             ctl.manual.authenticated.insert(conn);
+            // 最新登录顶替旧登录（2026-11-23 用户裁决）：发放一次性顶替凭证。
+            // license_accept 在窗口内见到新会话号的心跳即立即接管；旧页此后
+            // 收 session_mismatch nak 静默降级。
+            ctl.manual.login_takeover_at = Some(now_ms());
             true
         } else {
             ctl.manual.authenticated.remove(&conn);
@@ -1283,5 +1317,70 @@ mod tests {
         assert!(!hub.license_release(""));
         let ctl = hub.control.lock().unwrap();
         assert_eq!(ctl.license.session.as_deref(), Some("sess-a"));
+    }
+
+    /// 登录顶替（2026-11-23 用户裁决）：登录后窗口内新会话号心跳立即接管
+    /// 旧会话（不等 350ms 断流），凭证一次性消费；旧会话续跳被拒。
+    #[test]
+    fn test_login_takeover_immediate_and_one_shot() {
+        let hub = test_hub();
+        hub.license_accept("sess-old", 1, None).expect("旧页 Adopt");
+        // 无凭证：新会话号被拒（session_mismatch），旧会话不动
+        assert!(hub.license_accept("sess-new", 1, None).is_err());
+        assert_eq!(
+            hub.control.lock().unwrap().license.session.as_deref(),
+            Some("sess-old")
+        );
+
+        // 登录发放凭证：窗口内新会话心跳立即接管，锁停一次（license_lost）
+        hub.control.lock().unwrap().password_sha256 =
+            Some(sha256_hex(b""));
+        assert!(hub.manual_login(7, "admin", ""));
+        hub.license_accept("sess-new", 1, None).expect("登录顶替接管");
+        {
+            let ctl = hub.control.lock().unwrap();
+            assert_eq!(ctl.license.session.as_deref(), Some("sess-new"));
+            assert_eq!(ctl.license.last_seq, 1);
+            assert_eq!(ctl.lock_reason, "license_lost", "顶替即判一次失效");
+            assert!(ctl.manual.login_takeover_at.is_none(), "凭证已消费");
+        }
+
+        // 凭证已消费：再顶替回旧号不行（旧页心跳被拒）
+        assert!(hub.license_accept("sess-old", 9, None).is_err());
+        assert_eq!(
+            hub.control.lock().unwrap().license.session.as_deref(),
+            Some("sess-new")
+        );
+    }
+
+    /// 登录顶替窗口过期：凭证失效，回到「等 350ms 断流」原语义。
+    /// 窗口判定提为 login_takeover_active(now) 后可注入未来时刻直测；
+    /// 整链行为以 login_takeover_active=false 时回到 mismatch 拒绝为准。
+    #[test]
+    fn test_login_takeover_window_expiry() {
+        let hub = test_hub();
+        hub.license_accept("sess-old", 1, None).expect("旧页 Adopt");
+        hub.control.lock().unwrap().password_sha256 = Some(sha256_hex(b""));
+        assert!(hub.manual_login(7, "admin", ""));
+        {
+            let ctl = hub.control.lock().unwrap();
+            let t = ctl.manual.login_takeover_at.expect("登录已发凭证");
+            // 窗口内：可行使；窗口外（t + 10001）：失效
+            assert!(Hub::login_takeover_active(&ctl, t));
+            assert!(!Hub::login_takeover_active(&ctl, t + 10_001));
+        }
+        // 把凭证时刻拨到窗口外，整链 accept 恢复拒绝
+        {
+            let mut ctl = hub.control.lock().unwrap();
+            ctl.manual.login_takeover_at = Some(now_ms().saturating_sub(1));
+            // 模拟窗口过期：直接清空凭证（语义等价过期后的自然失效）
+            ctl.manual.login_takeover_at = None;
+            ctl.license.last_rx_ms = Some(now_ms());
+        }
+        assert!(hub.license_accept("sess-new", 1, None).is_err());
+        assert_eq!(
+            hub.control.lock().unwrap().license.session.as_deref(),
+            Some("sess-old")
+        );
     }
 }
