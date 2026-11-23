@@ -247,5 +247,19 @@ ssh opi 'cd /home/orangepi/web_next_deploy && md5sum web_next.new && mv web_next
 
 **后端可选优化（未动，等解禁）**：`set_volume` 成功后顺手刷新快照槽位的 volume 字段，状态帧即时带真值，前端守卫可退化成纯保险。
 
+---
+
+## 批次 9d — 概览设备节点卡补「ROS 通讯」行（2026-11-23）
+
+用户指出判读条出现「节点离线 串口 3」但概览设备节点卡里没有这一行，且「串口 3」这个名字不知所指——它就是 ROS 通讯节点（`c50c_uart3_node`，ROS↔STM32 通道）。
+
+| 项 | 处理 |
+|---|---|
+| 节点标签 | `NODE_CN` 中 `c50c_uart3_node: '串口 3'` → `'ROS 通讯'`（判读条「节点离线/离线节点」文案同步生效） |
+| 概览卡加行 | `index.html` 设备节点卡在「底盘」与「超声波」之间插入 `<span>ROS 通讯</span><b id="ov-n-uart3">`；渲染 forEach 补 `['ov-n-uart3','c50c_uart3_node']`；原「不单独展示」注释随之过期，已改写（web_bridge 仍不单独展示） |
+| 锁停原因译名 | `STOP_CAUSE_TEXT` 补 `session_dead: '会话失效'`（patrol.py:821 许可侧枚举会流进锁停原因，此前原样显示英文） |
+
+验收：真板登录后概览设备节点卡五行齐全（相机/激光雷达/底盘/ROS 通讯/超声波），ROS 通讯「在线」绿色；判读条锁停原因显示「用户全局停车」（causeText 同表）。截图 `docs/ui-shots/batch9d-overview.png`、`batch9d-nodes-card.png`。上板 `e21c657bcfd37c1ad221bcc01e2a7327`（两端 md5 一致，服务 active），commit `03d91a5`。
+
 
 
