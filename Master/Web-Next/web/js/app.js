@@ -903,7 +903,7 @@
 
   /* 设备节点全中文：键名→中文标签（概览卡与判读条共用），状态值→在线/离线 */
   var NODE_CN = {
-    camera_node: '相机', lidar_node: '激光雷达', c50c_uart3_node: '串口 3',
+    camera_node: '相机', lidar_node: '激光雷达', c50c_uart3_node: 'ROS 通讯',
     chassis_status_node: '底盘', web_bridge: 'Web 服务'
   };
   var NODE_STATE_TEXT = { online: '在线', offline: '离线' };
@@ -929,6 +929,8 @@
     license_lost: '网页许可中断',
     manual_takeover: '手动接管',
     map_changed: '地图已更换，请重新保存路线',
+    /* 锁停原因可携带许可侧枚举（patrol.py:821 session_dead），许可表里已有译名 */
+    session_dead: '会话失效',
   };
   function causeText(s) { return STOP_CAUSE_TEXT[s] || s; }
 
@@ -1059,12 +1061,11 @@
     T($('ov-task-text'), task.state === 'idle' ? '空闲' : (task.text || '—'));
     setB($('ov-task-ch'), task.channel ? '就绪' : '断开', !!task.channel);
 
-    // 设备节点（全中文提示）。串口 3 是 ROS↔STM32 传输通道、Web 服务是页面本身，
-    // 都不单独展示——前者断掉底盘数据会超时，后者挂了整个页面都不可能有数据；
-    // ovIssues 仍监控它们，异常照报。
+    // 设备节点（全中文提示）。Web 服务是页面本身，不单独展示——挂了整个页面
+    // 都不可能有数据；ovIssues 仍监控它，异常照报。
     var nodes = st.nodes || {};
     [['ov-n-cam', 'camera_node'], ['ov-n-lidar', 'lidar_node'],
-     ['ov-n-chassis', 'chassis_status_node']].forEach(function (pair) {
+     ['ov-n-chassis', 'chassis_status_node'], ['ov-n-uart3', 'c50c_uart3_node']].forEach(function (pair) {
       var v = nodes[pair[1]];
       setB($(pair[0]), v == null ? '—' : (NODE_STATE_TEXT[v] || v), v === 'online' ? true : v === 'offline' ? false : null);
     });
