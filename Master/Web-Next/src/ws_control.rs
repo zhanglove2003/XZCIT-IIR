@@ -219,6 +219,9 @@ async fn process_msg(
         "sensor_restart" => handle_sensor_restart(hub, state, msg, tx).await,
         "speaker_test" => handle_speaker_test(hub, state, tx).await,
         "speaker_volume" => handle_speaker_volume(hub, state, msg, tx).await,
+        "mic_record_start" => handle_mic_record_start(hub, state, tx).await,
+        "mic_record_stop" => handle_mic_record_stop(hub, state, tx).await,
+        "mic_play" => handle_mic_play(hub, state, tx).await,
         "relocalize" => handle_relocalize(hub, state, msg, tx).await,
         "patrol_save" => handle_patrol_save(hub, state, msg, tx).await,
         "patrol_start" => handle_patrol_start(hub, state, tx).await,
@@ -355,7 +358,8 @@ async fn handle_view(hub: &'static Hub, state: &mut ConnState, msg: &Value, tx: 
 async fn handle_login(hub: &'static Hub, state: &mut ConnState, msg: &Value, tx: &Sender<Message>) {
     let username = msg.get("username").and_then(Value::as_str).unwrap_or("");
     let password = msg.get("password").and_then(Value::as_str).unwrap_or("");
-    let ok = hub.manual_login(state.conn, username, password);
+    let session_id = msg.get("session_id").and_then(Value::as_str);
+    let ok = hub.manual_login_with_session(state.conn, username, password, session_id);
     send_reply(tx, json!({ "t": "manual_auth", "ok": ok }), true).await;
     if ok && state.page.as_deref() == Some("control") {
         // 蓝图语义「已登录 + 在控制页」即刻成立：登录成功时若本连接已经
@@ -569,6 +573,183 @@ async fn handle_speaker_volume(hub: &'static Hub, state: &ConnState, msg: &Value
     });
 }
 
+fn mic_stop_message(info: &crate::mic::StopInfo, auto_stopped: bool) -> String {
+    let low_hint =
+        if info.peak < crate::mic::NORM_MIN_PEAK { "，音量极低请靠近说话" } else { "" };
+    if auto_stopped {
+        format!("录音已达上限并自动结束（{:.1}s{low_hint}）", info.duration_s)
+    } else {
+        format!("录音完成，时长 {:.1}s（{}{low_hint}）", info.duration_s, info.label)
+    }
+}
+
+/// `mic_record_start`：启动板上麦克风录音（raw ALSA `arecord`，最长 60s），
+/// 并挂 61s 自动停止看护任务以免连接断开后写满 `/tmp`。
+async fn handle_mic_record_start(hub: &'static Hub, state: &ConnState, tx: &Sender<Message>) {
+    if let Err(e) = require_drive_auth(hub, state) {
+        send_manual_error(tx, e).await;
+        return;
+    }
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        let job = tokio::task::spawn_blocking(crate::mic::start_recording);
+        let reply = match job.await {
+            Err(e) => json!({
+                "t": "mic_status",
+                "ok": false,
+                "action": "start",
+                "message": format!("开始录音失败：{e}"),
+                "mic": crate::mic::status_snapshot(),
+            }),
+            Ok(Err(e)) => json!({
+                "t": "mic_status",
+                "ok": false,
+                "action": "start",
+                "message": format!("开始录音失败：{e}"),
+                "mic": crate::mic::status_snapshot(),
+            }),
+            Ok(Ok(info)) => {
+                let rec_gen = info.generation;
+                let tx_auto = tx.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(
+                        crate::mic::MAX_RECORD_SECS + 1,
+                    ))
+                    .await;
+                    if let Ok(Ok(Some(stop))) = tokio::task::spawn_blocking(move || {
+                        crate::mic::stop_if_generation(rec_gen)
+                    })
+                    .await
+                    {
+                        send_reply(
+                            &tx_auto,
+                            json!({
+                                "t": "mic_status",
+                                "ok": true,
+                                "action": "auto_stop",
+                                "message": mic_stop_message(&stop, true),
+                                "mic": stop.snapshot,
+                            }),
+                            true,
+                        )
+                        .await;
+                    }
+                });
+                json!({
+                    "t": "mic_status",
+                    "ok": true,
+                    "action": "start",
+                    "message": format!(
+                        "开始录音（{}，最长 {}s）",
+                        info.label,
+                        crate::mic::MAX_RECORD_SECS
+                    ),
+                    "mic": info.snapshot,
+                })
+            }
+        };
+        send_reply(&tx, reply, true).await;
+    });
+}
+
+/// `mic_record_stop`：手动停止当前录音并生成可回放的标准 WAV。
+async fn handle_mic_record_stop(hub: &'static Hub, state: &ConnState, tx: &Sender<Message>) {
+    if let Err(e) = require_drive_auth(hub, state) {
+        send_manual_error(tx, e).await;
+        return;
+    }
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        let job = tokio::task::spawn_blocking(crate::mic::stop_recording);
+        let reply = match job.await {
+            Err(e) => json!({
+                "t": "mic_status",
+                "ok": false,
+                "action": "stop",
+                "message": format!("结束录音失败：{e}"),
+                "mic": crate::mic::status_snapshot(),
+            }),
+            Ok(Err(e)) => json!({
+                "t": "mic_status",
+                "ok": false,
+                "action": "stop",
+                "message": format!("结束录音失败：{e}"),
+                "mic": crate::mic::status_snapshot(),
+            }),
+            Ok(Ok(info)) => json!({
+                "t": "mic_status",
+                "ok": true,
+                "action": "stop",
+                "message": mic_stop_message(&info, false),
+                "mic": info.snapshot,
+            }),
+        };
+        send_reply(&tx, reply, true).await;
+    });
+}
+
+/// `mic_play`：经车体喇叭（es8388 `aplay`）播放最近录制的音频。
+async fn handle_mic_play(hub: &'static Hub, state: &ConnState, tx: &Sender<Message>) {
+    if let Err(e) = require_drive_auth(hub, state) {
+        send_manual_error(tx, e).await;
+        return;
+    }
+    let (job, playing_snap) = match crate::mic::begin_play() {
+        Ok(pair) => pair,
+        Err(e) => {
+            send_reply(
+                tx,
+                json!({
+                    "t": "mic_status",
+                    "ok": false,
+                    "action": "play_done",
+                    "message": format!("播放录音失败：{e}"),
+                    "mic": crate::mic::status_snapshot(),
+                }),
+                true,
+            )
+            .await;
+            return;
+        }
+    };
+    send_reply(
+        tx,
+        json!({
+            "t": "mic_status",
+            "ok": true,
+            "action": "playing",
+            "message": "",
+            "mic": playing_snap,
+        }),
+        true,
+    )
+    .await;
+
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        let task = tokio::task::spawn_blocking(move || crate::mic::finish_play(job));
+        let (ok, message, mic_snap) = match task.await {
+            Err(e) => (false, format!("播放录音失败：{e}"), crate::mic::status_snapshot()),
+            Ok(Err(e)) => (false, format!("播放录音失败：{e}"), crate::mic::status_snapshot()),
+            Ok(Ok((dur, _dev, snap))) => {
+                (true, format!("录音播放完成（{:.1}s）", dur), snap)
+            }
+        };
+        send_reply(
+            &tx,
+            json!({
+                "t": "mic_status",
+                "ok": ok,
+                "action": "play_done",
+                "message": message,
+                "mic": mic_snap,
+            }),
+            true,
+        )
+        .await;
+    });
+}
+
 /// ros 模式走真实链路并等待真实结果；fake 模式保留假回执（无 AMCL）。
 async fn handle_relocalize(hub: &'static Hub, state: &ConnState, msg: &Value, tx: &Sender<Message>) {
     if let Err(e) = require_drive_auth(hub, state) {
@@ -586,6 +767,15 @@ async fn handle_relocalize(hub: &'static Hub, state: &ConnState, msg: &Value, tx
             return;
         }
     }
+    if let Some(reason) = hub.relocalize_motion_guard() {
+        send_reply(
+            tx,
+            json!({ "t": "relocalize_status", "ok": false, "message": reason }),
+            true,
+        )
+        .await;
+        return;
+    }
     if !hub.relocalize_begin() {
         send_reply(
             tx,
@@ -596,31 +786,39 @@ async fn handle_relocalize(hub: &'static Hub, state: &ConnState, msg: &Value, tx
         return;
     }
     if crate::ros::enabled() {
-        let (ok, detail) = crate::ros::request_relocalize_ros().await;
-        hub.relocalize_end();
-        if ok {
-            let x = detail.get("x").and_then(Value::as_f64).unwrap_or(0.0);
-            let y = detail.get("y").and_then(Value::as_f64).unwrap_or(0.0);
-            let yaw_deg = detail.get("yaw_deg").and_then(Value::as_f64).unwrap_or(0.0);
-            let hit = detail.get("hit_ratio").and_then(Value::as_f64).unwrap_or(0.0);
-            let ms = detail.get("match_ms").and_then(Value::as_f64).unwrap_or(0.0);
-            send_reply(
-                tx,
-                json!({ "t": "relocalize_status", "ok": true, "x": x, "y": y,
-                        "yaw": yaw_deg, "hit_ratio": hit, "match_ms": ms,
-                        "message": format!(
-                            "重定位完成：({x:+.2}, {y:+.2}) m，朝向 {yaw_deg:.1}°，匹配率 {:.0}%（{} ms）",
-                            hit * 100.0, ms as i64) }),
-                true,
-            )
-            .await;
-        } else {
-            let e = detail
-                .get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("重定位失败");
-            send_manual_error(tx, e).await;
-        }
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let (ok, detail) = crate::ros::request_relocalize_ros().await;
+            hub.relocalize_end();
+            if ok {
+                let x = detail.get("x").and_then(Value::as_f64).unwrap_or(0.0);
+                let y = detail.get("y").and_then(Value::as_f64).unwrap_or(0.0);
+                let yaw_deg = detail.get("yaw_deg").and_then(Value::as_f64).unwrap_or(0.0);
+                let hit = detail.get("hit_ratio").and_then(Value::as_f64).unwrap_or(0.0);
+                let ms = detail.get("match_ms").and_then(Value::as_f64).unwrap_or(0.0);
+                send_reply(
+                    &tx,
+                    json!({ "t": "relocalize_status", "ok": true, "x": x, "y": y,
+                            "yaw": yaw_deg, "hit_ratio": hit, "match_ms": ms,
+                            "message": format!(
+                                "重定位完成：({x:+.2}, {y:+.2}) m，朝向 {yaw_deg:.1}°，匹配率 {:.0}%（{} ms）",
+                                hit * 100.0, ms as i64) }),
+                    true,
+                )
+                .await;
+            } else {
+                let e = detail
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("重定位失败");
+                send_reply(
+                    &tx,
+                    json!({ "t": "relocalize_status", "ok": false, "message": e }),
+                    true,
+                )
+                .await;
+            }
+        });
         return;
     }
     // fake 模式：无 AMCL，保留假回执（本地 UI 演示）。

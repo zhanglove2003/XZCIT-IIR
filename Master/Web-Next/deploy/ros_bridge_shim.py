@@ -46,7 +46,9 @@ import base64
 import json
 import math
 import os
+import pickle
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -94,6 +96,16 @@ try:  # 点选导航/巡航派发
     from nav2_msgs.action import NavigateToPose
 except ImportError:  # pragma: no cover
     NavigateToPose = None
+
+try:  # AMCL 无运动刷新（发布 /initialpose 后触发粒子重算，web_debug.py:88-90）
+    from std_srvs.srv import Empty as EmptySrv
+except ImportError:  # pragma: no cover
+    EmptySrv = None
+
+try:  # 定位校准后清代价地图（清掉 AMCL 漂移期墙体残影，web_debug.py:94-97）
+    from nav2_msgs.srv import ClearEntireCostmap as ClearCostmapSrv
+except ImportError:  # pragma: no cover
+    ClearCostmapSrv = None
 
 try:  # numpy 全局重定位（旧栈 web_node/relocalize.py 纯 numpy 实现，零 scipy）；
     # 垫片与 relocalize.py 同目录部署，缺 numpy 时降级（回执报错，不假装成功）
@@ -294,6 +306,9 @@ REARM_TOPIC = 'rearm_request'            # web_debug.py:175
 ULTRASONIC_REARM_TOPIC = 'ultrasonic_rearm'  # web_debug.py:1237-1238
 PATROL_STATUS_TOPIC = 'patrol_status'    # web_debug.py:1210-1211
 INITIALPOSE_TOPIC = 'initialpose'        # relocalize 出口（AMCL 订阅）
+NOMOTION_SERVICE = 'request_nomotion_update'
+CLEAR_GLOBAL_COSTMAP_SERVICE = '/global_costmap/clear_entirely_global_costmap'
+CLEAR_LOCAL_COSTMAP_SERVICE = '/local_costmap/clear_entirely_local_costmap'
 
 MANUAL_TICK_S = 0.05                     # manual_forward.py web_debug.py:1242
 MANUAL_PUBLISH_PERIOD_S = 0.10           # manual_forward.py:18
@@ -387,6 +402,23 @@ class BridgeShim(Node):
         # 重定位出口：AMCL 订阅 /initialpose（Publisher=0 等待喂初始位姿）
         self._pub_initialpose = self.create_publisher(
             PoseWithCovarianceStamped, INITIALPOSE_TOPIC, status_qos(1))
+        self._cli_nomotion = None
+        if EmptySrv is not None:
+            try:
+                self._cli_nomotion = self.create_client(EmptySrv, NOMOTION_SERVICE)
+            except Exception:  # pragma: no cover
+                self._cli_nomotion = None
+        self._cli_clear_global_cm = None
+        self._cli_clear_local_cm = None
+        if ClearCostmapSrv is not None:
+            try:
+                self._cli_clear_global_cm = self.create_client(
+                    ClearCostmapSrv, CLEAR_GLOBAL_COSTMAP_SERVICE)
+                self._cli_clear_local_cm = self.create_client(
+                    ClearCostmapSrv, CLEAR_LOCAL_COSTMAP_SERVICE)
+            except Exception:  # pragma: no cover
+                self._cli_clear_global_cm = None
+                self._cli_clear_local_cm = None
 
         # 手动命令重发状态（manual_forward.py 语义：target/active 由命令流
         # 设置，0.05s tick、0.10s 周期重发，停止即发零）
@@ -453,7 +485,9 @@ class BridgeShim(Node):
         # 有效 scan（on_map/on_scan 各自喂；锁保护，匹配在独立线程跑）
         self._reloc_lock = threading.Lock()
         self._map_grid = None
+        self._map_frame = None
         self._scan_pts = None
+        self._scan_pts_t = 0.0
         # 重定位器（懒建；numpy 缺失时保持 None，降级回当前位姿重播种）
         self._relocalizer = None
         self._reloc_busy = False   # numpy 匹配器防重入（前端 relocal_busy 双保险）
@@ -576,6 +610,7 @@ class BridgeShim(Node):
         # relocalize._extract_scan 会按 MIN_RANGE_M 过滤；锁保护防并发读）
         with self._reloc_lock:
             self._scan_pts = pts
+            self._scan_pts_t = now
         self.emit({'t': 'scan', 'p': pts, 'n': valid, 'all': n})
 
     def on_map(self, msg) -> None:
@@ -590,7 +625,7 @@ class BridgeShim(Node):
         if self._map_seq == 1:
             log('收到首帧 /map：%dx%d res=%.3f（全局重定位栅格缓存就绪）'
                 % (int(info.width), int(info.height), float(info.resolution)))
-        self._map_grid = {
+        map_grid = {
             'w': int(info.width),
             'h': int(info.height),
             'res': float(info.resolution),
@@ -599,7 +634,7 @@ class BridgeShim(Node):
             'data': data,
             'seq': self._map_seq,
         }
-        self.emit({
+        map_frame = {
             't': 'map',
             'seq': self._map_seq,
             'w': int(info.width),
@@ -608,7 +643,16 @@ class BridgeShim(Node):
             'ox': float(info.origin.position.x),
             'oy': float(info.origin.position.y),
             'd': base64.b64encode(zlib.compress(data, 6)).decode('ascii'),
-        })
+        }
+        with self._reloc_lock:
+            self._map_grid = map_grid
+            self._map_frame = map_frame
+        self.emit(map_frame)
+
+    def cached_map_frame(self) -> dict | None:
+        """返回最近一次缓存的 /map 帧副本（web_next 重启重连后立即补发）。"""
+        with self._reloc_lock:
+            return dict(self._map_frame) if self._map_frame is not None else None
 
     def _pose_tick(self) -> None:
         """查 map→base_link 位姿（0.2s 一次）。TF 没备好就保持旧值不发帧，
@@ -813,13 +857,60 @@ class BridgeShim(Node):
         msg.angular.z = float(wz)
         self._pub_manual.publish(msg)
 
+    def _run_relocalize_subprocess(self, grid: dict, scan_pts, timeout_s: float = 30.0) -> dict:
+        """在短生命周期子进程执行 relocalize.py，避开 rclpy 四线程回调与 GIL 争用。"""
+        reloc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'relocalize.py')
+        if os.path.isfile(reloc_path):
+            payload = pickle.dumps((grid, scan_pts), protocol=pickle.HIGHEST_PROTOCOL)
+            proc = subprocess.run(
+                [sys.executable, reloc_path],
+                input=payload,
+                capture_output=True,
+                timeout=timeout_s,
+            )
+            out = proc.stdout.decode('utf-8', errors='replace').strip()
+            if proc.returncode != 0:
+                err_tail = proc.stderr.decode('utf-8', errors='replace').strip()[:200]
+                raise RuntimeError('重定位子进程异常退出（rc=%d）：%s' % (proc.returncode, err_tail))
+            if not out:
+                raise RuntimeError('重定位子进程无输出')
+            res = json.loads(out)
+            if not res.get('ok'):
+                raise ValueError(res.get('error') or '重定位匹配失败')
+            return res
+        if self._relocalizer is None:
+            self._relocalizer = RLOC.ScanMapRelocalizer()
+        return self._relocalizer.relocalize(grid, scan_pts)
+
+    def _trigger_post_relocalize_services(self) -> tuple[bool, int]:
+        """发布 /initialpose 后刷新 AMCL 粒子并清理 Nav2 代价地图残影。"""
+        nomotion_ok = False
+        if self._cli_nomotion is not None and EmptySrv is not None:
+            try:
+                if self._cli_nomotion.service_is_ready():
+                    self._cli_nomotion.call_async(EmptySrv.Request())
+                    nomotion_ok = True
+            except Exception:
+                pass
+        cleared = 0
+        if ClearCostmapSrv is not None:
+            for cli in (self._cli_clear_global_cm, self._cli_clear_local_cm):
+                if cli is None:
+                    continue
+                try:
+                    if cli.service_is_ready():
+                        cli.call_async(ClearCostmapSrv.Request())
+                        cleared += 1
+                except Exception:
+                    pass
+        return nomotion_ok, cleared
+
     def _relocalize_global(self, cmd: dict) -> None:
         """numpy 全局扫描匹配重定位（旧栈 web_debug.py::relocalize_pose 的
         真实现，非「当前位姿重播种」）：用缓存的 /map 栅格 + 最近一次 /scan，
         做 360° 粗搜→±0.25m/±6°精搜→±0.06m/±2°微调三阶段匹配，出
-        (x, y, yaw) 与命中率，发布 /initialpose 让 AMCL 置种子，再经 cmd_ack
-        回执真实结果（坐标/朝向/命中率/耗时）。匹配耗时 ~百 ms~秒级，放
-        独立线程跑，不阻塞 command_thread 消费下游命令。"""
+        (x, y, yaw) 与命中率，发布 /initialpose 让 AMCL 置种子并触发
+        request_nomotion_update 与代价地图清理，再经 cmd_ack 回执真实结果。"""
         cmd_id = cmd.get('id')
         if self._reloc_busy:
             self._ack_detail(cmd_id, 'relocalize', False,
@@ -832,22 +923,21 @@ class BridgeShim(Node):
         with self._reloc_lock:
             grid = self._map_grid
             scan_pts = self._scan_pts
+            scan_t = self._scan_pts_t
         if not grid or not grid.get('data'):
             self._ack_detail(cmd_id, 'relocalize', False,
                              '尚未收到静态地图，无法重定位', None)
             return
-        if not scan_pts:
+        if not scan_pts or (time.time() - scan_t) > 2.5:
             self._ack_detail(cmd_id, 'relocalize', False,
-                             '尚无激光扫描数据，无法重定位', None)
+                             '激光雷达扫描已过期或缺失，无法重定位', None)
             return
         self._reloc_busy = True
 
         def _run():
             try:
-                if self._relocalizer is None:
-                    self._relocalizer = RLOC.ScanMapRelocalizer()
-                res = self._relocalizer.relocalize(grid, scan_pts)
-                # 发布 /initialpose：格式照旧栈 relocalize_pose 752-765
+                res = self._run_relocalize_subprocess(grid, scan_pts, timeout_s=30.0)
+                # 发布 /initialpose：格式照旧栈 relocalize_pose 744-765
                 # （stamp 零时间戳是 AMCL 采纳关键）
                 msg = PoseWithCovarianceStamped()
                 msg.header.frame_id = 'map'
@@ -865,9 +955,12 @@ class BridgeShim(Node):
                 cov[35] = 0.0685
                 msg.pose.covariance = cov
                 self._pub_initialpose.publish(msg)
+                nomotion_ok, cleared_cm = self._trigger_post_relocalize_services()
                 log('relocalize 全局匹配：x=%.3f y=%.3f yaw=%.4f 命中率=%.0f%%'
-                    ' 匹配=%dms' % (res['x'], res['y'], res['yaw_rad'],
-                                    res['hit_ratio'] * 100.0, res['match_ms']))
+                    ' LUT=%dms 匹配=%dms nomotion=%s costmap_clear=%d'
+                    % (res['x'], res['y'], res['yaw_rad'],
+                       res['hit_ratio'] * 100.0, res.get('lut_ms', 0.0),
+                       res['match_ms'], nomotion_ok, cleared_cm))
                 self._ack_detail(cmd_id, 'relocalize', True, None, {
                     'x': res['x'], 'y': res['y'],
                     'yaw_deg': res['yaw_deg'],
@@ -875,6 +968,10 @@ class BridgeShim(Node):
                     'match_ms': res['match_ms'],
                     'valid_beams': res['valid_beams'],
                 })
+            except subprocess.TimeoutExpired:
+                log('relocalize 全局匹配超时（>30s）')
+                self._ack_detail(cmd_id, 'relocalize', False,
+                                 '全局重定位超时（>30s），请重试', None)
             except Exception as exc:  # noqa: BLE001
                 log('relocalize 全局匹配失败：%r' % (exc,))
                 self._ack_detail(cmd_id, 'relocalize', False, str(exc), None)
@@ -1272,8 +1369,15 @@ def upstream_thread(node: BridgeShim, token: str) -> None:
                 continue
             if not node._connected:
                 batch.insert(0, node.hello_frame())
+                cached_map = node.cached_map_frame()
+                if cached_map is not None:
+                    batch.insert(1, cached_map)
+                    log('已连接 Web-Next %s:%d，发送 bridge_hello + 缓存 /map'
+                        % (node._host, node._port))
+                else:
+                    log('已连接 Web-Next %s:%d，发送 bridge_hello'
+                        % (node._host, node._port))
                 node._connected = True
-                log('已连接 Web-Next %s:%d，发送 bridge_hello' % (node._host, node._port))
             body = json.dumps({
                 'mono_ms': int(time.monotonic() * 1000),
                 'frames': batch,

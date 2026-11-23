@@ -171,6 +171,10 @@ pub struct Manual {
     /// 用户裁决：最新登录顶替旧登录，不等旧会话 350ms 断流）。窗口 10s，
     /// 过期/被行使/被更新登录覆盖自然失效。None = 无待行使的顶替权。
     pub login_takeover_at: Option<u64>,
+    /// 登录顶替凭证绑定的目标许可会话号：Some(sid) 时仅允许该会话号行使顶替，
+    /// 防止多标签页并存时被未登录的第三页心跳抢走一次性凭证；None 时兼容不带
+    /// session_id 的旧客户端/单测（任意新会话号首帧可接管）。
+    pub login_takeover_session: Option<String>,
 }
 
 impl Manual {
@@ -187,6 +191,7 @@ impl Manual {
             stops: 0,
             steal_warned: false,
             login_takeover_at: None,
+            login_takeover_session: None,
         }
     }
 }
@@ -421,11 +426,19 @@ impl Hub {
     // -- 运动许可（patrol.py::MotionLicense） ------------------------------
 
     /// 登录顶替凭证是否仍可行使（10s 窗口；单独提出便于测试注入时刻）。
-    fn login_takeover_active(ctl: &Control, now: u64) -> bool {
+    fn login_takeover_active(ctl: &Control, now: u64, session_id: &str) -> bool {
         const LOGIN_TAKEOVER_WINDOW_MS: u64 = 10_000;
-        ctl.manual
+        let in_window = ctl
+            .manual
             .login_takeover_at
-            .is_some_and(|t| now.saturating_sub(t) <= LOGIN_TAKEOVER_WINDOW_MS)
+            .is_some_and(|t| now.saturating_sub(t) <= LOGIN_TAKEOVER_WINDOW_MS);
+        if !in_window {
+            return false;
+        }
+        match ctl.manual.login_takeover_session.as_deref() {
+            Some(target) => target == session_id,
+            None => true,
+        }
     }
 
     /// 校验并接受一条 `motion_license`。返回拒绝原因（patrol.py::accept）。
@@ -444,10 +457,8 @@ impl Hub {
         }
         let mut ctl = self.control.lock().expect("control poisoned");
         // 登录顶替凭证（2026-11-23 用户裁决：最新登录顶替旧登录）：登录后
-        // 窗口内第一个带新会话号的心跳立即接管，不等旧会话 350ms 断流。
-        // 许可帧来自 Worker 独立连接、不携带登录身份，凭证只能按「登录后
-        // 下一帧」发放；未登录页面的重复心跳不会触发（凭证发放必经登录）。
-        let login_takeover = Self::login_takeover_active(&ctl, now);
+        // 窗口内带目标会话号的心跳立即接管，不等旧会话 350ms 断流。
+        let login_takeover = Self::login_takeover_active(&ctl, now, session_id);
         enum SessionMove {
             Keep,
             Adopt,
@@ -483,7 +494,12 @@ impl Hub {
             return Err("session_mismatch");
         }
         match move_kind {
-            SessionMove::Keep => {}
+            SessionMove::Keep => {
+                if login_takeover {
+                    ctl.manual.login_takeover_at = None;
+                    ctl.manual.login_takeover_session = None;
+                }
+            }
             SessionMove::Adopt => {
                 ctl.license.session = Some(session_id.to_string());
             }
@@ -492,6 +508,7 @@ impl Hub {
                 // 从头开始（patrol.py:723-734）。登录顶替行使一次即消费。
                 if login_takeover {
                     ctl.manual.login_takeover_at = None;
+                    ctl.manual.login_takeover_session = None;
                 }
                 ctl.license.session = Some(session_id.to_string());
                 ctl.license.last_seq = -1;
@@ -676,7 +693,19 @@ impl Hub {
     // -- 手动控制（manual_forward.py 的移植） ------------------------------
 
     /// admin 登录（manual_forward.py:51-63）。失败时同时登出该连接。
+    #[allow(dead_code)] // 兼容不带 session_id 的调用方与现有单测
     pub fn manual_login(&self, conn: u64, username: &str, password: &str) -> bool {
+        self.manual_login_with_session(conn, username, password, None)
+    }
+
+    /// admin 登录并可选择绑定页面许可会话号，避免多标签页竞态抢走顶替凭证。
+    pub fn manual_login_with_session(
+        &self,
+        conn: u64,
+        username: &str,
+        password: &str,
+        session_id: Option<&str>,
+    ) -> bool {
         let mut ctl = self.control.lock().expect("control poisoned");
         let Some(configured) = ctl.password_sha256.as_deref() else {
             // 未设置 OPI_WEB_PASSWORD_SHA256：拒绝一切登录（蓝图 §4.1）。
@@ -688,9 +717,13 @@ impl Hub {
         if user_ok && pass_ok {
             ctl.manual.authenticated.insert(conn);
             // 最新登录顶替旧登录（2026-11-23 用户裁决）：发放一次性顶替凭证。
-            // license_accept 在窗口内见到新会话号的心跳即立即接管；旧页此后
-            // 收 session_mismatch nak 静默降级。
+            // 绑定 session_id 时仅允许该会话号行使接管，防止旁路页面截胡；
+            // 未传时保留兼容任意新会话号首帧接管。
             ctl.manual.login_takeover_at = Some(now_ms());
+            ctl.manual.login_takeover_session = session_id
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
             true
         } else {
             ctl.manual.authenticated.remove(&conn);
@@ -750,6 +783,9 @@ impl Hub {
         else {
             return Err("未知控制方向".to_string());
         };
+        if speed == 0.0 {
+            return Err("当前为空档，请先挂入巡航档或运动档".to_string());
+        }
         if !(speed.is_finite() && speed > 0.0 && speed <= MANUAL_MAX_INPUT) {
             return Err(format!("运动输入 必须大于 0 且不超过 {MANUAL_MAX_INPUT}"));
         }
@@ -992,6 +1028,9 @@ impl Hub {
         ctl.patrol.index = 0;
         ctl.patrol.laps = 0;
         ctl.patrol.stop_reason.clear();
+        if ctl.patrol.sending_rid.is_none() && ctl.patrol.pending_rid.is_none() {
+            ctl.patrol.cancel_request = None;
+        }
         ctl.locked = false;
         ctl.lock_reason.clear();
         ctl.live_t_ms = Some(now_ms());
@@ -1076,15 +1115,29 @@ impl Hub {
         (true, self.nav_view_locked(&ctl))
     }
 
-    /// 取消当前单点导航（nav_cancel）。无任务时返回 (false, view)。
+    /// 取消当前单点导航或清除残留目标（nav_cancel）。巡航运行中一并停止巡航；无目标且已在 idle 时返回 (false, view)。
     pub fn nav_cancel(&self) -> (bool, Value) {
         let mut ctl = self.control.lock().expect("control poisoned");
-        if ctl.nav.state != "active" && ctl.nav.state != "sending" {
-            ctl.nav.error = "当前没有进行中的导航任务".to_string();
+        let nav_in_flight = ctl.nav.state == "active" || ctl.nav.state == "sending";
+        let patrol_running = ctl.patrol.status == "running";
+        let active_motion = nav_in_flight || patrol_running;
+        let has_residual = ctl.nav.goal.is_some() || ctl.nav.state != "idle";
+        if !active_motion && !has_residual {
+            ctl.nav.error = "当前没有导航目标".to_string();
             return (false, self.nav_view_locked(&ctl));
         }
-        ctl.nav.state = "canceled";
-        ctl.nav.result = "canceled".to_string();
+        if patrol_running {
+            ctl.patrol.status = "stopped";
+            ctl.patrol.stop_reason = "nav_cancelled".to_string();
+        }
+        ctl.nav.state = "idle";
+        ctl.nav.goal = None;
+        ctl.nav.goal_t_ms = None;
+        ctl.nav.result = if active_motion {
+            "canceled".to_string()
+        } else {
+            String::new()
+        };
         ctl.nav.error.clear();
         (true, self.nav_view_locked(&ctl))
     }
@@ -1118,6 +1171,25 @@ impl Hub {
     pub fn ultrasonic_rearm(&self) -> (bool, &'static str) {
         self.control.lock().expect("control poisoned").us_latched = false;
         (true, "已请求重新启动超声波")
+    }
+
+    /// 重定位静止护栏（对齐旧 web_debug.py::_relocalize_motion_guard）：
+    /// 有主动手动/导航/巡航任务时拒绝重定位，防止运动中重置 AMCL。
+    pub fn relocalize_motion_guard(&self) -> Option<&'static str> {
+        let ctl = self.control.lock().expect("control poisoned");
+        if ctl.manual.owner.is_some() {
+            return Some("手动控制中，请停稳后再重定位");
+        }
+        if ctl.nav.state == "sending" || ctl.nav.state == "active" {
+            return Some("点图导航进行中，请先取消导航后再重定位");
+        }
+        if matches!(
+            ctl.patrol.status,
+            "running" | "holding_goal" | "cancelling"
+        ) {
+            return Some("巡航运行中，请先停止巡航后再重定位");
+        }
+        None
     }
 
     /// 重定位（relocalize）：防重入；后台延迟由 ws_control 的 spawned 任务处理。
@@ -1366,8 +1438,8 @@ mod tests {
             let ctl = hub.control.lock().unwrap();
             let t = ctl.manual.login_takeover_at.expect("登录已发凭证");
             // 窗口内：可行使；窗口外（t + 10001）：失效
-            assert!(Hub::login_takeover_active(&ctl, t));
-            assert!(!Hub::login_takeover_active(&ctl, t + 10_001));
+            assert!(Hub::login_takeover_active(&ctl, t, "sess-new"));
+            assert!(!Hub::login_takeover_active(&ctl, t + 10_001, "sess-new"));
         }
         // 把凭证时刻拨到窗口外，整链 accept 恢复拒绝
         {
@@ -1382,5 +1454,35 @@ mod tests {
             hub.control.lock().unwrap().license.session.as_deref(),
             Some("sess-old")
         );
+    }
+
+    /// 绑定 session_id 时仅允许登录页自身接管，防止多标签页并存时被旁路
+    /// 未登录页的心跳抢走一次性顶替凭证。
+    #[test]
+    fn test_login_takeover_bound_to_session_prevents_third_tab_hijack() {
+        let hub = test_hub();
+        hub.license_accept("sess-a", 1, None).expect("A 持证");
+        hub.control.lock().unwrap().password_sha256 = Some(sha256_hex(b""));
+        assert!(hub.manual_login_with_session(9, "admin", "", Some("sess-c")));
+
+        // 旁路未登录页 B 心跳仍被拒绝，且不能消费凭证
+        assert_eq!(
+            hub.license_accept("sess-b", 1, None),
+            Err("session_mismatch")
+        );
+        {
+            let ctl = hub.control.lock().unwrap();
+            assert_eq!(ctl.license.session.as_deref(), Some("sess-a"));
+            assert!(ctl.manual.login_takeover_at.is_some(), "凭证未被旁路页面消费");
+        }
+
+        // 登录页 C 随后心跳：立即接管并消费凭证
+        hub.license_accept("sess-c", 1, None).expect("C 顶替接管");
+        {
+            let ctl = hub.control.lock().unwrap();
+            assert_eq!(ctl.license.session.as_deref(), Some("sess-c"));
+            assert!(ctl.manual.login_takeover_at.is_none(), "凭证已消费");
+            assert!(ctl.manual.login_takeover_session.is_none());
+        }
     }
 }

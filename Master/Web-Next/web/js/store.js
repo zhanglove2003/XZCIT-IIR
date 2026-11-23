@@ -100,7 +100,7 @@
       authed: false,        // admin 已登录（服务端按连接记，断线重连需重登）
       rtt: null,            // ping-pong RTT ms
       lic: { state: 'idle', seq: 0, ageMs: null }, // 100ms 许可心跳（Worker）
-      gear: 0.4,            // 手动速度 m/s
+      gear: 0,              // 手动速度 m/s（默认空档 0，需先恢复再挂挡）
       mode: 'hold',         // hold | timed
       duration: 2,          // timed 模式时长 s
       draft: [],            // 待保存航点 [{x,y}]（世界坐标）
@@ -144,13 +144,22 @@
     applyStatus: function (p) {
       if (state.srvEpoch !== null && p && p.srv_epoch !== state.srvEpoch) {
         state.srvEpoch = p.srv_epoch;
-        location.reload();
+        try {
+          location.replace(location.pathname + '?_=' + p.srv_epoch + location.hash);
+        } catch (e) {
+          location.reload();
+        }
         return;
       }
       if (p) state.srvEpoch = p.srv_epoch;
       var prevNet = state.status && state.status.network;
+      var prevGoal = state.status && state.status.nav && state.status.nav.goal;
+      var prevGoalSig = prevGoal ? prevGoal.x + ',' + prevGoal.y : '';
       state.status = p || null;
+      var nextGoal = state.status && state.status.nav && state.status.nav.goal;
+      var nextGoalSig = nextGoal ? nextGoal.x + ',' + nextGoal.y : '';
       dirty |= F.STATUS | F.CTRL;
+      if (prevGoalSig !== nextGoalSig) dirty |= F.ROUTE;
       // WiFi 行（renderConn）只登记在 F.CONN 上；network 展示签名一变就得重绘
       if (netChanged(prevNet, state.status && state.status.network)) dirty |= F.CONN;
       if (p && p.patrol && typeof p.patrol.locked === 'boolean') {

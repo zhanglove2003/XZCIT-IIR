@@ -502,3 +502,26 @@ class ScanMapRelocalizer:
             'match_ms': round(match_ms, 1),
             'lut_cached': lut_cached,
         }
+
+
+def main() -> None:
+    """子进程 CLI 入口：从 stdin 读 pickle((grid, scan_pts))，stdout 输出 JSON。
+
+    独立进程执行可彻底避开 rclpy 多线程回调与主进程 GIL 争用，不改动任何匹配算法。
+    """
+    import json
+    import pickle
+    import sys
+
+    try:
+        payload = sys.stdin.buffer.read()
+        grid, scan_pts = pickle.loads(payload)
+        res = ScanMapRelocalizer().relocalize(grid, scan_pts)
+    except Exception as exc:  # noqa: BLE001
+        res = {'ok': False, 'error': str(exc)}
+    sys.stdout.write(json.dumps(res, ensure_ascii=False))
+    sys.stdout.flush()
+
+
+if __name__ == '__main__':
+    main()

@@ -6,6 +6,7 @@
 
 mod audio;
 mod fake;
+mod mic;
 mod netinfo;
 mod ros;
 mod safety;

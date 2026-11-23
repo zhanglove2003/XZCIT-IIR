@@ -131,6 +131,20 @@
 
     &:hover:not(:disabled) { background: var(--bad); box-shadow: 0 3px 12px var(--badsoft), 0 3px 9px color-mix(in oklab, var(--bad) 35%, transparent); }
   }
+
+  /* 录音进行中：红底白字高亮，与 ghost 基态同权重靠后序覆盖 */
+  &.rec-on {
+    background: var(--bad);
+    --ring-c: transparent;
+    color: #fff;
+    font-weight: 600;
+
+    &:hover:not(:disabled) {
+      background: var(--bad);
+      color: #fff;
+      box-shadow: 0 3px 12px var(--badsoft), 0 3px 9px color-mix(in oklab, var(--bad) 35%, transparent);
+    }
+  }
 }
 
 /* ---------------- 机械方向键：3D 按压反馈 ---------------- */

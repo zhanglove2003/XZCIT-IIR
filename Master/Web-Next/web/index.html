@@ -168,13 +168,13 @@ try {
             <div class="ctl-row">
               <button class="gear" type="button" data-v="0.8"><b>运动档</b><span>0.8 m/s</span></button>
               <button class="gear" type="button" data-v="0.4"><b>巡航档</b><span>0.4 m/s</span></button>
-              <button class="gear" type="button" data-v="0"><b>空档</b><span>0 m/s</span></button>
+              <button class="gear active" type="button" data-v="0"><b>空档</b><span>0 m/s</span></button>
             </div>
             <div class="btn-row">
               <button id="btn-motion-stop" class="btn estop" type="button">全局停止</button>
               <button id="btn-motion-rearm" class="btn ghost" type="button">恢复</button>
             </div>
-            <p class="kbd-hint">WASD / 方向键移动 · 空格急停</p>
+            <p class="kbd-hint" id="pad-hint">WASD / 方向键移动 · 空格急停</p>
           </article>
 
           <article class="card cam-card" data-card>
@@ -234,6 +234,11 @@ try {
                 <article class="card" data-card>
                   <h3>矩阵麦克风</h3>
                   <div class="kv"><span>采集设备</span><b id="sn-mic-st">—</b></div>
+                  <div class="kv"><span>录音</span><b class="mono" id="sn-mic-rec">未录音</b></div>
+                  <div class="btn-row">
+                    <button id="btn-mic-rec" class="btn ghost" type="button" disabled>开始录音</button>
+                    <button id="btn-mic-play" class="btn ghost" type="button" disabled>播放录音</button>
+                  </div>
                 </article>
               </div>
             </div>
@@ -267,7 +272,10 @@ try {
                 <article class="card" data-card>
                   <h3>导航 <span class="st" id="nav-state">待命</span></h3>
                   <div class="kv"><span>目标</span><b class="mono" id="nav-goal">—</b></div>
-                  <button id="btn-nav-cancel" class="btn ghost wide" type="button">取消导航</button>
+                  <div class="btn-row">
+                    <button id="btn-nav-home" class="btn ghost" type="button">回场</button>
+                    <button id="btn-nav-cancel" class="btn ghost" type="button">取消导航</button>
+                  </div>
                 </article>
                 <article class="card" data-card>
                   <h3>航点巡航 <span class="st" id="patrol-state">未启动</span></h3>

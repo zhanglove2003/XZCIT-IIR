@@ -74,9 +74,9 @@ pub const PATROL_FRAME_PERIOD_MS: u64 = 1000;
 pub const CMD_RING_MAX: usize = 256;
 /// 命令确认（cmd_ack）等待时限（ms）。
 pub const CMD_ACK_TIMEOUT_MS: u64 = 2000;
-/// 全局重定位（numpy 扫描-地图匹配）ack 等待时限（ms）：三阶段匹配 +
-/// LUT 首次构建可能 1~3s，给足余量（垫片是独立线程跑，不阻塞命令消费）。
-pub const RELOCALIZE_ACK_TIMEOUT_MS: u64 = 12_000;
+/// 全局重定位（numpy 扫描-地图匹配）ack 等待时限（ms）：垫片经子进程跑
+/// 独立 Python 避开 GIL 争用（小核 ~4–5s），子进程超时上限 30s 再留余量。
+pub const RELOCALIZE_ACK_TIMEOUT_MS: u64 = 35_000;
 /// 长轮询等待上限（ms）：契约 wait_ms=20000 缺省，钳到 30s 防连接被中间
 /// 设备掐断。
 pub const CMD_WAIT_MAX_MS: u64 = 30_000;
@@ -384,6 +384,9 @@ impl CommandQueue {
     fn clear_undelivered(&self) {
         let mut st = self.st.lock().expect("queue poisoned");
         st.ring.retain(|c| c.delivered);
+        if st.last_cursor >= st.next_id {
+            st.last_cursor = 0;
+        }
         st.patrol_slot = None;
     }
 
@@ -399,17 +402,25 @@ impl CommandQueue {
     /// 命令投递即出队。`wait_ms` 内无命令返回空表。
     async fn poll(&self, cursor: u64, wait_ms: u64) -> (Vec<Value>, u64) {
         let deadline = Instant::now() + Duration::from_millis(wait_ms.min(CMD_WAIT_MAX_MS));
+        let mut eff_cursor = cursor;
         loop {
             {
                 let mut st = self.st.lock().expect("queue poisoned");
-                st.last_cursor = st.last_cursor.max(cursor);
+                if eff_cursor >= st.next_id {
+                    // 垫片带着上一代 web_next 进程的旧 cursor 来轮询（例如单边
+                    // 重启 web_next 后 next_id 从 1 重新计数）：自动归零同步。
+                    eff_cursor = 0;
+                    st.last_cursor = 0;
+                } else {
+                    st.last_cursor = st.last_cursor.max(eff_cursor);
+                }
                 let mut out = Vec::new();
                 if let Some(frame) = st.patrol_slot.take() {
                     out.push(frame);
                 }
                 let mut max_id = 0u64;
                 for c in st.ring.iter_mut() {
-                    if c.id > cursor && (c.replayable || !c.delivered) {
+                    if c.id > eff_cursor && (c.replayable || !c.delivered) {
                         out.push(c.body.clone());
                         c.delivered = true;
                         max_id = c.id;
@@ -418,12 +429,12 @@ impl CommandQueue {
                 // 边沿命令投递即出队（不再占用环形容量）。
                 st.ring.retain(|c| c.replayable || !c.delivered);
                 if !out.is_empty() {
-                    return (out, max_id.max(cursor));
+                    return (out, max_id.max(eff_cursor));
                 }
             }
             let now = Instant::now();
             if now >= deadline {
-                return (Vec::new(), cursor);
+                return (Vec::new(), eff_cursor);
             }
             let _ = tokio::time::timeout(deadline - now, self.notify.notified()).await;
         }
@@ -958,7 +969,7 @@ fn apply_nav_feedback(frame: &Value) -> bool {
     true
 }
 
-/// `{t:"cmd_ack",id,ok,error}` → resolve 等待中的 oneshot。
+/// `{t:"cmd_ack",id,ok,error,detail?}` → resolve 等待中的 oneshot。
 fn apply_cmd_ack(frame: &Value) -> bool {
     let Some(id) = frame.get("id").and_then(Value::as_u64) else {
         return false;
@@ -966,6 +977,7 @@ fn apply_cmd_ack(frame: &Value) -> bool {
     let ack = json!({
         "ok": frame.get("ok").and_then(Value::as_bool).unwrap_or(false),
         "error": frame.get("error").cloned().unwrap_or(Value::Null),
+        "detail": frame.get("detail").cloned().unwrap_or(Value::Null),
     });
     if let Some(tx) = acks_slot().lock().expect("acks poisoned").remove(&id) {
         let _ = tx.send(ack);
@@ -1349,7 +1361,11 @@ fn boot_mono_ms() -> u64 {
 /// （防重放校验完全靠 seq，不因映射受影响）。
 fn session_int(hex: &str) -> i64 {
     static MAP: OnceLock<Mutex<std::collections::HashMap<String, i64>>> = OnceLock::new();
+    static BASE: OnceLock<i64> = OnceLock::new();
     static SEQ: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+    // 进程启动纪元基数：确保 c50c-web-next 重启后分配的下游 session 整数绝不
+    // 与重启前旧值碰撞，避免 c50c_uart3_node 按旧会话高 seq 判 seq_replay 拒收。
+    let base = *BASE.get_or_init(|| (boot_mono_ms() as i64).max(1).saturating_mul(1000));
     let mut m = MAP
         .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
         .lock()
@@ -1357,7 +1373,7 @@ fn session_int(hex: &str) -> i64 {
     if let Some(&v) = m.get(hex) {
         return v;
     }
-    let v = SEQ.fetch_add(1, Ordering::Relaxed) + 1;
+    let v = base + SEQ.fetch_add(1, Ordering::Relaxed) + 1;
     m.insert(hex.to_string(), v);
     v
 }
@@ -1517,19 +1533,45 @@ pub async fn request_relocalize_ros() -> (bool, Value) {
 }
 
 /// 手动导航取消（ros 模式 handle_nav_cancel 分叉）：与巡逻共用单一在途
-/// 目标槽；取消已发出即返回 True（nav_goal.py:326-364 语义）。
+/// 目标槽；进行中同时停止巡航、下发 nav_cancel 并立即发 manual_zero 刹停，
+/// 若仅残留 failed/done/canceled 状态或目标也一并复位回 idle 并清空目标。
 pub fn cancel_nav_goal() -> (bool, Value) {
     let hub = safety::global();
     let mut ctl = hub.control.lock().expect("control poisoned");
-    if ctl.nav.state != "active" && ctl.nav.state != "sending" {
-        ctl.nav.error = "当前没有进行中的导航任务".to_string();
+    let nav_in_flight = ctl.nav.state == "active" || ctl.nav.state == "sending";
+    let patrol_running = ctl.patrol.status == "running"
+        || ctl.patrol.sending_rid.is_some()
+        || ctl.patrol.pending_rid.is_some();
+    let active_motion = nav_in_flight || patrol_running;
+    let has_residual = ctl.nav.goal.is_some() || ctl.nav.state != "idle";
+    if !active_motion && !has_residual {
+        ctl.nav.error = "当前没有导航目标".to_string();
         return (false, nav_view_locked(&ctl));
     }
-    let rid = ctl.nav.rid.clone();
-    ctl.nav.state = "canceled";
-    ctl.nav.result = "canceled".to_string();
+    // 巡航运行中点「取消导航」必须同步停止巡航，否则 20Hz tick 的
+    // nav_housekeeping_and_dispatch 会在取消回执落地后 ~50ms 立即重派下一航点。
+    if patrol_running {
+        ctl.patrol.status = "stopped";
+        ctl.patrol.stop_reason = "nav_cancelled".to_string();
+    }
+    let mut rids_to_cancel: Vec<String> = Vec::new();
+    for opt in [&ctl.nav.rid, &ctl.patrol.sending_rid, &ctl.patrol.pending_rid] {
+        if let Some(r) = opt {
+            if !rids_to_cancel.contains(r) {
+                rids_to_cancel.push(r.clone());
+            }
+        }
+    }
+    ctl.nav.state = "idle";
+    ctl.nav.goal = None;
+    ctl.nav.goal_t_ms = None;
+    ctl.nav.result = if active_motion {
+        "canceled".to_string()
+    } else {
+        String::new()
+    };
     ctl.nav.error.clear();
-    if let Some(r) = &rid {
+    for r in &rids_to_cancel {
         queue_slot().push(json!({ "c": "nav_cancel", "rid": r }), false);
         if ctl.patrol.sending_rid.as_deref() == Some(r.as_str())
             || ctl.patrol.pending_rid.as_deref() == Some(r.as_str())
@@ -1537,8 +1579,18 @@ pub fn cancel_nav_goal() -> (bool, Value) {
             ctl.patrol.cancel_request = Some(r.clone());
         }
     }
+    // 在途任务取消时同步发一次 manual_zero（/manual_cmd_vel 优先级高于 /nav_cmd_vel），
+    // 让底盘立即刹停而不必等 Nav2 cancel 异步回调或 nav_relay 1s 超时，同时不锁停 guard。
+    if active_motion {
+        queue_slot().push(json!({ "c": "manual_zero" }), false);
+    }
     ctl.nav.rid = None;
     drop(ctl);
+    {
+        let mut raw = raw_slot().lock().expect("raw poisoned");
+        raw.nav_feedback = None;
+        raw.nav_feedback_t = None;
+    }
     (true, safety::global().nav_view())
 }
 
@@ -2150,6 +2202,26 @@ mod tests {
     }
 
     #[test]
+    fn test_command_queue_stale_cursor_resets_across_restart() {
+        let _guard = guard();
+        init_all();
+        let q = queue_slot();
+        {
+            let mut st = q.st.lock().unwrap();
+            st.ring.clear();
+            st.patrol_slot = None;
+            st.last_cursor = 0;
+        }
+        let id = q.push(json!({ "c": "guard_authorize", "value": true }), true);
+        let stale_cursor = id + 1000;
+        let (cmds, cursor) = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(q.poll(stale_cursor, 0));
+        assert_eq!(cmds.len(), 1, "旧进程大 cursor 应自动归零并投递新命令");
+        assert_eq!(cursor, id, "返回游标同步到新进程命令 id");
+    }
+
+    #[test]
     fn test_relocalize_enqueues_global_match_edge_command() {
         // 全局匹配重定位：命令体只有 {c:"relocalize"}（位姿由垫片用
         // /map+/scan 实算，不依赖前端先验），边沿触发不重放。
@@ -2560,5 +2632,174 @@ mod tests {
         let _guard = guard();        assert!(FRAME_BATCH_MAX == 256);
         assert!(BODY_LIMIT_BYTES == 8 * 1024 * 1024);
         assert!(BRIDGE_OFFLINE_MS == 10_000, "活性窗口必须大于 probe 周期 3s");
+    }
+
+    #[test]
+    fn test_cmd_ack_preserves_detail() {
+        let _guard = guard();
+        init_all();
+        assert!(RELOCALIZE_ACK_TIMEOUT_MS >= 30_000);
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        acks_slot().lock().expect("acks poisoned").insert(999_001, tx);
+        assert!(apply_frame(&json!({
+            "t": "cmd_ack",
+            "id": 999_001,
+            "ok": true,
+            "error": null,
+            "detail": {
+                "x": -0.005,
+                "y": 0.005,
+                "yaw_deg": -1.0,
+                "hit_ratio": 0.93,
+                "match_ms": 3150.0,
+            }
+        })));
+        let ack = rx.try_recv().expect("cmd_ack must resolve oneshot");
+        assert_eq!(ack.get("ok").and_then(Value::as_bool), Some(true));
+        let detail = ack.get("detail").expect("detail must be preserved");
+        assert_eq!(detail.get("x").and_then(Value::as_f64), Some(-0.005));
+        assert_eq!(detail.get("y").and_then(Value::as_f64), Some(0.005));
+        assert_eq!(detail.get("yaw_deg").and_then(Value::as_f64), Some(-1.0));
+        assert_eq!(detail.get("hit_ratio").and_then(Value::as_f64), Some(0.93));
+        assert_eq!(detail.get("match_ms").and_then(Value::as_f64), Some(3150.0));
+    }
+
+    #[test]
+    fn test_cancel_nav_goal_clears_failed_and_active_goal() {
+        let _guard = guard();
+        init_all();
+        let hub = safety::global();
+        // 1) 残留 failed 状态 + goal → cancel_nav_goal 必须清零并回到 idle
+        {
+            let mut ctl = hub.control.lock().unwrap();
+            ctl.nav.state = "failed";
+            ctl.nav.goal = Some(safety::Goal { x: 3.81, y: -0.30, yaw: None });
+            ctl.nav.goal_t_ms = Some(1234);
+            ctl.nav.error = "导航中止（规划/控制失败）".to_string();
+            ctl.nav.rid = None;
+            ctl.patrol.status = "idle";
+            ctl.patrol.sending_rid = None;
+            ctl.patrol.pending_rid = None;
+        }
+        let (ok, view) = cancel_nav_goal();
+        assert!(ok, "失败残留目标必须允许被清除");
+        assert_eq!(view.get("state").and_then(Value::as_str), Some("idle"));
+        assert!(view.get("goal").is_some_and(Value::is_null));
+        {
+            let ctl = hub.control.lock().unwrap();
+            assert!(ctl.nav.goal.is_none());
+            assert!(ctl.nav.error.is_empty());
+        }
+        assert!(queue_slot().st.lock().unwrap().ring.is_empty(), "无在途 rid 时不发 nav_cancel");
+
+        // 2) 已在 idle 且无目标时再次取消应拒并提示
+        let (ok2, view2) = cancel_nav_goal();
+        assert!(!ok2);
+        assert_eq!(view2.get("error").and_then(Value::as_str), Some("当前没有导航目标"));
+
+        // 3) 进行中的目标 → 回 idle、清 goal、下发 nav_cancel
+        {
+            let mut ctl = hub.control.lock().unwrap();
+            ctl.nav.state = "active";
+            ctl.nav.goal = Some(safety::Goal { x: 0.0, y: 0.0, yaw: Some(0.0) });
+            ctl.nav.rid = Some("m42".to_string());
+        }
+        let (ok3, view3) = cancel_nav_goal();
+        assert!(ok3);
+        assert_eq!(view3.get("state").and_then(Value::as_str), Some("idle"));
+        assert_eq!(view3.get("result").and_then(Value::as_str), Some("canceled"));
+        assert!(view3.get("goal").is_some_and(Value::is_null));
+        let st = queue_slot().st.lock().unwrap();
+        assert!(st.ring.iter().any(|c| {
+            c.body.get("c").and_then(Value::as_str) == Some("nav_cancel")
+                && c.body.get("rid").and_then(Value::as_str) == Some("m42")
+        }));
+    }
+
+    #[test]
+    fn test_cancel_nav_goal_stops_patrol_and_prevents_redispatch() {
+        let _guard = guard();
+        init_all();
+        let hub = safety::global();
+        {
+            let mut ctl = hub.control.lock().unwrap();
+            ctl.patrol.route = Some(safety::Route {
+                map_id: "map".into(),
+                points: vec![(1.0, 0.0), (2.0, 0.0)],
+            });
+            ctl.patrol.status = "running";
+            ctl.patrol.index = 0;
+            ctl.patrol.laps = 0;
+            ctl.current_map_id = Some("map".into());
+            ctl.locked = false;
+            ctl.user_locked = false;
+        }
+        nav_housekeeping_and_dispatch();
+        let rid = {
+            let ctl = hub.control.lock().unwrap();
+            ctl.patrol.sending_rid.clone().expect("patrol waypoint dispatched")
+        };
+        assert!(apply_frame(&frame(
+            "nav_result",
+            json!({ "rid": rid, "status": "accepted", "text": "" })
+        )));
+        {
+            let ctl = hub.control.lock().unwrap();
+            assert_eq!(ctl.patrol.pending_rid.as_deref(), Some(rid.as_str()));
+            assert_eq!(ctl.nav.state, "active");
+        }
+        queue_slot().st.lock().unwrap().ring.clear();
+
+        // 取消导航必须同步停掉巡航、清空 nav 槽、发 nav_cancel + manual_zero
+        let (ok, view) = cancel_nav_goal();
+        assert!(ok);
+        assert_eq!(view.get("state").and_then(Value::as_str), Some("idle"));
+        assert!(view.get("goal").is_some_and(Value::is_null));
+        {
+            let ctl = hub.control.lock().unwrap();
+            assert_eq!(ctl.patrol.status, "stopped");
+            assert_eq!(ctl.patrol.stop_reason, "nav_cancelled");
+            assert!(ctl.nav.goal.is_none());
+        }
+        {
+            let st = queue_slot().st.lock().unwrap();
+            assert!(st.ring.iter().any(|c| {
+                c.body.get("c").and_then(Value::as_str) == Some("nav_cancel")
+                    && c.body.get("rid").and_then(Value::as_str) == Some(rid.as_str())
+            }));
+            assert!(st.ring.iter().any(|c| {
+                c.body.get("c").and_then(Value::as_str) == Some("manual_zero")
+            }), "取消在途导航必须下发 manual_zero 立即刹停");
+        }
+
+        // 取消回执到达后再跑 20Hz 对账，绝不可重新派发巡航目标
+        queue_slot().st.lock().unwrap().ring.clear();
+        assert!(apply_frame(&frame(
+            "nav_result",
+            json!({ "rid": rid, "status": "cancelled", "text": "已取消" })
+        )));
+        nav_housekeeping_and_dispatch();
+        {
+            let ctl = hub.control.lock().unwrap();
+            assert_eq!(ctl.patrol.status, "stopped");
+            assert!(ctl.patrol.sending_rid.is_none());
+            assert!(ctl.patrol.pending_rid.is_none());
+            assert!(ctl.patrol.cancel_request.is_none());
+            assert_eq!(ctl.nav.state, "idle");
+        }
+        assert!(queue_slot().st.lock().unwrap().ring.iter().all(|c| {
+            c.body.get("c").and_then(Value::as_str) != Some("nav_goal")
+        }), "取消后不得重新派发 nav_goal");
+
+        // 测试卫生：清理全局状态
+        let mut ctl = hub.control.lock().unwrap();
+        ctl.patrol.route = None;
+        ctl.patrol.status = "idle";
+        ctl.patrol.stop_reason.clear();
+        ctl.patrol.cancel_request = None;
+        ctl.patrol.sending_rid = None;
+        ctl.patrol.pending_rid = None;
+        ctl.locked = false;
+        ctl.user_locked = false;
     }
 }

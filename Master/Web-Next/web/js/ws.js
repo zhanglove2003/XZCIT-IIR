@@ -18,6 +18,7 @@
   var RECONNECT_MS = 1500;   // 断线重连间隔
   var LICENSE_MS = 100;      // Worker 许可心跳周期
   var LICENSE_TTL_MS = 350;
+  var LIC_SESSION = Date.now().toString(16) + Math.random().toString(16).slice(2, 10);
 
   var ui = Store.state.ui;
 
@@ -46,6 +47,9 @@
   }
 
   function sendRaw(obj) {
+    if (obj && obj.t === 'manual_login' && !obj.session_id) {
+      obj.session_id = LIC_SESSION;
+    }
     if (ctrl && ctrl.readyState === 1) {
       ctrl.send(JSON.stringify(obj));
       return true;
@@ -79,6 +83,7 @@
       clearInterval(pingTimer);
       ui.rtt = null;
       connChanged();
+      Store.emit('ws_close');
       setTimeout(connectCtrl, RECONNECT_MS);
     };
   }
@@ -117,13 +122,22 @@
         Store.emit('manual_error', m);
         break;
       case 'ultrasonic_status':
+        Store.emit('toast', { kind: m.ok ? 'ok' : 'bad', message: m.message || '' });
+        break;
       case 'relocalize_status':
         Store.emit('toast', { kind: m.ok ? 'ok' : 'bad', message: m.message || '' });
+        Store.emit('relocalize_reply', m);
         break;
       case 'sensor_status':
         // 通用 toast 之外再广播整帧（音量回执带板端回读值，app.js 用它定值）
         Store.emit('toast', { kind: m.ok ? 'ok' : 'bad', message: m.message || '' });
         Store.emit('sensor_reply', m);
+        break;
+      case 'mic_status':
+        if (m.message) {
+          Store.emit('toast', { kind: m.ok ? 'ok' : 'bad', message: m.message });
+        }
+        Store.emit('mic_reply', m);
         break;
       case 'patrol_status':
         Store.emit('patrol_reply', m);
@@ -158,7 +172,7 @@
     '"use strict";\n' +
     'var WS_BASE = ' + JSON.stringify(wsURL('')) + ';\n' +
     'var ws = null, seq = 0, delay = 800, stopped = false, lastAck = 0, licPaused = false;\n' +
-    'var session = Date.now().toString(16) + Math.random().toString(16).slice(2, 10);\n' +
+    'var session = ' + JSON.stringify(LIC_SESSION) + ';\n' +
     'function post(m) { postMessage(m); }\n' +
     'function conn() {\n' +
     '  if (stopped) return;\n' +
@@ -239,7 +253,7 @@
    *  同样按可见性门控：隐藏=发一次 release 并停发，回前台恢复节拍。 */
   function startFallbackLicense() {
     var seq = 0;
-    var session = Date.now().toString(16) + Math.random().toString(16).slice(2, 10);
+    var session = LIC_SESSION;
     var bgSent = false;
     hbTimer = setInterval(function () {
       if (document.hidden) {
@@ -353,6 +367,7 @@
   C.WS = {
     send: sendRaw,
     workerOk: false,
+    session: LIC_SESSION,
 
     /** 启动控制通道 + 许可心跳 Worker（app.js boot 时调用一次） */
     boot: function () {

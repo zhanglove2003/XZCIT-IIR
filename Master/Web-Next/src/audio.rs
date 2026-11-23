@@ -28,13 +28,40 @@ fn slot() -> &'static Mutex<(Option<Instant>, Value)> {
     SLOT.get_or_init(|| Mutex::new((None, Value::Null)))
 }
 
+/// 当前选定的录音采集设备（声卡号 + ALSA 设备串 + 简洁来源标签）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaptureTarget {
+    pub card: u32,
+    pub alsa_dev: String,
+    pub label: &'static str,
+}
+
+/// 外置/阵列麦在 `/proc/asound/cards` 中优先匹配的关键词（小写；排除普通摄像头）。
+const PREFERRED_MIC_KEYWORDS: &[&str] = &[
+    "timesintelli",
+    "respeaker",
+    "array",
+    "xfm",
+    "seeed",
+    "mic",
+    "uac",
+    "headset",
+    "usb audio",
+    "usb-audio",
+];
+
 /// 最新音频设备快照；未采到过返回 `Value::Null`。任何异常都回退
-/// `Value::Null`，不 panic。
+/// `Value::Null`，不 panic。ros 模式下附带实时麦克风状态 `mic`（纯内存
+/// 读，无 I/O）。
 pub fn snapshot() -> Value {
-    match slot().lock() {
+    let mut v = match slot().lock() {
         Ok(g) => g.1.clone(),
         Err(_) => Value::Null, // 槽中毒：宁可空也不炸
+    };
+    if let Value::Object(ref mut map) = v {
+        map.insert("mic".into(), crate::mic::status_snapshot());
     }
+    v
 }
 
 /// ros 模式装配：spawn 一个音频探测后台任务，立刻采一次，之后每 5 秒
@@ -89,26 +116,101 @@ fn card_of_in(path: &str, codec: &str) -> Option<u32> {
     None
 }
 
-/// 解析 `pcmC<card>D<dev>p|c` 设备名 → (声卡号, 是否播放设备)。
+fn cards_in(path: &str) -> Vec<(u32, String)> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(u32, String)> = Vec::new();
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        let Some(first) = parts.next() else { continue };
+        if let Ok(idx) = first.parse::<u32>() {
+            out.push((idx, line.to_ascii_lowercase()));
+        } else if let Some(last) = out.last_mut() {
+            // 把声卡续行（如 "Timesintelli USB Audio Device at ..."）拼入同卡描述
+            last.1.push(' ');
+            last.1.push_str(&line.to_ascii_lowercase());
+        }
+    }
+    out
+}
+
+/// 解析 `pcmC<card>D<dev>p|c` 设备名 → (声卡号, 设备号, 是否播放设备)。
 /// controlC*/seq/timer 等非 pcm 节点返回 None。
-fn classify_pcm(name: &str) -> Option<(u32, bool)> {
+fn classify_pcm_dev(name: &str) -> Option<(u32, u32, bool)> {
     let rest = name.strip_prefix("pcmC")?;
     let (card_s, tail) = rest.split_once('D')?;
     let card = card_s.parse::<u32>().ok()?;
-    if tail.ends_with('p') {
-        Some((card, true))
-    } else if tail.ends_with('c') {
-        Some((card, false))
+    if let Some(dev_s) = tail.strip_suffix('p') {
+        let dev = dev_s.parse::<u32>().ok()?;
+        Some((card, dev, true))
+    } else if let Some(dev_s) = tail.strip_suffix('c') {
+        let dev = dev_s.parse::<u32>().ok()?;
+        Some((card, dev, false))
     } else {
         None
     }
 }
 
-/// 探测一次：喇叭/板载麦克风挂 es8388 编解码器，USB 摄像头的麦克风是
-/// 其余采集设备。只有播放设备存在才算喇叭在线（HDMI/DP 的 pcm*p 设备
-/// 不算——没接喇叭，报"在线"是撒谎）。
+/// 解析 `pcmC<card>D<dev>p|c` 设备名 → (声卡号, 是否播放设备)。
+#[cfg(test)]
+fn classify_pcm(name: &str) -> Option<(u32, bool)> {
+    classify_pcm_dev(name).map(|(card, _, playback)| (card, playback))
+}
+
+/// 判断指定声卡是否为外置 USB 麦克风/阵列麦（排除板载 es8388 与 USB 摄像头空音频节点）。
+fn is_usb_mic_card(card: u32, es_card: Option<u32>, cards: &[(u32, String)]) -> bool {
+    Some(card) != es_card
+        && cards.iter().any(|(c, line)| {
+            *c == card
+                && !line.contains("webcam")
+                && !line.contains("camera")
+                && PREFERRED_MIC_KEYWORDS.iter().any(|kw| line.contains(kw))
+        })
+}
+
+/// 择优选择外置 USB 矩阵麦克风录音设备（排除板载 es8388 与无麦摄像头）。
+fn select_capture_device(
+    cards: &[(u32, String)],
+    capture_pcms: &[(u32, u32)],
+    es_card: Option<u32>,
+) -> Option<CaptureTarget> {
+    let mut pcms = capture_pcms.to_vec();
+    pcms.sort_unstable();
+
+    if let Some(&(card, dev)) = pcms
+        .iter()
+        .find(|&&(card, _)| is_usb_mic_card(card, es_card, cards))
+    {
+        return Some(CaptureTarget {
+            card,
+            alsa_dev: format!("plughw:{card},{dev}"),
+            label: "USB 麦",
+        });
+    }
+
+    None
+}
+
+/// 探测当前外置 USB 矩阵麦克风 ALSA 录音设备。
+pub fn capture_device() -> Option<CaptureTarget> {
+    let entries = std::fs::read_dir("/dev/snd").ok()?;
+    let mut capture_pcms = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if let Some((card, dev, false)) = classify_pcm_dev(&name.to_string_lossy()) {
+            capture_pcms.push((card, dev));
+        }
+    }
+    let cards = cards_in("/proc/asound/cards");
+    select_capture_device(&cards, &capture_pcms, es8388_card())
+}
+
+/// 探测一次：喇叭挂 es8388 编解码器，外置矩阵麦克风通过 `is_usb_mic_card`
+/// 识别（排除板载 es8388 空悬输入与 USB 摄像头无效音频端点）。
 fn collect() -> Value {
     let es = card_of("es8388");
+    let cards = cards_in("/proc/asound/cards");
     let (mut speaker, mut mic_board, mut mic_usb) = (false, false, false);
     let entries = match std::fs::read_dir("/dev/snd") {
         Ok(e) => e,
@@ -116,7 +218,9 @@ fn collect() -> Value {
     };
     for entry in entries.flatten() {
         let name = entry.file_name();
-        let Some((card, playback)) = classify_pcm(&name.to_string_lossy()) else { continue };
+        let Some((card, _, playback)) = classify_pcm_dev(&name.to_string_lossy()) else {
+            continue;
+        };
         let is_es = es == Some(card);
         if playback {
             if is_es {
@@ -124,7 +228,7 @@ fn collect() -> Value {
             }
         } else if is_es {
             mic_board = true;
-        } else {
+        } else if is_usb_mic_card(card, es, &cards) {
             mic_usb = true;
         }
     }
@@ -168,6 +272,42 @@ mod tests {
         assert_eq!(classify_pcm("controlC2"), None);
         assert_eq!(classify_pcm("seq"), None);
         assert_eq!(classify_pcm("timer"), None);
+    }
+
+    #[test]
+    fn classify_pcm_dev_parses_multi_devices() {
+        assert_eq!(classify_pcm_dev("pcmC3D12c"), Some((3, 12, false)));
+        assert_eq!(classify_pcm_dev("pcmC2D0p"), Some((2, 0, true)));
+        assert_eq!(classify_pcm_dev("pcmC2D0x"), None);
+        assert_eq!(classify_pcm_dev("controlC3"), None);
+    }
+
+    #[test]
+    fn select_capture_device_priority_order() {
+        let cards = vec![
+            (2, "2 [rockchipes8388 ]: rockchip_es8388 - rockchip,es8388".into()),
+            (3, "3 [webcam ]: usb-audio - hd 720p webcam".into()),
+            (
+                4,
+                "4 [device ]: usb-audio - usb audio device timesintelli usb audio device".into(),
+            ),
+        ];
+        // Timesintelli 矩阵麦 + Webcam + es8388 -> 选中 Timesintelli (card 4)
+        assert_eq!(
+            select_capture_device(&cards, &[(2, 0), (3, 0), (4, 0)], Some(2)),
+            Some(CaptureTarget { card: 4, alsa_dev: "plughw:4,0".into(), label: "USB 麦" })
+        );
+        // 拔掉矩阵麦后（仅剩 Webcam + 板载 es8388）-> 视为无可用矩阵麦克风 (None)
+        assert_eq!(
+            select_capture_device(&cards, &[(2, 0), (3, 0)], Some(2)),
+            None
+        );
+        assert_eq!(select_capture_device(&cards, &[(3, 0)], Some(2)), None);
+        assert_eq!(select_capture_device(&cards, &[(2, 0)], Some(2)), None);
+        assert_eq!(select_capture_device(&cards, &[], Some(2)), None);
+        assert!(is_usb_mic_card(4, Some(2), &cards));
+        assert!(!is_usb_mic_card(3, Some(2), &cards));
+        assert!(!is_usb_mic_card(2, Some(2), &cards));
     }
 
     #[test]

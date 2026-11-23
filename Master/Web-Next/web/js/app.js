@@ -37,6 +37,79 @@
    *  sent 清掉；状态帧追上 v 或 8 s 超时即整个清除，恢复常规回写。 */
   var spkPend = null;
 
+  /** 麦克风录音/播放状态（与服务端 status.audio.mic 及 mic_status 回执同步）。 */
+  var micUi = {
+    phase: 'idle',
+    recording: false,
+    playing: false,
+    has_recording: false,
+    duration_s: null,
+    elapsed_s: 0,
+    pending: null,
+    pendingAt: 0,
+  };
+
+  function applyMicSnapshot(m) {
+    if (!m || typeof m !== 'object') return;
+    micUi.phase = typeof m.phase === 'string' ? m.phase : 'idle';
+    micUi.recording = !!m.recording;
+    micUi.playing = !!m.playing;
+    micUi.has_recording = !!m.has_recording;
+    micUi.duration_s = typeof m.duration_s === 'number' ? m.duration_s : null;
+    micUi.elapsed_s = typeof m.elapsed_s === 'number' ? m.elapsed_s : 0;
+    if (micUi.pending) {
+      var reached =
+        (micUi.pending === 'start' && (micUi.recording || micUi.phase === 'recording')) ||
+        (micUi.pending === 'stop' && micUi.phase === 'idle' && !micUi.recording) ||
+        (micUi.pending === 'play' && (micUi.playing || micUi.phase === 'playing'));
+      if (reached || Date.now() - micUi.pendingAt > 10000) {
+        micUi.pending = null;
+      }
+    }
+  }
+
+  function renderMic(audio) {
+    var recEl = $('sn-mic-rec');
+    var recBtn = $('btn-mic-rec');
+    var playBtn = $('btn-mic-play');
+    var micOn = !!(audio && typeof audio === 'object' && audio.mic_usb);
+    var spkOn = !!(audio && typeof audio === 'object' && audio.speaker);
+
+    if (recEl) {
+      if (!micOn && !micUi.recording && !micUi.has_recording) {
+        setB(recEl, '—', null);
+      } else if (micUi.pending === 'start' || micUi.phase === 'starting') {
+        setB(recEl, '启动中…', 'warn');
+      } else if (micUi.pending === 'stop' || micUi.phase === 'stopping') {
+        setB(recEl, '保存中…', 'warn');
+      } else if (micUi.recording) {
+        setB(recEl, '录音中 ' + Math.floor(micUi.elapsed_s || 0) + 's', false);
+      } else if (micUi.playing || micUi.pending === 'play') {
+        setB(recEl, '播放中…', 'warn');
+      } else if (micUi.has_recording && typeof micUi.duration_s === 'number') {
+        setB(recEl, '已录 ' + micUi.duration_s.toFixed(1) + 's', true);
+      } else {
+        setB(recEl, '未录音', null);
+      }
+    }
+
+    var busy = micUi.pending !== null || micUi.phase === 'starting' || micUi.phase === 'stopping';
+    if (recBtn) {
+      var recText = (micUi.pending === 'start' || micUi.phase === 'starting') ? '启动中…'
+        : (micUi.pending === 'stop' || micUi.phase === 'stopping') ? '保存中…'
+        : micUi.recording ? '结束录音' : '开始录音';
+      T(recBtn, recText);
+      recBtn.disabled = !micOn || micUi.playing || busy;
+      recBtn.classList.toggle('rec-on', !!(micUi.recording && micUi.pending !== 'stop'));
+      recBtn.setAttribute('aria-pressed', micUi.recording ? 'true' : 'false');
+    }
+    if (playBtn) {
+      var playingNow = micUi.playing || micUi.pending === 'play';
+      T(playBtn, playingNow ? '播放中…' : '播放录音');
+      playBtn.disabled = !spkOn || !micUi.has_recording || micUi.recording || micUi.playing || busy;
+    }
+  }
+
   /** 写文本：与上次相同则跳过 DOM 写入（蓝图 §5.2.4） */
   function T(el, text) {
     if (!el) return;
@@ -229,7 +302,14 @@
     ['pad-fwd', 'pad-left', 'pad-right', 'pad-rev', 'btn-estop'].forEach(function (id) {
       $(id).disabled = !on;
     });
-    if (!on) releaseAll();
+    if (!on) {
+      releaseAll();
+      if (ui.gear !== 0) setGear(0);
+    } else if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      // 登录回车提交后密码框仍持焦点；隐藏表单时必须 blur，否则 window keydown
+      // 的 e.target 仍是 INPUT，被 keyTargetIsEditable 拦截导致 WASD 无反应
+      document.activeElement.blur();
+    }
     // 登录/登出重放错落进场：卡片的 card-in 在页面激活时已播完，不重触发
     // 的话显示区切换（登录卡↔控制件）是一次硬切。批量改 style + 单次回流。
     var scope = on ? $('ctl-main') : $('ctl-login');
@@ -369,12 +449,51 @@
   var DIR_BTN = { fwd: null, left: null, right: null, rev: null };
   var DIR_NAME = { fwd: 'forward', left: 'left', right: 'right', rev: 'backward' };
   var KEYBIND = { KeyW: 'fwd', KeyA: 'left', KeyD: 'right', KeyS: 'rev',
-                  ArrowUp: 'fwd', ArrowDown: 'rev', ArrowLeft: 'left', ArrowRight: 'right' };
+                  ArrowUp: 'fwd', ArrowDown: 'rev', ArrowLeft: 'left', ArrowRight: 'right',
+                  w: 'fwd', W: 'fwd', a: 'left', A: 'left', d: 'right', D: 'right', s: 'rev', S: 'rev' };
   var pressed = [];   // 保序：最后按下的方向优先
   var hbTimer = 0;
 
+  function isManualLocked() {
+    var st = Store.state.status;
+    if (st && st.patrol && typeof st.patrol.locked === 'boolean') return st.patrol.locked;
+    return !!ui.lockSeen;
+  }
+
+  function syncPadHint() {
+    var el = $('pad-hint');
+    if (!el) return;
+    if (isManualLocked()) {
+      T(el, '已锁停：请先点击「恢复」，再挂挡操作');
+    } else if (!(ui.gear > 0)) {
+      T(el, '当前空档：请先挂入巡航档或运动档');
+    } else {
+      T(el, 'WASD / 方向键移动 · 空格急停');
+    }
+  }
+
+  function setGear(v) {
+    ui.gear = v;
+    var gears = document.querySelectorAll('.gear');
+    for (var i = 0; i < gears.length; i++) {
+      var gv = parseFloat(gears[i].getAttribute('data-v'));
+      gears[i].classList.toggle('active', Math.abs(gv - v) < 1e-9);
+    }
+    if (!(v > 0)) releaseAll();
+    else if (pressed.length) syncManual();
+    syncPadHint();
+  }
+
   function press(id) {
     if (!ui.authed || DIR_BTN[id].disabled || pressed.indexOf(id) >= 0) return;
+    if (isManualLocked()) {
+      toast('请先点击「恢复」解除锁停', 'bad');
+      return;
+    }
+    if (!(ui.gear > 0)) {
+      toast('当前为空档，请先挂入巡航档或运动档', 'bad');
+      return;
+    }
     pressed.push(id);
     DIR_BTN[id].classList.add('pressed');
     syncManual();
@@ -396,6 +515,7 @@
   function estop() {
     if (!requireAuth('紧急停止')) return;
     releaseAll();
+    if (ui.gear !== 0) setGear(0);
     C.WS.send({ t: 'motion_stop' });
   }
 
@@ -431,7 +551,8 @@
     // authed 跨页持久，地图/概览页误按方向键不能让底盘动、空格也不能急停/弹噪音）
     function keyTargetIsEditable(e) {
       var t = e.target;
-      return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+      if (!t || (t.closest && t.closest('[hidden]'))) return false;
+      return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable;
     }
     function keyHasModifier(e) {
       return e.ctrlKey || e.altKey || e.metaKey;
@@ -439,19 +560,19 @@
 
     window.addEventListener('keydown', function (e) {
       if (keyHasModifier(e) || keyTargetIsEditable(e) || ui.page !== 'control') return;
-      if (e.code === 'Space') {
+      if (e.code === 'Space' || e.key === ' ') {
         e.preventDefault();            // 防滚页
         if (!e.repeat) estop();        // 等同 btn-estop（未登录走 requireAuth 提示）
         return;
       }
-      var id = KEYBIND[e.code];
+      var id = KEYBIND[e.code] || KEYBIND[e.key];
       if (!id || e.repeat) return;
       e.preventDefault();
       press(id);
     });
     window.addEventListener('keyup', function (e) {
       if (keyHasModifier(e) || keyTargetIsEditable(e) || ui.page !== 'control') return;
-      var id = KEYBIND[e.code];
+      var id = KEYBIND[e.code] || KEYBIND[e.key];
       if (id) release(id);
     });
     window.addEventListener('blur', releaseAll);
@@ -463,20 +584,19 @@
 
     $('btn-estop').addEventListener('click', estop);
 
-    // 速度档（滑条已撤：三档预设即速度输入，避免双入口）
+    // 速度档（滑条已撤：三档预设即速度输入，避免双入口；锁停时禁止挂入非空档）
     var gears = document.querySelectorAll('.gear');
-    function setGear(v) {
-      ui.gear = v;
-      for (var i = 0; i < gears.length; i++) {
-        var gv = parseFloat(gears[i].getAttribute('data-v'));
-        gears[i].classList.toggle('active', Math.abs(gv - v) < 1e-9);
-      }
-    }
     for (var i = 0; i < gears.length; i++) {
       gears[i].addEventListener('click', function (e) {
-        setGear(parseFloat(e.currentTarget.getAttribute('data-v')));
+        var v = parseFloat(e.currentTarget.getAttribute('data-v'));
+        if (v > 0 && isManualLocked()) {
+          toast('请先点击「恢复」解除锁停，再挂挡', 'bad');
+          return;
+        }
+        setGear(v);
       });
     }
+    syncPadHint();
 
     // 定时/巡航控件已裁撤：手动驾驶 = 方向键 + 三档 + 急停
 
@@ -568,11 +688,31 @@
 
     Store.on('nav_click', function (p) {
       if (!requireAuth('导航')) return;
-      C.WS.send({ t: 'nav_goal', x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 });
-      toast('导航目标已下发', 'ok');
+      if (isManualLocked()) {
+        toast('当前已锁停，请先点击「恢复」解锁后再导航', 'bad');
+        return;
+      }
+      if (!C.WS.send({ t: 'nav_goal', x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 })) {
+        toast('控制通道未连接，无法导航', 'bad');
+      }
     });
 
-    $('btn-reloc').addEventListener('click', function () {
+    var relocBtn = $('btn-reloc');
+    var relocBusyTimer = 0;
+    function setRelocBusy(busy) {
+      clearTimeout(relocBusyTimer);
+      relocBusyTimer = 0;
+      if (!relocBtn) return;
+      relocBtn.disabled = !!busy;
+      relocBtn.textContent = busy ? '重定位中…' : '重定位';
+      if (busy) {
+        relocBusyTimer = setTimeout(function () { setRelocBusy(false); }, 36000);
+      }
+    }
+    Store.on('relocalize_reply', function () { setRelocBusy(false); });
+    Store.on('manual_error', function () { setRelocBusy(false); });
+    Store.on('ws_close', function () { setRelocBusy(false); });
+    relocBtn.addEventListener('click', function () {
       if (!requireAuth('重定位')) return;
       // 全局扫描-地图匹配重定位（旧栈 relocalize.py 同款）：垫片用 /map 栅格
       // + 最近 /scan 做 360° 三阶段匹配求真实位姿，不依赖当前位姿——这正是
@@ -584,8 +724,12 @@
         msg.y = Math.round(p.y * 1000) / 1000;
         msg.yaw = Math.round(p.th * 10000) / 10000;
       }
-      toast('重定位执行中，请稍候…');
-      C.WS.send(msg);
+      if (C.WS.send(msg)) {
+        setRelocBusy(true);
+        toast('重定位执行中，请稍候…');
+      } else {
+        toast('控制通道未连接，无法重定位', 'bad');
+      }
     });
     $('btn-us-rearm').addEventListener('click', function () {
       if (!requireAuth('重启超声波')) return;
@@ -609,6 +753,49 @@
       if (!requireAuth('测试喇叭')) return;
       C.WS.send({ t: 'speaker_test' });
     });
+    // 矩阵麦克风：按下录音，再按结束；录制完成可经车体喇叭回放。
+    var micRecBtn = $('btn-mic-rec');
+    var micPlayBtn = $('btn-mic-play');
+    if (micRecBtn) {
+      micRecBtn.addEventListener('click', function () {
+        if (micUi.pending || micUi.phase === 'starting' || micUi.phase === 'stopping' || micUi.playing) return;
+        var stopping = micUi.recording;
+        if (!requireAuth(stopping ? '结束录音' : '麦克风录音')) return;
+        var cmd = stopping ? 'mic_record_stop' : 'mic_record_start';
+        micUi.pending = stopping ? 'stop' : 'start';
+        micUi.pendingAt = Date.now();
+        if (!C.WS.send({ t: cmd })) {
+          micUi.pending = null;
+          toast('控制通道未连接，无法操作麦克风', 'bad');
+        }
+        renderMic(Store.state.status && Store.state.status.audio);
+      });
+    }
+    if (micPlayBtn) {
+      micPlayBtn.addEventListener('click', function () {
+        if (!micUi.has_recording || micUi.recording || micUi.playing || micUi.pending) return;
+        if (!requireAuth('播放录音')) return;
+        micUi.pending = 'play';
+        micUi.pendingAt = Date.now();
+        if (!C.WS.send({ t: 'mic_play' })) {
+          micUi.pending = null;
+          toast('控制通道未连接，无法播放录音', 'bad');
+        }
+        renderMic(Store.state.status && Store.state.status.audio);
+      });
+    }
+    function clearMicPending() {
+      if (!micUi.pending) return;
+      micUi.pending = null;
+      renderMic(Store.state.status && Store.state.status.audio);
+    }
+    Store.on('mic_reply', function (m) {
+      micUi.pending = null;
+      if (m && m.mic) applyMicSnapshot(m.mic);
+      renderMic(Store.state.status && Store.state.status.audio);
+    });
+    Store.on('manual_error', clearMicPending);
+    Store.on('ws_close', clearMicPending);
     var vol = $('spk-vol');
     vol.addEventListener('input', function () {
       spkPend = { v: Number(vol.value), t: Date.now() };
@@ -638,6 +825,17 @@
       vol.setAttribute('aria-valuetext', m.volume + '%');
       T($('spk-vol-v'), m.volume + '%');
       syncSpkFill(vol);
+    });
+    $('btn-nav-home').addEventListener('click', function () {
+      if (!requireAuth('回场')) return;
+      if (!mapReadyOrExplain()) return;
+      if (isManualLocked()) {
+        toast('当前已锁停，请先点击「恢复」解锁后再回场', 'bad');
+        return;
+      }
+      if (!C.WS.send({ t: 'nav_goal', x: 0, y: 0, th: 0 })) {
+        toast('控制通道未连接，无法回场', 'bad');
+      }
     });
     $('btn-nav-cancel').addEventListener('click', function () {
       if (!requireAuth('取消导航')) return;
@@ -679,9 +877,20 @@
       }
     });
     Store.on('nav_reply', function (m) {
+      if (Store.state.status && m && typeof m === 'object') {
+        Store.state.status.nav = m;
+        Store.mark(F.CTRL | F.ROUTE);
+      }
       if (m.error) { toast('导航：' + m.error, 'bad'); return; }
       var state = m.state || '';
-      if (state === 'active' || state === 'succeeded') toast('导航：' + navStateText(state), 'ok');
+      if (state === 'sending') {
+        var isHome = m.goal && Math.abs(m.goal.x) < 0.01 && Math.abs(m.goal.y) < 0.01;
+        toast(isHome ? '已下发回场导航（0, 0）' : '导航目标已下发', 'ok');
+      } else if (state === 'active' || state === 'succeeded') {
+        toast('导航：' + navStateText(state), 'ok');
+      } else if (state === 'idle') {
+        toast(m.result === 'canceled' ? '已取消导航并清除目标' : '已清除导航目标', 'ok');
+      }
     });
   }
 
@@ -933,6 +1142,17 @@
     session_dead: '会话失效',
   };
   function causeText(s) { return STOP_CAUSE_TEXT[s] || s; }
+
+  /* 安全门拒绝原因（fusion_node / drive_safety）：弹窗一目了然指向真实来源 */
+  var GATE_REASON_TEXT = {
+    raw_frames_stalled: '雷达帧中断',
+    evidence_stale: '雷达数据过期',
+    lidar_connecting: '雷达重连中',
+    front_no_points: '前方雷达无回波',
+    ultrasonic_latched: '超声波触发锁存',
+    obstacle_too_close: '障碍物过近',
+  };
+  function gateReasonText(s) { return GATE_REASON_TEXT[s] || s; }
 
   /* WiFi 行海报式文本「103 · -53 dBm」：信号兼容 rssi/signal_dbm。
    * 频段段已去掉——24px 下带频段必折行/截断，且频段信息量最低 */
@@ -1204,12 +1424,17 @@
     var st = Store.state.status;
     if (!st) return;
 
-    // 安全门（状态行已撤）：跳变时弹页面消息，常驻值不上界面
+    // 安全门（状态行已撤）：仅在处于非驻车档/正在导航/正在巡逻/有实际运动意图时弹跳变提醒，
+    // 静止驻车时不因雷达偶发抖动频繁弹窗刷屏。
     var ds = st.drive_safety || {};
     var gate = ds.allowed === true ? true : ds.allowed === false ? false : null;
+    var motionActive = ui.gear !== 0
+      || !!(st.nav && st.nav.state === 'active')
+      || !!(st.patrol && st.patrol.status === 'running')
+      || !!(ds.motion && ds.motion.active);
     if (gate !== ui.gateSeen) {
-      if (ui.gateSeen !== undefined) {
-        if (gate === false) toast('控制被拒' + (ds.reason ? '：' + ds.reason : ''), 'bad');
+      if (ui.gateSeen !== undefined && motionActive) {
+        if (gate === false) toast('控制被拒' + (ds.reason ? '：' + gateReasonText(ds.reason) : ''), 'bad');
         else if (gate === true) toast('控制已放行', 'ok');
       }
       ui.gateSeen = gate;
@@ -1234,11 +1459,7 @@
     var spkOn = !!(audio && typeof audio === 'object' && audio.speaker);
     if (audio && typeof audio === 'object') {
       setB($('sn-spk-st'), audio.speaker ? '在线' : '未检测到', !!audio.speaker);
-      // 文案只留来源（板载/USB），「在线」语义由标签「采集设备」+ 绿色承担，
-      // 24px 下长串会折行难看
-      var src = (audio.mic_board ? '板载' : '') + (audio.mic_board && audio.mic_usb ? '+' : '') +
-        (audio.mic_usb ? 'USB' : '');
-      setB($('sn-mic-st'), src || '未检测到', !!(audio.mic_board || audio.mic_usb));
+      setB($('sn-mic-st'), audio.mic_usb ? '在线' : '未检测到', !!audio.mic_usb);
     } else {
       setB($('sn-spk-st'), '无数据', null);
       setB($('sn-mic-st'), '无数据', null);
@@ -1268,6 +1489,10 @@
         T($('spk-vol-v'), '—');
       }
     }
+    if (audio && typeof audio === 'object' && audio.mic && typeof audio.mic === 'object') {
+      applyMicSnapshot(audio.mic);
+    }
+    renderMic(audio);
 
     var nav = st.nav || {};
     T($('nav-state'), navStateText(nav.state));
@@ -1279,6 +1504,8 @@
       : '—');
 
     var patrol = st.patrol || {};
+    if (patrol.locked && ui.gear !== 0) setGear(0);
+    syncPadHint();
     var pState = patrol.locked ? '已锁停' : (PATROL_TEXT[patrol.status] || patrol.status || '未启动');
     T($('patrol-state'), pState);
     setB($('patrol-state'), pState, patrol.locked ? false : patrol.status === 'running' ? 'warn' : null);

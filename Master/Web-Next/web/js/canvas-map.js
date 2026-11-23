@@ -6,7 +6,8 @@
  *    航点路径（drawImage 一张缓存底图 + 矢量叠加，不重建 ImageData）；
  *  - 滚轮以光标为锚缩放、拖拽平移，全部只改视图内存并置 needsDraw，
  *    由 scheduler 统一在 rAF 里重绘。
- * 栅格行约定（ROS）：第 0 行是 y 最大的一行；cell 值 0=空闲 100=占据。
+ * 栅格行约定（ROS OccupancyGrid）：第 0 行是 y 最小（底边）行，建纹理时
+ * 须垂直翻行；cell 值 0=空闲 100=占据 255(-1)=未知。
  * ===================================================================== */
 (function () {
   'use strict';
@@ -15,6 +16,11 @@
 
   var SCALE_MIN = 3;     // px / m 下限
   var SCALE_MAX = 480;
+  // 显示旋转（对齐旧 console_page.html 方向约定）：车头 +x（0°）朝正西（画面正左），
+  // 车左 +y（连续墙）在画面正南（底边）；整图、位姿箭头、轨迹、航点与点击反投影共用此刚体旋转。
+  var MAP_ROT = Math.PI;
+  var COS_R = Math.cos(MAP_ROT);
+  var SIN_R = Math.sin(MAP_ROT);
 
   var canvas = null;
   var ctx = null;
@@ -45,16 +51,20 @@
   /* ---------------- 世界 ⇄ 屏幕（CSS 像素） ---------------- */
 
   function project(wx, wy) {
+    var dx = wx - view.cx;
+    var dy = wy - view.cy;
     return {
-      x: (wx - view.cx) * view.scale + rect.w / 2,
-      y: rect.h / 2 - (wy - view.cy) * view.scale,
+      x: rect.w / 2 + (dx * COS_R - dy * SIN_R) * view.scale,
+      y: rect.h / 2 - (dx * SIN_R + dy * COS_R) * view.scale,
     };
   }
 
   function unproject(sx, sy) {
+    var u = (sx - rect.w / 2) / view.scale;
+    var v = -(sy - rect.h / 2) / view.scale;
     return {
-      x: (sx - rect.w / 2) / view.scale + view.cx,
-      y: view.cy - (sy - rect.h / 2) / view.scale,
+      x: view.cx + u * COS_R + v * SIN_R,
+      y: view.cy - u * SIN_R + v * COS_R,
     };
   }
 
@@ -112,10 +122,15 @@
     var occ = theme === 'dark' ? [221, 226, 236] : [38, 43, 54];   // 占据
     var free = theme === 'dark' ? [24, 28, 36] : [231, 235, 241];  // 空闲
     var unk = theme === 'dark' ? [13, 14, 18] : [180, 186, 198];   // 未知
-    for (var i = 0; i < m.w * m.h; i++) {
-      var v = data[i];
-      var c = v >= 65 ? occ : (v <= 25 ? free : unk);
-      px[i * 4] = c[0]; px[i * 4 + 1] = c[1]; px[i * 4 + 2] = c[2]; px[i * 4 + 3] = 255;
+    for (var iy = 0; iy < m.h; iy++) {
+      var srcRow = iy * m.w;
+      var dstRow = (m.h - 1 - iy) * m.w;
+      for (var ix = 0; ix < m.w; ix++) {
+        var v = data[srcRow + ix];
+        var c = v === 255 ? unk : (v >= 65 ? occ : (v <= 25 ? free : unk));
+        var o = (dstRow + ix) * 4;
+        px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = 255;
+      }
     }
     octx.putImageData(img, 0, 0);
     tex = off;
@@ -133,13 +148,13 @@
     var g = texGeom || Store.state.map;
     if (!g || !g.w) return;
     var worldW = g.w * g.res, worldH = g.h * g.res;
+    view.cx = g.ox + worldW / 2;
+    view.cy = g.oy + worldH / 2;
     if (rect.w > 4 && rect.h > 4) {
       view.scale = Math.min(rect.w / (worldW * 1.12), rect.h / (worldH * 1.12));
       view.scale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, view.scale));
+      firstFitDone = true;
     }
-    view.cx = g.ox + worldW / 2;
-    view.cy = g.oy + worldH / 2;
-    firstFitDone = true;
     needsDraw = true;
   }
 
@@ -197,13 +212,16 @@
     ctx.fillStyle = dark ? '#101218' : '#eef1f5';
     ctx.fillRect(0, 0, w, h);
 
-    // 缓存底图（Offscreen 纹理）：一次 drawImage，不做任何像素重建
+    // 缓存底图（Offscreen 纹理）：按 MAP_ROT 旋转后绘制（一次 drawImage）
     if (tex && texGeom) {
       var g = texGeom;
       var tl = project(g.ox, g.oy + g.h * g.res);          // 世界左上（y 大）
+      ctx.save();
+      ctx.translate(tl.x, tl.y);
+      ctx.rotate(-MAP_ROT);
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(tex, tl.x, tl.y, g.w * g.res * view.scale, g.h * g.res * view.scale);
-      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(tex, 0, 0, g.w * g.res * view.scale, g.h * g.res * view.scale);
+      ctx.restore();
     } else {
       var waiting = decodeFailed ? '栅格解压失败' : '等待地图…';
       ctx.fillStyle = dark ? 'rgba(231,233,239,0.4)' : 'rgba(27,30,38,0.45)';
@@ -228,7 +246,7 @@
         var wy = h / 2 - 26;
         ctx.save();
         ctx.translate(w / 2, wy);
-        ctx.rotate(-wp.th);
+        ctx.rotate(-(wp.th + MAP_ROT));
         ctx.fillStyle = dark ? 'rgba(255,141,61,0.85)' : 'rgba(217,107,16,0.85)';
         ctx.beginPath();
         ctx.moveTo(11, 0);
@@ -282,17 +300,20 @@
       ctx.stroke();
     }
 
-    // 位姿轨迹（5Hz 采样，限长）
-    if (trail.length > 1) strokeLine(trail, dark ? 'rgba(240,176,74,0.5)' : 'rgba(176,111,8,0.45)', 1.4);
+    // 位姿轨迹与机器人箭头仅在底图纹理就绪时按世界坐标绘制；
+    // 无图等待态已在上方（文字上档）单绘过箭头，不再按默认原点叠画压字。
+    if (tex && texGeom && trail.length > 1) {
+      strokeLine(trail, dark ? 'rgba(240,176,74,0.5)' : 'rgba(176,111,8,0.45)', 1.4);
+    }
 
-    // 机器人箭头：x 前 y 左，th 逆时针 → 屏幕 y 取负
+    // 机器人箭头：x 前 y 左，th 逆时针，叠合 MAP_ROT 显示旋转 → 屏幕 y 取负
     // 位姿过期就不画：把两秒前的位置画成当前，比不画更误导。
     var pose = Store.poseUsable() ? Store.state.pose : null;
-    if (pose) {
+    if (tex && texGeom && pose) {
       var pr = project(pose.x, pose.y);
       ctx.save();
       ctx.translate(pr.x, pr.y);
-      ctx.rotate(-pose.th);
+      ctx.rotate(-(pose.th + MAP_ROT));
       ctx.fillStyle = dark ? '#ff8d3d' : '#d96b10';
       ctx.beginPath();
       ctx.moveTo(11, 0);
@@ -338,8 +359,9 @@
       var dx = sx - drag.sx, dy = sy - drag.sy;
       if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
       if (!drag.moved) return;
-      view.cx = drag.cx - dx / view.scale;
-      view.cy = drag.cy + dy / view.scale;
+      var du = dx / view.scale, dv = -dy / view.scale;
+      view.cx = drag.cx - (du * COS_R + dv * SIN_R);
+      view.cy = drag.cy - (-du * SIN_R + dv * COS_R);
       needsDraw = true;
     });
 
