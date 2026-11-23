@@ -156,8 +156,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
-          curl -sSfL "https://github.com/astral-sh/ruff/releases/latest/download/ruff-x86_64-unknown-linux-gnu.tar.gz" \
-            | tar -xz -C "$HOME/.local/bin" --strip-components=1 ruff
+          # 踩过的坑：tar 提取时若指定成员名，必须与归档内完整路径一致。
+          # 归档里是 ruff-x86_64-unknown-linux-gnu/ruff，写 `... --strip-components=1 ruff`
+          # 会报 "ruff: 归档中找不到" 并 exit 2（本地已复现）。
+          # 这里解到临时目录再 install，既避开该问题，出错信息也更明确。
+          tmp="$(mktemp -d)"
+          curl -sSfL --retry 3 --retry-delay 2 \
+            -o "$tmp/ruff.tar.gz" \
+            "https://github.com/astral-sh/ruff/releases/latest/download/ruff-x86_64-unknown-linux-gnu.tar.gz"
+          tar -xzf "$tmp/ruff.tar.gz" -C "$tmp" --strip-components=1
+          install -m 0755 "$tmp/ruff" "$HOME/.local/bin/ruff"
+          rm -rf "$tmp"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/ruff" --version
 
