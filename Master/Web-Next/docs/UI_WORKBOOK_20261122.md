@@ -199,4 +199,23 @@ ssh opi 'cd /home/orangepi/web_next_deploy && md5sum web_next.new && mv web_next
 
 上板：`116bbb16…` → `9b94f8a4b1bc6ffe1b20794a28720dcc`（两端 md5 一致，服务 active）。
 
+---
+
+## 批次 9 — 音量条按组件库规范重做（2026-11-23）
+
+用户反馈旧滑块「这样设计的？你直接看组件库啊」——旧版整条轨道外还套了一圈描边，看起来像个输入框。查了组件库与 modern-web-guidance 后按 **MDC slider 默认 token** 重做：
+
+| 项 | 旧版 | 新版（对齐 MDC） |
+|---|---|---|
+| 轨道 | 整体描边包一圈 | 无描边；活动段 6px 主色压非活动段 4px 浅灰（MDC active-track-height 6 / inactive 4） |
+| 滑块 | 18px 白脸描边 | 20px 白脸圆滑块 + 2px 主色环（MDC handle 20px，全圆角） |
+| 命中区 | input 32px | wrapper 28px（coarse 指针 40px / 滑块 24px） |
+| 焦点环 | 整条轨道 outline | 画在滑块上：ring + 28% 主色晕 |
+| 填充 | progress(attr()) | **弃用**——实测 attr() 只读 HTML 初始 value，拖动不跟；改 JS `syncSpkFill` 同步 `--spk-ratio` |
+
+**关键工程点**：WebKit 不把原生轨道在 input 里垂直居中（实测 28px input 轨道中心偏上 3px）。两条轨道（4px 灰 `::before` + 6px 活动段 span）改由 wrapper 自绘、原生轨道透明、input 高度=滑块高度使其自然居中，双引擎共用同一几何；`input z-index:1` 让滑块白脸盖住伸进圈里的活动段末端。活动段两端按滑块圆心行程 [半径, 宽−半径] 折算，像素级实测三层中心重合（thumb/fill/grey 均 114.5 @2x）、fill 宽 87.5 CSS ≈ 理论 87.7。
+
+验证：无头 Chrome 对 0%/43%/100%/disabled × 深浅两主题截图核对（`docs/ui-shots/batch9-slider-{light,dark}-4states.png`）。上板 `8e16d0406759db58a4a33fea1a072f84`（两端 md5 一致，active）。
+
+
 
