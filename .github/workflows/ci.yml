@@ -506,6 +506,9 @@ jobs:
       - name: 交叉编译主固件（根 Makefile / HAL）
         run: |
           set -euo pipefail
+          # build/Diff_Car.hex|bin 在仓库里是被 git 跟踪的历史预编译产物。
+          # 不先删掉，下面的 test -f 就无法证明产物是本次现场编译出来的。
+          rm -f build/Diff_Car.hex build/Diff_Car.bin build/Diff_Car.elf
           make -j"$(nproc)"
           test -f build/Diff_Car.hex || { echo "::error::未生成 build/Diff_Car.hex"; exit 1; }
           test -f build/Diff_Car.bin || { echo "::error::未生成 build/Diff_Car.bin"; exit 1; }

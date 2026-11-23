@@ -164,6 +164,9 @@ jobs:
       - name: 现场编译主固件（根 Makefile / HAL，TARGET=Diff_Car）
         run: |
           set -euo pipefail
+          # 仓库里 build/Diff_Car.hex|bin 是被跟踪的历史预编译产物。
+          # 发布包必须来自本次现场编译，先删干净再 make，否则会静默发布旧固件。
+          rm -f build/Diff_Car.hex build/Diff_Car.bin build/Diff_Car.elf
           make -j"$(nproc)"
           test -f build/Diff_Car.hex || { echo "::error::未生成 build/Diff_Car.hex"; exit 1; }
           test -f build/Diff_Car.bin || { echo "::error::未生成 build/Diff_Car.bin"; exit 1; }
