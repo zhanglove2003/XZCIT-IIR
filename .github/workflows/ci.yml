@@ -509,6 +509,8 @@ jobs:
           R_POLICY:   ${{ needs.branch-policy.result }}
           R_HYGIENE:  ${{ needs.hygiene.result }}
           R_RUST:     ${{ needs.rust-web-next.result }}
+          # 交叉编译拆成独立 Job 后必须同步登记，否则 set -u 会因变量未绑定直接失败。
+          R_RUST_CROSS: ${{ needs.rust-cross-aarch64.result }}
           R_FRONTEND: ${{ needs.web-frontend.result }}
           R_ROS:      ${{ needs.ros2-python.result }}
           R_STM32:    ${{ needs.stm32-host-tests.result }}
