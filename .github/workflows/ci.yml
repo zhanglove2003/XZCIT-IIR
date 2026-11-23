@@ -473,13 +473,33 @@ jobs:
       - name: 宿主机 C 单测（tests/Makefile，编译并运行全部测试）
         run: make -C tests -j4
 
-      - name: 安装 arm-none-eabi 工具链
+      # arm-none-eabi 用官方 GNU 工具链 tarball + 缓存，不再走 apt：
+      # apt 依赖 Ubuntu 镜像源，实测出现过单步挂起 8 分钟以上的情况，
+      # 而本 Job 是 ci-gate 之前最后一个 Job，一卡就把整条流水线拖长。
+      # 官方包自带 newlib 头文件与库，不需要额外装 libnewlib-arm-none-eabi。
+      - name: 恢复 arm-none-eabi 工具链压缩包缓存
+        id: arm-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz
+          key: arm-gnu-13.3.rel1-${{ runner.os }}
+
+      - name: 下载 arm-none-eabi 工具链（缓存未命中时）
+        if: steps.arm-cache.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update
-          # libnewlib-arm-none-eabi 提供 newlib 头文件（string.h 等），
-          # 缺了它 arm_math.h 编不过（--no-install-recommends 会漏装）。
-          sudo apt-get install -y --no-install-recommends \
-            gcc-arm-none-eabi libnewlib-arm-none-eabi
+          set -euo pipefail
+          curl -sSfL --retry 3 --retry-delay 5 --max-time 300 \
+            -o "$HOME/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz" \
+            "https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
+
+      - name: 解压工具链并自检
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/arm-gnu-toolchain"
+          tar -xJf "$HOME/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz" \
+            -C "$HOME/arm-gnu-toolchain" --strip-components=1
+          echo "$HOME/arm-gnu-toolchain/bin" >> "$GITHUB_PATH"
+          "$HOME/arm-gnu-toolchain/bin/arm-none-eabi-gcc" --version | head -1
 
       # 根 Makefile 是当前主固件入口（HAL，TARGET=Diff_Car，产物 hex/bin）。
       # STM32F407_StdPeriph 是旧栈回退代码，CI 只读检查、不自动改删。

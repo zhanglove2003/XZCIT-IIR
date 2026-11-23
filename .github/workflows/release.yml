@@ -134,12 +134,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 安装 arm-none-eabi 工具链
+      # 与 ci.yml 的 stm32-host-tests 保持同一套工具链来源：
+      # 官方 GNU tarball + 缓存，避免 apt 镜像挂起导致发布卡死。
+      # 官方包自带 newlib 头文件，arm_math.h 可直接编过。
+      - name: 恢复 arm-none-eabi 工具链压缩包缓存
+        id: arm-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz
+          key: arm-gnu-13.3.rel1-${{ runner.os }}
+
+      - name: 下载 arm-none-eabi 工具链（缓存未命中时）
+        if: steps.arm-cache.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update
-          # libnewlib-arm-none-eabi 提供 newlib 头文件，缺了它 arm_math.h 编不过。
-          sudo apt-get install -y --no-install-recommends \
-            gcc-arm-none-eabi libnewlib-arm-none-eabi
+          set -euo pipefail
+          curl -sSfL --retry 3 --retry-delay 5 --max-time 300 \
+            -o "$HOME/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz" \
+            "https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
+
+      - name: 解压工具链并自检
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/arm-gnu-toolchain"
+          tar -xJf "$HOME/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz" \
+            -C "$HOME/arm-gnu-toolchain" --strip-components=1
+          echo "$HOME/arm-gnu-toolchain/bin" >> "$GITHUB_PATH"
+          "$HOME/arm-gnu-toolchain/bin/arm-none-eabi-gcc" --version | head -1
 
       - name: 现场编译主固件（根 Makefile / HAL，TARGET=Diff_Car）
         run: |
