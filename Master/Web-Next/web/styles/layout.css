@@ -714,8 +714,8 @@ input[type="range"] { flex: 1; accent-color: var(--accent); }
  *    原生轨道全部透明。原因：WebKit 并不把原生轨道在 input 里垂直居中
  *    （实测 28px input 里轨道中心偏上 3px），自绘才能保证对齐，且两个
  *    引擎共用同一套几何；input 高度=滑块高度，滑块自然居中。
- *  - 原生滑块圆心的行程是 [半径, 宽-半径]，所以活动段也从滑块半径处起、
- *    长度按（宽-一个滑块）折算，两端正好落在滑块圆心下。
+ *  - 原生滑块圆心的行程是 [半径, 宽-半径]：活动段左端贴轨道起点、右端
+ *    落在滑块圆心下（0% 时整段被滑块白脸盖住，起点不留灰缝）。
  *  - WebKit 与 Firefox 伪元素必须分块声明（合并成逗号列表整条会被丢弃）。
  * 填充比例一律由 app.js syncSpkFill 同步（--spk-ratio，0..1，双写 input
  * 与外层 box）。不用 progress(attr(value…))：attr() 只读到 HTML 里写死的
@@ -828,12 +828,13 @@ input[type="range"] { flex: 1; accent-color: var(--accent); }
     0 1px 3px color-mix(in oklab, #000 22%, transparent);
 }
 
-/* 活动段：从滑块半径处起，长度按（宽-一个滑块）× ratio */
+/* 活动段：左端从轨道起点起（0% 时整段缩进滑块白脸底下，不留灰缝），
+ * 右端落在滑块圆心下 = 半径 + 圆心行程 × ratio */
 #spk-vol-fill {
   position: absolute;
-  inset-inline-start: calc(var(--spk-thumb) / 2);
+  inset-inline-start: 0;
   inset-block-start: calc(50% - var(--spk-track-active) / 2);
-  inline-size: calc((100% - var(--spk-thumb)) * var(--spk-ratio));
+  inline-size: calc(var(--spk-thumb) / 2 + (100% - var(--spk-thumb)) * var(--spk-ratio));
   block-size: var(--spk-track-active);
   border-radius: 999px;
   background: var(--accent);
