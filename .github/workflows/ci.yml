@@ -265,10 +265,14 @@ jobs:
       - name: 安装 ruff（colcon 缺失时兜底安装）
         run: |
           set -euo pipefail
-          pip install --quiet ruff
+          # ros:humble-ros-base 不自带 pip（ros-base 不含 python3-pip），
+          # 容器内为 root，无需 sudo；Ubuntu 22.04 无 PEP 668 限制，pip3 可直装。
+          apt-get update -qq
+          apt-get install -y -qq python3-pip >/dev/null
+          pip3 install --quiet ruff
           command -v colcon >/dev/null 2>&1 || {
-            apt-get update && apt-get install -y --no-install-recommends \
-              python3-colcon-common-extensions
+            apt-get install -y -qq --no-install-recommends \
+              python3-colcon-common-extensions >/dev/null
           }
 
       - name: ruff 静态检查（棘轮模式：只查本次变更的 .py）
