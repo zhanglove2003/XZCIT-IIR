@@ -1,0 +1,16 @@
+[Unit]
+Description=C50C web console (web_debug on :8088)
+
+[Service]
+Type=simple
+# web_debug 收到 SIGTERM 会卡在优雅退出（2026-11-14 实测），
+# TimeoutStopSec=5 让 systemd 5 秒后直接 SIGKILL，restart 不拖沓
+ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash; source /home/orangepi/ros2_ws/install/setup.bash; exec python3 /home/orangepi/ros2_ws/install/opi_robot/lib/opi_robot/web_debug'
+Restart=always
+RestartSec=3
+TimeoutStopSec=5
+StandardOutput=append:/tmp/wb.log
+StandardError=append:/tmp/wb.log
+
+[Install]
+WantedBy=default.target

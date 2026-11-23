@@ -1,193 +1,130 @@
-/* USER CODE BEGIN Header */
 /**
   ******************************************************************************
-  * @file    stm32f4xx_it.c
-  * @brief   Interrupt Service Routines.
+  * @file    Project/STM32F4xx_StdPeriph_Templates/stm32f4xx_it.c 
+  * @author  MCD Application Team
+  * @version V1.4.0
+  * @date    04-August-2014
+  * @brief   Main Interrupt Service Routines.
+  *          This file provides template for all exceptions handler and 
+  *          peripherals interrupt service routine.
   ******************************************************************************
   * @attention
   *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
+  * <h2><center>&copy; COPYRIGHT 2014 STMicroelectronics</center></h2>
   *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
+  * Licensed under MCD-ST Liberty SW License Agreement V2, (the "License");
+  * You may not use this file except in compliance with the License.
+  * You may obtain a copy of the License at:
+  *
+  *        http://www.st.com/software_license_agreement_liberty_v2
+  *
+  * Unless required by applicable law or agreed to in writing, software 
+  * distributed under the License is distributed on an "AS IS" BASIS, 
+  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
   *
   ******************************************************************************
   */
-/* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-#include "main.h"
 #include "stm32f4xx_it.h"
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-/* USER CODE END Includes */
+ 
+
+/** @addtogroup Template_Project
+  * @{
+  */
 
 /* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN TD */
-
-/* USER CODE END TD */
-
 /* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-
-/* USER CODE END PD */
-
 /* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
 /* Private variables ---------------------------------------------------------*/
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
 /* Private function prototypes -----------------------------------------------*/
-/* USER CODE BEGIN PFP */
-
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-/* External variables --------------------------------------------------------*/
-extern HCD_HandleTypeDef hhcd_USB_OTG_FS;
-extern TIM_HandleTypeDef htim6;
-
-/* USER CODE BEGIN EV */
-
-/* USER CODE END EV */
+/* Private functions ---------------------------------------------------------*/
 
 /******************************************************************************/
-/*           Cortex-M4 Processor Interruption and Exception Handlers          */
+/*            Cortex-M4 Processor Exceptions Handlers                         */
 /******************************************************************************/
+
 /**
-  * @brief This function handles Non maskable interrupt.
+  * @brief  This function handles NMI exception.
+  * @param  None
+  * @retval None
   */
 void NMI_Handler(void)
 {
-  /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
-
-  /* USER CODE END NonMaskableInt_IRQn 0 */
-  /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
-   while (1)
-  {
-  }
-  /* USER CODE END NonMaskableInt_IRQn 1 */
 }
 
 /**
-  * @brief This function handles Hard fault interrupt.
+  * @brief  This function handles Hard Fault exception.
+  * @param  None
+  * @retval None
   */
 void HardFault_Handler(void)
 {
-  /* USER CODE BEGIN HardFault_IRQn 0 */
-
-  /* USER CODE END HardFault_IRQn 0 */
+  /* Go to infinite loop when Hard Fault exception occurs */
   while (1)
   {
-    /* USER CODE BEGIN W1_HardFault_IRQn 0 */
-    /* USER CODE END W1_HardFault_IRQn 0 */
   }
 }
 
 /**
-  * @brief This function handles Memory management fault.
+  * @brief  This function handles Memory Manage exception.
+  * @param  None
+  * @retval None
   */
 void MemManage_Handler(void)
 {
-  /* USER CODE BEGIN MemoryManagement_IRQn 0 */
-
-  /* USER CODE END MemoryManagement_IRQn 0 */
+  /* Go to infinite loop when Memory Manage exception occurs */
   while (1)
   {
-    /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
-    /* USER CODE END W1_MemoryManagement_IRQn 0 */
   }
 }
 
 /**
-  * @brief This function handles Pre-fetch fault, memory access fault.
+  * @brief  This function handles Bus Fault exception.
+  * @param  None
+  * @retval None
   */
 void BusFault_Handler(void)
 {
-  /* USER CODE BEGIN BusFault_IRQn 0 */
-
-  /* USER CODE END BusFault_IRQn 0 */
+  /* Go to infinite loop when Bus Fault exception occurs */
   while (1)
   {
-    /* USER CODE BEGIN W1_BusFault_IRQn 0 */
-    /* USER CODE END W1_BusFault_IRQn 0 */
   }
 }
 
 /**
-  * @brief This function handles Undefined instruction or illegal state.
+  * @brief  This function handles Usage Fault exception.
+  * @param  None
+  * @retval None
   */
 void UsageFault_Handler(void)
 {
-  /* USER CODE BEGIN UsageFault_IRQn 0 */
-
-  /* USER CODE END UsageFault_IRQn 0 */
+  /* Go to infinite loop when Usage Fault exception occurs */
   while (1)
   {
-    /* USER CODE BEGIN W1_UsageFault_IRQn 0 */
-    /* USER CODE END W1_UsageFault_IRQn 0 */
   }
 }
 
+/* 批次1：模板中已注释的 SVC_Handler/PendSV_Handler/SysTick_Handler 与 PPP_IRQHandler
+ * 死代码块删除。三个系统异常的实现位置保持不变：
+ *   SVC_Handler/PendSV_Handler —— FreeRTOSConfig.h:216-217 宏改名后的 port.c；
+ *   SysTick_Handler           —— Drivers/BSP/delay/delay.c:19（HAL_IncTick + xPortSysTickHandler）。 */
+
 /**
-  * @brief This function handles Debug monitor.
+  * @brief  This function handles Debug Monitor exception.
+  * @param  None
+  * @retval None
   */
 void DebugMon_Handler(void)
 {
-  /* USER CODE BEGIN DebugMonitor_IRQn 0 */
-
-  /* USER CODE END DebugMonitor_IRQn 0 */
-  /* USER CODE BEGIN DebugMonitor_IRQn 1 */
-
-  /* USER CODE END DebugMonitor_IRQn 1 */
 }
 
-/******************************************************************************/
-/* STM32F4xx Peripheral Interrupt Handlers                                    */
-/* Add here the Interrupt Handlers for the used peripherals.                  */
-/* For the available peripheral interrupt handler names,                      */
-/* please refer to the startup file (startup_stm32f4xx.s).                    */
-/******************************************************************************/
 
 /**
-  * @brief This function handles TIM6 global interrupt, DAC1 and DAC2 underrun error interrupts.
-  */
-void TIM6_DAC_IRQHandler(void)
-{
-  /* USER CODE BEGIN TIM6_DAC_IRQn 0 */
+  * @}
+  */ 
 
-  /* USER CODE END TIM6_DAC_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim6);
-  /* USER CODE BEGIN TIM6_DAC_IRQn 1 */
 
-  /* USER CODE END TIM6_DAC_IRQn 1 */
-}
-
-/**
-  * @brief This function handles USB On The Go FS global interrupt.
-  */
-void OTG_FS_IRQHandler(void)
-{
-  /* USER CODE BEGIN OTG_FS_IRQn 0 */
-
-  /* USER CODE END OTG_FS_IRQn 0 */
-  HAL_HCD_IRQHandler(&hhcd_USB_OTG_FS);
-  /* USER CODE BEGIN OTG_FS_IRQn 1 */
-
-  /* USER CODE END OTG_FS_IRQn 1 */
-}
-
-/* USER CODE BEGIN 1 */
-
-/* USER CODE END 1 */
+/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

@@ -57,13 +57,18 @@ defined in linker script */
     .section  .text.Reset_Handler
   .weak  Reset_Handler
   .type  Reset_Handler, %function
-Reset_Handler:  
+Reset_Handler:
   ldr   sp, =_estack     /* set stack pointer */
-  
-/* Call the clock system initialization function.*/
-  bl  SystemInit  
 
-/* Copy the data segment initializers from flash to SRAM */  
+/* 批次1（StdPeriph→HAL 迁移）：此处不再提前调用 SystemInit。
+ * 本工程 SystemInit 内含 HAL_Init()（system_stm32f4xx.c:112），其 HAL_InitTick
+ * 读 .data 变量 SystemCoreClock/uwTickFreq（stm32f4xx_hal.c:256），HSE 等待期间
+ * uwTick 与 FreeRTOS 的 .bss 尚未初始化，SysTick 中断会经 delay.c 的
+ * SysTick_Handler 读取未清零的 xSchedulerRunning。为与旧 startup_gcc.s 的
+ * 实测顺序（data 拷贝 → bss 清零 → SystemInit → __libc_init_array → main）
+ * 保持行为等价，SystemInit 移至下方 bss 清零之后调用。 */
+
+/* Copy the data segment initializers from flash to SRAM */
   ldr r0, =_sdata
   ldr r1, =_edata
   ldr r2, =_sidata
@@ -93,6 +98,11 @@ FillZerobss:
 LoopFillZerobss:
   cmp r2, r4
   bcc FillZerobss
+
+/* Call the clock system initialization function.
+   批次1：.data/.bss 就绪后再进 SystemInit（内含 HAL_Init/HAL_InitTick，
+   依赖 SystemCoreClock/uwTickFreq 已初始化），与旧 startup_gcc.s 顺序一致。 */
+  bl  SystemInit
 
 /* Call static constructors */
     bl __libc_init_array

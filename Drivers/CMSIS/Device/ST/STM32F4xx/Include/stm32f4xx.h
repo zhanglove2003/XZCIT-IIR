@@ -1,301 +1,66 @@
-/**
-  ******************************************************************************
-  * @file    stm32f4xx.h
-  * @author  MCD Application Team
-  * @brief   CMSIS STM32F4xx Device Peripheral Access Layer Header File.
-  *
-  *          The file is the unique include file that the application programmer
-  *          is using in the C source code, usually in main.c. This file contains:
-  *           - Configuration section that allows to select:
-  *              - The STM32F4xx device used in the target application
-  *              - To use or not the peripheral's drivers in application code(i.e.
-  *                code will be based on direct access to peripheral's registers
-  *                rather than drivers API), this option is controlled by
-  *                "#define USE_HAL_DRIVER"
-  *
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2017 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
-
-/** @addtogroup CMSIS
-  * @{
-  */
-
-/** @addtogroup stm32f4xx
-  * @{
-  */
-
 #ifndef __STM32F4xx_H
 #define __STM32F4xx_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif /* __cplusplus */
+/* 批次6：CMSIS 设备头 shim 切换。
+ * 本文件原为 StdPeriph V1.4.0 胖头（9176 行，legacy 器件门 STM32F40_41xxx，
+ * 无 _Pos/_Msk 全集）。StdPeriph 随批次1-5 迁移、批次6 退场后，保留文件名
+ * "stm32f4xx.h" 以维持树内既有 include 面（hal_def.h、sys.h、system.h、
+ * stm32f4xx_it.h、LL 头等十余处），内容整体切换到同目录 Cube 版
+ * stm32f407xx.h（FW_F4 1.28.x 格式，自带全部 _Pos/_Msk、ADC123_COMMON、
+ * 32 位 BSRR、IRQn 枚举）。全树批量改 include 属高风险（nel/GBK 文件），
+ * 蓝图裁定不做。
+ * -DSTM32F407xx（Makefile DEFS）继续供 HAL _ex 模块器件宏分支使用。 */
 
-/** @addtogroup Library_configuration_section
-  * @{
-  */
-
-/**
-  * @brief STM32 Family
-  */
-#if !defined  (STM32F4)
-#define STM32F4
-#endif /* STM32F4 */
-
-/* Uncomment the line below according to the target STM32 device used in your
-   application
-  */
-#if !defined (STM32F405xx) && !defined (STM32F415xx) && !defined (STM32F407xx) && !defined (STM32F417xx) && \
-    !defined (STM32F427xx) && !defined (STM32F437xx) && !defined (STM32F429xx) && !defined (STM32F439xx) && \
-    !defined (STM32F401xC) && !defined (STM32F401xE) && !defined (STM32F410Tx) && !defined (STM32F410Cx) && \
-    !defined (STM32F410Rx) && !defined (STM32F411xE) && !defined (STM32F446xx) && !defined (STM32F469xx) && \
-    !defined (STM32F479xx) && !defined (STM32F412Cx) && !defined (STM32F412Rx) && !defined (STM32F412Vx) && \
-    !defined (STM32F412Zx) && !defined (STM32F413xx) && !defined (STM32F423xx)
-/* #define STM32F405xx */   /*!< STM32F405RG, STM32F405VG and STM32F405ZG Devices */
-/* #define STM32F415xx */   /*!< STM32F415RG, STM32F415VG and STM32F415ZG Devices */
-/* #define STM32F407xx */   /*!< STM32F407VG, STM32F407VE, STM32F407ZG, STM32F407ZE, STM32F407IG  and STM32F407IE Devices */
-/* #define STM32F417xx */   /*!< STM32F417VG, STM32F417VE, STM32F417ZG, STM32F417ZE, STM32F417IG and STM32F417IE Devices */
-/* #define STM32F427xx */   /*!< STM32F427VG, STM32F427VI, STM32F427ZG, STM32F427ZI, STM32F427IG and STM32F427II Devices */
-/* #define STM32F437xx */   /*!< STM32F437VG, STM32F437VI, STM32F437ZG, STM32F437ZI, STM32F437IG and STM32F437II Devices */
-/* #define STM32F429xx */   /*!< STM32F429VG, STM32F429VI, STM32F429ZG, STM32F429ZI, STM32F429BG, STM32F429BI, STM32F429NG,
-                                 STM32F439NI, STM32F429IG  and STM32F429II Devices */
-/* #define STM32F439xx */   /*!< STM32F439VG, STM32F439VI, STM32F439ZG, STM32F439ZI, STM32F439BG, STM32F439BI, STM32F439NG,
-                                 STM32F439NI, STM32F439IG and STM32F439II Devices */
-/* #define STM32F401xC */   /*!< STM32F401CB, STM32F401CC, STM32F401RB, STM32F401RC, STM32F401VB and STM32F401VC Devices */
-/* #define STM32F401xE */   /*!< STM32F401CD, STM32F401RD, STM32F401VD, STM32F401CE, STM32F401RE and STM32F401VE Devices */
-/* #define STM32F410Tx */   /*!< STM32F410T8 and STM32F410TB Devices */
-/* #define STM32F410Cx */   /*!< STM32F410C8 and STM32F410CB Devices */
-/* #define STM32F410Rx */   /*!< STM32F410R8 and STM32F410RB Devices */
-/* #define STM32F411xE */   /*!< STM32F411CC, STM32F411RC, STM32F411VC, STM32F411CE, STM32F411RE and STM32F411VE Devices */
-/* #define STM32F446xx */   /*!< STM32F446MC, STM32F446ME, STM32F446RC, STM32F446RE, STM32F446VC, STM32F446VE, STM32F446ZC,
-                                 and STM32F446ZE Devices */
-/* #define STM32F469xx */   /*!< STM32F469AI, STM32F469II, STM32F469BI, STM32F469NI, STM32F469AG, STM32F469IG, STM32F469BG,
-                                 STM32F469NG, STM32F469AE, STM32F469IE, STM32F469BE and STM32F469NE Devices */
-/* #define STM32F479xx */   /*!< STM32F479AI, STM32F479II, STM32F479BI, STM32F479NI, STM32F479AG, STM32F479IG, STM32F479BG
-                                 and STM32F479NG Devices */
-/* #define STM32F412Cx */   /*!< STM32F412CEU and STM32F412CGU Devices */
-/* #define STM32F412Zx */   /*!< STM32F412ZET, STM32F412ZGT, STM32F412ZEJ and STM32F412ZGJ Devices */
-/* #define STM32F412Vx */   /*!< STM32F412VET, STM32F412VGT, STM32F412VEH and STM32F412VGH Devices */
-/* #define STM32F412Rx */   /*!< STM32F412RET, STM32F412RGT, STM32F412REY and STM32F412RGY Devices */
-/* #define STM32F413xx */   /*!< STM32F413CH, STM32F413MH, STM32F413RH, STM32F413VH, STM32F413ZH, STM32F413CG, STM32F413MG,
-                                 STM32F413RG, STM32F413VG and STM32F413ZG Devices */
-/* #define STM32F423xx */   /*!< STM32F423CH, STM32F423RH, STM32F423VH and STM32F423ZH Devices */
-#endif
-
-/*  Tip: To avoid modifying this file each time you need to switch between these
-        devices, you can define the device in your toolchain compiler preprocessor.
-  */
-#if !defined  (USE_HAL_DRIVER)
-/**
- * @brief Comment the line below if you will not use the peripherals drivers.
-   In this case, these drivers will not be included and the application code will
-   be based on direct access to peripherals registers
-   */
-/*#define USE_HAL_DRIVER */
-#endif /* USE_HAL_DRIVER */
-
-/**
-  * @brief CMSIS version number V2.6.11
-  */
-#define __STM32F4xx_CMSIS_VERSION_MAIN   (0x02U) /*!< [31:24] main version */
-#define __STM32F4xx_CMSIS_VERSION_SUB1   (0x06U) /*!< [23:16] sub1 version */
-#define __STM32F4xx_CMSIS_VERSION_SUB2   (0x0BU) /*!< [15:8]  sub2 version */
-#define __STM32F4xx_CMSIS_VERSION_RC     (0x00U) /*!< [7:0]  release candidate */
-#define __STM32F4xx_CMSIS_VERSION        ((__STM32F4xx_CMSIS_VERSION_MAIN << 24)\
-                                         |(__STM32F4xx_CMSIS_VERSION_SUB1 << 16)\
-                                         |(__STM32F4xx_CMSIS_VERSION_SUB2 << 8 )\
-                                         |(__STM32F4xx_CMSIS_VERSION_RC))
-
-/**
-  * @}
-  */
-
-/** @addtogroup Device_Included
-  * @{
-  */
-
-#if defined(STM32F405xx)
-#include "stm32f405xx.h"
-#elif defined(STM32F415xx)
-#include "stm32f415xx.h"
-#elif defined(STM32F407xx)
 #include "stm32f407xx.h"
-#elif defined(STM32F417xx)
-#include "stm32f417xx.h"
-#elif defined(STM32F427xx)
-#include "stm32f427xx.h"
-#elif defined(STM32F437xx)
-#include "stm32f437xx.h"
-#elif defined(STM32F429xx)
-#include "stm32f429xx.h"
-#elif defined(STM32F439xx)
-#include "stm32f439xx.h"
-#elif defined(STM32F401xC)
-#include "stm32f401xc.h"
-#elif defined(STM32F401xE)
-#include "stm32f401xe.h"
-#elif defined(STM32F410Tx)
-#include "stm32f410tx.h"
-#elif defined(STM32F410Cx)
-#include "stm32f410cx.h"
-#elif defined(STM32F410Rx)
-#include "stm32f410rx.h"
-#elif defined(STM32F411xE)
-#include "stm32f411xe.h"
-#elif defined(STM32F446xx)
-#include "stm32f446xx.h"
-#elif defined(STM32F469xx)
-#include "stm32f469xx.h"
-#elif defined(STM32F479xx)
-#include "stm32f479xx.h"
-#elif defined(STM32F412Cx)
-#include "stm32f412cx.h"
-#elif defined(STM32F412Zx)
-#include "stm32f412zx.h"
-#elif defined(STM32F412Rx)
-#include "stm32f412rx.h"
-#elif defined(STM32F412Vx)
-#include "stm32f412vx.h"
-#elif defined(STM32F413xx)
-#include "stm32f413xx.h"
-#elif defined(STM32F423xx)
-#include "stm32f423xx.h"
-#else
-#error "Please select first the target STM32F4xx device used in your application (in stm32f4xx.h file)"
+
+/* 批次6：原 StdPeriph 胖头 stm32f4xx.h:473 被 vendor 加入 #include "arm_math.h"——
+ * 全树经此隐式获得 PI 等 CMSIS-DSP 数学宏（-DARM_MATH_CM4 即为其准备）。原样保留。 */
+#include "arm_math.h"
+
+/* 批次6：原 StdPeriph 胖头 stm32f4xx.h:495-497 内嵌的 vendor 缩写 typedef 原样
+ * 补回（全树 BSP/App 头函数签名使用；与旧头逐行同义，非本批新增语义）：
+ *   typedef uint32_t u32; typedef uint16_t u16; typedef uint8_t u8;
+ * shim 化后 stm32f407xx.h 不再提供这三个名字。 */
+typedef uint32_t u32;
+typedef uint16_t u16;
+typedef uint8_t  u8;
+
+/* 批次6：原 StdPeriph 胖头 stm32f4xx.h:511-516 的状态枚举 typedef 原样补回——
+ * 树内旧版 HAL 头（hal_adc.h 等）仍在使用 FunctionalState/FlagStatus/ITStatus/
+ * ErrorStatus；Cube 头不提供。 */
+typedef enum {RESET = 0, SET = !RESET} FlagStatus, ITStatus;
+typedef enum {DISABLE = 0, ENABLE = !DISABLE} FunctionalState;
+typedef enum {ERROR = 0, SUCCESS = !ERROR} ErrorStatus;
+
+/* 批次6：原 StdPeriph 胖头 stm32f4xx.h:9144-9156 尾部自带的 CMSIS 通用寄存器宏
+ * 原样补回——树内 core_cm4.h 为旧版（无此宏区），Cube 头 stm32f407xx.h 亦不提供；
+ * HAL 源（hal_adc.c 等）与 LL 头依赖它们。#ifndef 包裹，与未来升级的 CMSIS 冲突安全。 */
+#ifndef SET_BIT
+#define SET_BIT(REG, BIT)     ((REG) |= (BIT))
 #endif
 
-/**
-  * @}
-  */
-
-/** @addtogroup Exported_types
-  * @{
-  */
-typedef enum
-{
-  RESET = 0U,
-  SET = !RESET
-} FlagStatus, ITStatus;
-
-typedef enum
-{
-  DISABLE = 0U,
-  ENABLE = !DISABLE
-} FunctionalState;
-#define IS_FUNCTIONAL_STATE(STATE) (((STATE) == DISABLE) || ((STATE) == ENABLE))
-
-typedef enum
-{
-  SUCCESS = 0U,
-  ERROR = !SUCCESS
-} ErrorStatus;
-
-/**
-  * @}
-  */
-
-
-/** @addtogroup Exported_macro
-  * @{
-  */
-#define SET_BIT(REG, BIT)     ((REG) |= (BIT))
-
+#ifndef CLEAR_BIT
 #define CLEAR_BIT(REG, BIT)   ((REG) &= ~(BIT))
+#endif
 
+#ifndef READ_BIT
 #define READ_BIT(REG, BIT)    ((REG) & (BIT))
+#endif
 
+#ifndef CLEAR_REG
 #define CLEAR_REG(REG)        ((REG) = (0x0))
+#endif
 
+#ifndef WRITE_REG
 #define WRITE_REG(REG, VAL)   ((REG) = (VAL))
+#endif
 
+#ifndef READ_REG
 #define READ_REG(REG)         ((REG))
+#endif
 
+#ifndef MODIFY_REG
 #define MODIFY_REG(REG, CLEARMASK, SETMASK)  WRITE_REG((REG), (((READ_REG(REG)) & (~(CLEARMASK))) | (SETMASK)))
-
-#define POSITION_VAL(VAL)     (__CLZ(__RBIT(VAL)))
-
-/* Use of CMSIS compiler intrinsics for register exclusive access */
-/* Atomic 32-bit register access macro to set one or several bits */
-#define ATOMIC_SET_BIT(REG, BIT)                             \
-  do {                                                       \
-    uint32_t val;                                            \
-    do {                                                     \
-      val = __LDREXW((__IO uint32_t *)&(REG)) | (BIT);       \
-    } while ((__STREXW(val,(__IO uint32_t *)&(REG))) != 0U); \
-  } while(0)
-
-/* Atomic 32-bit register access macro to clear one or several bits */
-#define ATOMIC_CLEAR_BIT(REG, BIT)                           \
-  do {                                                       \
-    uint32_t val;                                            \
-    do {                                                     \
-      val = __LDREXW((__IO uint32_t *)&(REG)) & ~(BIT);      \
-    } while ((__STREXW(val,(__IO uint32_t *)&(REG))) != 0U); \
-  } while(0)
-
-/* Atomic 32-bit register access macro to clear and set one or several bits */
-#define ATOMIC_MODIFY_REG(REG, CLEARMSK, SETMASK)                          \
-  do {                                                                     \
-    uint32_t val;                                                          \
-    do {                                                                   \
-      val = (__LDREXW((__IO uint32_t *)&(REG)) & ~(CLEARMSK)) | (SETMASK); \
-    } while ((__STREXW(val,(__IO uint32_t *)&(REG))) != 0U);               \
-  } while(0)
-
-/* Atomic 16-bit register access macro to set one or several bits */
-#define ATOMIC_SETH_BIT(REG, BIT)                            \
-  do {                                                       \
-    uint16_t val;                                            \
-    do {                                                     \
-      val = __LDREXH((__IO uint16_t *)&(REG)) | (BIT);       \
-    } while ((__STREXH(val,(__IO uint16_t *)&(REG))) != 0U); \
-  } while(0)
-
-/* Atomic 16-bit register access macro to clear one or several bits */
-#define ATOMIC_CLEARH_BIT(REG, BIT)                          \
-  do {                                                       \
-    uint16_t val;                                            \
-    do {                                                     \
-      val = __LDREXH((__IO uint16_t *)&(REG)) & ~(BIT);      \
-    } while ((__STREXH(val,(__IO uint16_t *)&(REG))) != 0U); \
-  } while(0)
-
-/* Atomic 16-bit register access macro to clear and set one or several bits */
-#define ATOMIC_MODIFYH_REG(REG, CLEARMSK, SETMASK)                         \
-  do {                                                                     \
-    uint16_t val;                                                          \
-    do {                                                                   \
-      val = (__LDREXH((__IO uint16_t *)&(REG)) & ~(CLEARMSK)) | (SETMASK); \
-    } while ((__STREXH(val,(__IO uint16_t *)&(REG))) != 0U);               \
-  } while(0)
-
-/**
-  * @}
-  */
-
-#if defined (USE_HAL_DRIVER)
-#include "stm32f4xx_hal.h"
-#endif /* USE_HAL_DRIVER */
-
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
+#endif
 
 #endif /* __STM32F4xx_H */
-/**
-  * @}
-  */
-
-/**
-  * @}
-  */

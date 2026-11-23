@@ -1,0 +1,37 @@
+# C50C Web-Next 控制台（Rust axum 单文件，:8088）—— systemd --user 单元草稿。
+#
+# 安装（板端 orangepi 用户执行，占位符 __BIN__ 部署时替换为实际二进制路径，
+# __PW__ 替换为 admin 密码 SHA-256 小写摘要，__TOKEN__ 替换为 ≥32 hex 随机
+# 令牌——与 c50c-web-bridge.service 的 OPI_BRIDGE_TOKEN 必须同一值）：
+#   sed -e "s|__BIN__|/home/orangepi/web-next/bin/web-next|" \
+#       -e "s/__PW__/8c69.../" -e "s/__TOKEN__/ab12.../" \
+#       c50c-web-next.service > ~/.config/systemd/user/c50c-web-next.service
+#   systemctl --user daemon-reload && systemctl --user enable --now c50c-web-next
+#   loginctl enable-linger orangepi   # linger 属 loginctl 用户属性，非 unit 能力
+#
+# 模式说明：默认即 ros 模式（不设 OPI_WEB_FAKE）；调试可用：
+#   Environment=OPI_WEB_FAKE=1   （或 ExecStart 加 --fake）
+# 回滚：旧 c50c-web.service 保留可启（蓝图 §安全隔离铁律）。
+
+[Unit]
+Description=C50C web console (Web-Next axum on :8088)
+
+[Service]
+Type=simple
+# Rust 单文件不需要 ROS 环境；HOME 供 OPI_BOOT_MARKER 缺省路径
+# (~/.cache/opi-robot/boot_hold) 与日志定位。
+Environment=HOME=/home/orangepi
+Environment=OPI_WEB_PASSWORD_SHA256=__PW__
+Environment=OPI_BRIDGE_TOKEN=__TOKEN__
+# ExecStart=__BIN__ --port 8088
+ExecStart=__BIN__ --port 8088
+Restart=always
+RestartSec=3
+# 旧 web_debug 收 SIGTERM 会卡优雅退出（c50c-web.service 注释）；
+# Web-Next 无优雅退出负担，但保留同款 5s 强杀上限，restart 不拖沓。
+TimeoutStopSec=5
+StandardOutput=append:/tmp/wbnext.log
+StandardError=append:/tmp/wbnext.log
+
+[Install]
+WantedBy=default.target

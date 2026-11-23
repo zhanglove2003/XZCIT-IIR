@@ -1,0 +1,47 @@
+# C50C EKF 融合里程计配置（2026-11-16，治 SLAM 斜墙）
+# 输入：/odom_candidate（编码器，桥发布）+ /imu/data_raw（IMU 20Hz）
+# 输出：odom→base_link TF（EKF 接管）。桥 c50c_uart3 的 odom_tf_enable 必须
+#       关（启动参数加 -p odom_tf_enable:=false），否则两个 TF 源打架。
+# 坑 1：process_noise_covariance 必须 15x15=225 值，给 6x6 会 NaN 崩溃
+#       （首次实测）。这里不覆盖，用包默认（默认矩阵本身合理）。
+# 坑 2：covariance 序列里混 int 0 和 float 会 rcl 解析报错
+#       "Sequence should be of same type"——全写浮点。
+
+ekf_filter_node:
+  ros__parameters:
+    use_sim_time: false
+    frequency: 20.0  # 2026-11-17: 双源均 20Hz，30Hz 目标导致 Failed to meet update rate；25Hz=调度余量内最高稳态
+    sensor_timeout: 0.5
+    two_d_mode: true
+
+    publish_tf: true
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom         # 只发 odom→base_link，map→odom 留给 slam/amcl
+
+    # 编码器：只取体坐标系 vx 速度，不融合绝对 x,y（避免与 EKF 航向不同步导致 yaw 跳变）
+    odom0: /odom_candidate
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  false, false,
+                   false, false, false,
+                   false, false, false]
+    odom0_differential: false
+    odom0_relative: false
+    odom0_queue_size: 5
+    odom0_pose_rejection_threshold: 3.0
+    odom0_twist_rejection_threshold: 10.0
+    odom0_nodelay: true
+
+    # IMU：只融合 yaw 角速度（陀螺 vyaw），姿态/加速度计不用
+    imu0: /imu/data_raw
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+    imu0_differential: false
+    imu0_relative: false
+    imu0_remove_gravitational_acceleration: true
+    imu0_queue_size: 10
+    imu0_nodelay: true

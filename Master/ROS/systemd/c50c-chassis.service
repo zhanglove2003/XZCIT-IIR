@@ -1,0 +1,17 @@
+[Unit]
+Description=C50C chassis bridge after the stationary initialization period
+Requires=dev-serial-by\x2dpath-platform\x2dfc800000.usb\x2dusb\x2d0:1.2:1.0.device
+After=dev-serial-by\x2dpath-platform\x2dfc800000.usb\x2dusb\x2d0:1.2:1.0.device
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/sleep 20
+ExecStart=/home/orangepi/start_chassis.sh
+# 节点异常退出自动拉起（串口看门狗处理链路级自愈，这里兜进程级死亡）
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:/home/orangepi/chassis.log
+StandardError=append:/home/orangepi/chassis.log
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run C50C web watchdog every 90 seconds
+
+[Timer]
+OnBootSec=120
+OnUnitActiveSec=90
+Unit=c50c-web-watchdog.service
+
+[Install]
+WantedBy=timers.target

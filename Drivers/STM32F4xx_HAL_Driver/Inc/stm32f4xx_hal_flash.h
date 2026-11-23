@@ -333,7 +333,12 @@ HAL_StatusTypeDef HAL_FLASH_OB_Launch(void);
   */
 /* Peripheral State functions  ************************************************/
 uint32_t HAL_FLASH_GetError(void);
+/* 批次0：StdPeriph stm32f4xx_flash.h（经 stm32f4xx_conf.h 链先行包含）声明了同名函数
+   但签名为 FLASH_Status(void)，二者不可共存于同一 TU；StdPeriph FLASH 驱动未参与
+   本工程编译（Makefile 未列入 stm32f4xx_flash.c），此处让位。 */
+#ifndef __STM32F4xx_FLASH_H
 HAL_StatusTypeDef FLASH_WaitForLastOperation(uint32_t Timeout);
+#endif /* __STM32F4xx_FLASH_H */
 /**
   * @}
   */

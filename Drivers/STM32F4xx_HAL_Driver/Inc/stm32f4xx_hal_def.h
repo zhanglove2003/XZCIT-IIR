@@ -27,7 +27,12 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f4xx.h"
+/* 批次0：本工程与 StdPeriph V1.4.0 混编期间，legacy 别名宏（TIM_DMABase_CR1 等）
+   会与 StdPeriph 头中的同名宏重定义，产生数百条警告。定义 HAL_NO_LEGACY
+   （Makefile DEFS 已加）可跳过该纯别名层；HAL 源码本身不使用这些别名。 */
+#ifndef HAL_NO_LEGACY
 #include "Legacy/stm32_hal_legacy.h"
+#endif /* HAL_NO_LEGACY */
 #include <stddef.h>
 
 /* Exported types ------------------------------------------------------------*/

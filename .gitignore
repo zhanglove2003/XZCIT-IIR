@@ -1,14 +1,27 @@
-# build output
-build/
+# 构建产物目录（历史上一次性的验证构建，各含 40MB+ 的 .o/.elf/.bin）
+build-*/
+cmake-build*/
+final-*/
+lead-*/
+chk-*/
+review-*/
+OBJ/
+obj/
 *.o
 *.d
 *.elf
-*.hex
-*.bin
+# *.hex  — 例外见文件末尾：Akm_Car.hex 是上游原始参考包，保留
 *.map
-*.lst
-*.su
 
-# editor / OS
+# Python 缓存
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 设备与编辑器
 .vscode/
-.DS_Store
+*.swp
+
+# 上游原始参考包，虽然扩展名是 .hex 也要纳入版本控制
+!Akm_Car.hex
+build/

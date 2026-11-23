@@ -743,6 +743,7 @@ HAL_StatusTypeDef HAL_RCC_ClockConfig(const RCC_ClkInitTypeDef  *RCC_ClkInitStru
   * @{
   */
 
+#ifndef HAL_RCC_NO_MCO
 /**
   * @brief  Selects the clock source to output on MCO1 pin(PA8) or on MCO2 pin(PC9).
   * @note   PA8/PC9 should be configured in alternate function mode.
@@ -828,6 +829,7 @@ void HAL_RCC_MCOConfig(uint32_t RCC_MCOx, uint32_t RCC_MCOSource, uint32_t RCC_M
   }
 #endif /* RCC_CFGR_MCO2 */
 }
+#endif /* HAL_RCC_NO_MCO */
 
 /**
   * @brief  Enables the Clock Security System.

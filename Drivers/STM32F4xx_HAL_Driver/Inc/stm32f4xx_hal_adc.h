@@ -889,6 +889,15 @@ uint32_t HAL_ADC_GetError(ADC_HandleTypeDef *hadc);
   * @}
   */
 
+/* 批次3：本库 stm32f4xx_hal_adc.c/hal_adc_ex.c（较新 HAL 版本）引用
+ * IS_ADC_ALL_INSTANCE，而本树 stm32f4xx_hal_adc.h 较旧未含定义。按 ST 官方
+ * F4 HAL 原文补齐（STM32F407：ADC1/ADC2/ADC3）。USE_FULL_ASSERT 未定义时
+ * assert_param 编译为空操作，该宏仅编译期存在。 */
+#define IS_ADC_ALL_INSTANCE(INSTANCE) \
+  (((INSTANCE) == ADC1) || \
+   ((INSTANCE) == ADC2) || \
+   ((INSTANCE) == ADC3))
+
 #ifdef __cplusplus
 }
 #endif

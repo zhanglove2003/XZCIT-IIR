@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>c50c_uart3</name>
+  <version>0.1.0</version>
+  <description>C50C UART3 24 字节状态帧只读接收与 ROS 2 IMU 桥接;含候选里程计消息构造库 c50c_uart3.odom_msg 与默认关闭的候选 TF 输出(odom_tf_enable,须与 use_identity_odom 互斥;节点不发布正式 /odom)</description>
+  <maintainer email="snow@example.com">snow</maintainer>
+  <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <!-- odom_msg.build_msg 直接 import nav_msgs;积分器在独立包 c50c_odom -->
+  <depend>nav_msgs</depend>
+  <!-- 可选候选 TF(odom_tf_enable)用 tf2_ros/geometry_msgs -->
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <!-- chassis_cmd.ros_input 延迟 import std_msgs/Bool(停止话题) -->
+  <depend>std_msgs</depend>
+  <exec_depend>c50c_odom</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

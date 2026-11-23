@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 蓝图 §5.1：明暗双主题由 meta color-scheme 驱动，light-dark() 色板跟随 -->
+<meta name="color-scheme" content="light dark">
+<script>
+/* FOUC 防闪（dark-mode-toggle 规范）：仅恢复持久化主题，别无副作用 */
+try {
+  document.querySelector('meta[name="color-scheme"]').content =
+    localStorage.getItem("c50c-color-scheme") ?? "light dark";
+} catch (e) { /* localStorage 被禁时跟随系统 */ }
+</script>
+<title>XUCIT-IIR 控制台</title>
+<!-- 主字体预热：font 请求恒走 CORS 模式，preload 必须标 crossorigin，否则二次下载 -->
+<link rel="preload" href="/fonts/HarmonyOSSansSC-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/HarmonyOSSansSC-Medium.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/HarmonyOSSansSC-Bold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/styles/tokens.css">
+<link rel="stylesheet" href="/styles/layout.css">
+<link rel="stylesheet" href="/styles/micro.css">
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="brand">
+    <span class="brand-dot" aria-hidden="true"></span>XUCIT-IIR
+    <button id="btn-side" class="icon-btn" type="button" aria-label="收起侧栏" aria-expanded="true" title="收起/展开侧栏">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2.2"/><path d="M6.2 2.5v11"/></svg>
+    </button>
+  </div>
+  <nav class="nav" aria-label="主导航">
+    <a href="#/overview" class="nav-item" data-page="overview">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5.2" height="5.2" rx="1.2"/><rect x="8.8" y="2" width="5.2" height="5.2" rx="1.2"/><rect x="2" y="8.8" width="5.2" height="5.2" rx="1.2"/><rect x="8.8" y="8.8" width="5.2" height="5.2" rx="1.2"/></svg>
+      <span>概览</span>
+    </a>
+    <a href="#/control" class="nav-item" data-page="control">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke-width="1.6"/><circle cx="8" cy="8" r="2.4"/></svg>
+      <span>控制</span>
+    </a>
+    <a href="#/logs" class="nav-item" data-page="logs">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.5h10M3 6.5h10M3 9.5h7M3 12.5h5" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>
+      <span>日志</span>
+    </a>
+  </nav>
+  <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换主题">
+    <svg class="ico-sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.2"/><path d="M8 .8v2M8 13.2v2M.8 8h2M13.2 8h2M2.9 2.9l1.4 1.4M11.7 11.7l1.4 1.4M13.1 2.9l-1.4 1.4M4.3 11.7l-1.4 1.4" stroke-width="1.4" stroke-linecap="round"/></svg>
+    <svg class="ico-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 9.8A6 6 0 0 1 6.2 2.5a6 6 0 1 0 7.3 7.3Z"/></svg>
+  </button>
+</aside>
+
+<div class="shell">
+  <header class="topbar">
+    <h1 id="page-title" tabindex="-1">概览</h1>
+    <div class="topbar-status">
+      <span class="chip" id="chip-mode">—</span>
+      <span class="chip mono" id="chip-rtt">—</span>
+      <span class="chip mono" id="chip-lic">许可 —</span>
+      <span class="led" id="led-conn" role="img" aria-label="连接状态"></span>
+    </div>
+  </header>
+
+  <main class="pages" id="pages">
+
+    <!-- ============ 概览（免登录） ============ -->
+    <section class="page active" id="page-overview" aria-labelledby="page-title">
+      <div class="page-inner">
+        <div class="grid">
+          <article class="card verdict" data-card data-ov="verdict">
+            <div class="verdict-row">
+              <i class="led" id="ov-verdict-led"></i>
+              <b id="ov-verdict-text">—</b>
+              <span class="st" id="ov-verdict-detail"></span>
+              <svg class="verdict-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="verdict-list" id="ov-verdict-list" hidden></div>
+          </article>
+          <article class="card" data-card data-ov="ch">
+            <h3><i class="led" id="ov-ch-led"></i>底盘</h3>
+            <div class="kv"><span>状态</span><b id="ov-ch-state">—</b></div>
+            <div class="kv"><span>速度</span><b class="mono" id="ov-ch-vx">—</b></div>
+            <div class="kv"><span>里程</span><b class="mono" id="ov-ch-mileage">—</b></div>
+          </article>
+          <article class="card" data-card data-ov="bat">
+            <h3><i class="led" id="ov-bat-led"></i>电池</h3>
+            <div class="bat-row"><b class="mono big" id="ov-bat-num">—</b><span class="st" id="ov-bat-text">无数据</span></div>
+            <div class="bat-bar"><span id="ov-bat-pct"></span></div>
+          </article>
+          <article class="card" data-card data-ov="task">
+            <h3><i class="led" id="ov-task-led"></i>任务</h3>
+            <div class="kv"><span>状态</span><b id="ov-task-text">—</b></div>
+            <div class="kv"><span>通道</span><b id="ov-task-ch">—</b></div>
+          </article>
+          <article class="card" data-card data-ov="nodes">
+            <h3>设备节点</h3>
+            <div class="kv"><span>相机</span><b id="ov-n-cam">—</b></div>
+            <div class="kv"><span>激光雷达</span><b id="ov-n-lidar">—</b></div>
+            <div class="kv"><span>底盘</span><b id="ov-n-chassis">—</b></div>
+            <div class="kv"><span>ROS 通讯</span><b id="ov-n-uart3">—</b></div>
+            <div class="kv"><span>超声波</span><b id="ov-n-us">—</b></div>
+          </article>
+          <article class="card" data-card data-ov="net">
+            <h3><i class="led" id="ov-net-led"></i>网络</h3>
+            <div class="kv"><span>控制链路</span><b id="ov-net-conn">—</b></div>
+            <div class="kv"><span>延迟</span><b class="mono" id="ov-net-rtt">—</b></div>
+            <div class="kv"><span>WiFi</span><b id="ov-net-wifi">无数据</b>
+              <svg class="sig" id="ov-net-sig" viewBox="0 0 16 16" aria-hidden="true"><rect x="0" y="10" width="3" height="6" rx="1"/><rect x="4.3" y="7" width="3" height="9" rx="1"/><rect x="8.6" y="4" width="3" height="12" rx="1"/><rect x="12.9" y="1" width="3" height="15" rx="1"/></svg></div>
+          </article>
+          <article class="card" data-card data-ov="sys">
+            <h3><i class="led" id="ov-sys-led"></i>系统</h3>
+            <div class="sys-donuts">
+              <div class="sys-donut">
+                <svg viewBox="0 0 72 72" aria-hidden="true"><circle class="track" cx="36" cy="36" r="30"/><circle class="val" cx="36" cy="36" r="30"/></svg>
+                <b class="mono" id="ov-sys-cpu">—</b>
+                <span>CPU</span>
+              </div>
+              <div class="sys-donut">
+                <svg viewBox="0 0 72 72" aria-hidden="true"><circle class="track" cx="36" cy="36" r="30"/><circle class="val" cx="36" cy="36" r="30"/></svg>
+                <b class="mono" id="ov-sys-gpu">—</b>
+                <span>GPU</span>
+              </div>
+              <div class="sys-donut">
+                <svg viewBox="0 0 72 72" aria-hidden="true"><circle class="track" cx="36" cy="36" r="30"/><circle class="val" cx="36" cy="36" r="30"/></svg>
+                <b class="mono" id="ov-sys-mem">—</b>
+                <span>内存</span>
+              </div>
+              <div class="sys-donut">
+                <svg viewBox="0 0 72 72" aria-hidden="true"><circle class="track" cx="36" cy="36" r="30"/><circle class="val" cx="36" cy="36" r="30"/></svg>
+                <b class="mono" id="ov-sys-temp">—</b>
+                <span>温度</span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 手动控制（需 admin 登录） ============ -->
+    <section class="page" id="page-control" aria-labelledby="page-title" inert>
+      <div class="page-inner">
+        <div class="login-wrap" id="ctl-login">
+          <form class="card auth-card" id="login-form" data-card>
+            <h3>登录</h3>
+            <label class="field"><span>用户名</span><input id="login-user" name="username" value="admin" autocomplete="username" required></label>
+            <label class="field"><span>密码</span><input id="login-pass" name="password" type="password" autocomplete="current-password" required></label>
+            <button type="submit" class="btn primary wide">登录</button>
+            <p class="form-err" id="login-err" role="alert"></p>
+          </form>
+        </div>
+
+        <div class="ctl-main" id="ctl-main" hidden>
+          <div class="seg-group ctl-tabs" role="tablist" aria-label="手动控制分栏">
+            <button class="seg active" id="ctl-tab-manual" type="button" role="tab" aria-selected="true" aria-controls="ctl-pane-manual">手动控制</button>
+            <button class="seg" id="ctl-tab-sensors" type="button" role="tab" aria-selected="false" aria-controls="ctl-pane-sensors">传感器设置</button>
+            <button class="seg" id="ctl-tab-map" type="button" role="tab" aria-selected="false" aria-controls="ctl-pane-map">地图</button>
+          </div>
+
+          <div class="ctl-pane" id="ctl-pane-manual" role="tabpanel" aria-labelledby="ctl-tab-manual">
+          <article class="card pad-card" data-card>
+            <div class="pad">
+              <button id="pad-fwd" class="pad-key" type="button" aria-label="前进" disabled>↑</button>
+              <button id="pad-left" class="pad-key" type="button" aria-label="左转" disabled>←</button>
+              <button id="pad-right" class="pad-key" type="button" aria-label="右转" disabled>→</button>
+              <button id="pad-rev" class="pad-key" type="button" aria-label="后退" disabled>↓</button>
+            </div>
+            <button id="btn-estop" class="btn estop wide" type="button" disabled>停止</button>
+            <div class="ctl-row">
+              <button class="gear" type="button" data-v="0.8"><b>运动档</b><span>0.8 m/s</span></button>
+              <button class="gear" type="button" data-v="0.4"><b>巡航档</b><span>0.4 m/s</span></button>
+              <button class="gear active" type="button" data-v="0"><b>空档</b><span>0 m/s</span></button>
+            </div>
+            <div class="btn-row">
+              <button id="btn-motion-stop" class="btn estop" type="button">全局停止</button>
+              <button id="btn-motion-rearm" class="btn ghost" type="button">恢复</button>
+            </div>
+            <p class="kbd-hint" id="pad-hint">WASD / 方向键移动 · 空格急停</p>
+          </article>
+
+          <article class="card cam-card" data-card>
+            <h3>相机 <span class="st mono" id="cam-fps"></span></h3>
+            <div class="cam-wrap">
+              <canvas id="cam" width="640" height="360"></canvas>
+              <div class="radar-pip" aria-label="激光雷达画中画"><canvas id="radar"></canvas></div>
+            </div>
+            <div class="btn-row">
+              <button id="btn-guide" class="btn ghost" type="button">辅助线</button>
+              <button id="btn-snap" class="btn ghost" type="button">截图</button>
+            </div>
+          </article>
+          </div><!-- /ctl-pane-manual -->
+
+          <div class="ctl-pane" id="ctl-pane-sensors" role="tabpanel" aria-labelledby="ctl-tab-sensors" hidden>
+            <div class="sensor-zone">
+              <div class="sensor-cap">可重启</div>
+              <div class="sensor-grid">
+                <article class="card" data-card>
+                  <h3>超声波</h3>
+                  <div class="kv"><span>状态</span><b id="sn-us-st">—</b></div>
+                  <button id="btn-us-rearm" class="btn ghost wide" type="button">重启超声波</button>
+                </article>
+                <article class="card" data-card>
+                  <h3>相机</h3>
+                  <div class="kv"><span>状态</span><b id="sn-cam-st">—</b></div>
+                  <button id="btn-sn-cam" class="btn ghost wide" type="button">重启相机</button>
+                </article>
+                <article class="card" data-card>
+                  <h3>雷达</h3>
+                  <div class="kv"><span>状态</span><b id="sn-lidar-st">—</b></div>
+                  <button id="btn-sn-lidar" class="btn ghost wide" type="button">重启雷达</button>
+                </article>
+                <article class="card" data-card>
+                  <h3>底盘</h3>
+                  <div class="kv"><span>状态</span><b id="sn-ch-st">—</b></div>
+                  <button id="btn-sn-chassis" class="btn ghost wide" type="button">重启底盘</button>
+                </article>
+              </div>
+            </div>
+            <div class="sensor-zone">
+              <div class="sensor-cap">状态监测</div>
+              <div class="sensor-grid">
+                <article class="card" data-card>
+                  <h3>喇叭</h3>
+                  <div class="kv"><span>播放设备</span><b id="sn-spk-st">—</b></div>
+                  <div class="kv"><span>音量</span><b id="spk-vol-v" aria-hidden="true">—</b></div>
+                  <label class="visually-hidden" for="spk-vol">喇叭音量</label>
+                  <div class="spk-vol-box" id="spk-vol-box">
+                    <input id="spk-vol" type="range" min="0" max="100" step="1" value="70"
+                      aria-valuetext="—" disabled>
+                    <span id="spk-vol-fill" aria-hidden="true"></span>
+                  </div>
+                  <button id="btn-spk-test" class="btn ghost wide" type="button" disabled>测试声音</button>
+                </article>
+                <article class="card" data-card>
+                  <h3>矩阵麦克风</h3>
+                  <div class="kv"><span>采集设备</span><b id="sn-mic-st">—</b></div>
+                  <div class="kv"><span>录音</span><b class="mono" id="sn-mic-rec">未录音</b></div>
+                  <div class="btn-row">
+                    <button id="btn-mic-rec" class="btn ghost" type="button" disabled>开始录音</button>
+                    <button id="btn-mic-play" class="btn ghost" type="button" disabled>播放录音</button>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+
+          <div class="ctl-pane" id="ctl-pane-map" role="tabpanel" aria-labelledby="ctl-tab-map" hidden>
+            <div class="map-grid">
+              <article class="card map-card" data-card>
+                <div class="map-toolbar">
+                  <button id="m-nav" class="btn ghost" type="button">导航选点</button>
+                  <button id="m-way" class="btn ghost" type="button">录入航点</button>
+                  <button id="m-clear" class="btn ghost" type="button">清空</button>
+                  <span class="map-mode" id="map-hint" role="status"></span>
+                  <span class="spacer"></span>
+                  <button id="m-zout" class="btn ghost sq" type="button" aria-label="缩小">−</button>
+                  <button id="m-zin" class="btn ghost sq" type="button" aria-label="放大">+</button>
+                  <button id="m-fit" class="btn ghost sq" type="button" aria-label="复位视图">⌂</button>
+                </div>
+                <canvas id="map"></canvas>
+                <p class="map-note" id="map-age" role="status" hidden></p>
+              </article>
+              <aside class="map-side">
+                <article class="card" data-card>
+                  <h3>位姿</h3>
+                  <div class="kv"><span>x</span><b class="mono" id="mp-x">—</b></div>
+                  <div class="kv"><span>y</span><b class="mono" id="mp-y">—</b></div>
+                  <div class="kv"><span>θ</span><b class="mono" id="mp-th">—</b></div>
+                  <p class="map-note" id="mp-note" hidden>位姿不可用：TF 无数据</p>
+                  <button id="btn-reloc" class="btn ghost wide" type="button">重定位</button>
+                </article>
+                <article class="card" data-card>
+                  <h3>导航 <span class="st" id="nav-state">待命</span></h3>
+                  <div class="kv"><span>目标</span><b class="mono" id="nav-goal">—</b></div>
+                  <div class="btn-row">
+                    <button id="btn-nav-home" class="btn ghost" type="button">回场</button>
+                    <button id="btn-nav-cancel" class="btn ghost" type="button">取消导航</button>
+                  </div>
+                </article>
+                <article class="card" data-card>
+                  <h3>航点巡航 <span class="st" id="patrol-state">未启动</span></h3>
+                  <div class="kv"><span>航点</span><b id="wp-count">0</b></div>
+                  <ol class="wp-list mono" id="wp-list"></ol>
+                  <div class="patrol-detail">
+                    <div class="kv"><span>当前航点</span><b class="mono" id="patrol-wp">—</b></div>
+                    <div class="kv"><span>停止原因</span><b id="patrol-stop">—</b></div>
+                    <div class="kv"><span>锁停原因</span><b id="patrol-lock">—</b></div>
+                  </div>
+                  <div class="btn-row">
+                    <button id="btn-patrol-save" class="btn ghost" type="button">保存</button>
+                    <button id="btn-patrol-start" class="btn ghost" type="button">开始</button>
+                  </div>
+                  <p class="form-err" id="patrol-msg" role="status"></p>
+                </article>
+              </aside>
+            </div>
+          </div>
+        </div><!-- /ctl-main -->
+      </div>
+    </section>
+
+    <!-- ============ 日志（免登录） ============ -->
+    <section class="page" id="page-logs" aria-labelledby="page-title" inert>
+      <div class="page-inner">
+        <article class="card log-card" data-card>
+          <div class="map-toolbar log-toolbar">
+            <h3>控制帧 <span class="st" id="log-count">0</span></h3>
+            <span class="st mono" id="log-age"></span>
+            <span class="spacer"></span>
+            <div class="seg-group" role="group" aria-label="时间筛选">
+              <button class="seg" type="button" data-logt="today">今天</button>
+              <button class="seg" type="button" data-logt="7d">近 7 天</button>
+              <button class="seg" type="button" data-logt="30d">近 30 天</button>
+              <button class="seg active" type="button" data-logt="all">全部</button>
+            </div>
+            <select id="log-type" aria-label="数据类型筛选"></select>
+            <input id="log-search" type="search" placeholder="搜索…" aria-label="搜索日志">
+            <div class="more-wrap">
+              <button id="btn-log-more" class="btn ghost" type="button" aria-expanded="false">更多筛选</button>
+              <div class="popover" id="log-more-pop" hidden>
+                <b class="pop-title">方向</b>
+                <label class="check"><input type="radio" name="log-dir" value="" checked>全部</label>
+                <label class="check"><input type="radio" name="log-dir" value="rx">只看接收 rx</label>
+                <label class="check"><input type="radio" name="log-dir" value="tx">只看下发 tx</label>
+              </div>
+            </div>
+            <label class="check">自动<input type="checkbox" id="log-auto" checked></label>
+            <button id="btn-log-refresh" class="btn ghost" type="button">刷新</button>
+          </div>
+          <div id="log-err" hidden></div>
+          <ol class="log-list mono" id="log-list"></ol>
+        </article>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="/js/store.js"></script>
+<script src="/js/scheduler.js"></script>
+<script src="/js/ws.js"></script>
+<script src="/js/canvas-radar.js"></script>
+<script src="/js/canvas-map.js"></script>
+<script src="/js/spotlight.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>

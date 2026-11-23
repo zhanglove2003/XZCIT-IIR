@@ -1,0 +1,10 @@
+[Unit]
+Description=C50C boot scripts anti-zeroing guard (restore from golden on NUL)
+Before=opi-robot.service c50c-chassis.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/orangepi/c50c-bootguard.sh
+
+[Install]
+WantedBy=default.target

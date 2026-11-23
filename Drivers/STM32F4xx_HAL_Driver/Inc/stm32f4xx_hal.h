@@ -279,6 +279,30 @@ void HAL_DisableMemorySwappingBank(void);
   * @}
   */
 /* Private macros ------------------------------------------------------------*/
+/* 批次2：补 ATOMIC_SET_BIT/ATOMIC_CLEAR_BIT——本库 stm32f4xx_hal_uart.c（使用 60 处）
+ * 来自带该宏的较新 HAL 版本，而本树 stm32f4xx_hal.h 较旧未含定义，导致 GCC 14 下
+ * implicit-function-declaration 硬错误。此处按 ST 官方 F4 HAL "Common Utilities"
+ * 原文逐字补齐（寄存器读写前后关中断保护），仅新增宏、零行为改动；全树除
+ * hal_uart.c 外无使用者（grep 'define ATOMIC' 原为空）。 */
+#ifndef ATOMIC_SET_BIT
+#define ATOMIC_SET_BIT(REG, BIT)                                 \
+  do {                                                           \
+    uint32_t primask_bit = __get_PRIMASK();                      \
+    __disable_irq();                                             \
+    (REG) |= (BIT);                                              \
+    __set_PRIMASK(primask_bit);                                  \
+  } while(0)
+#endif
+
+#ifndef ATOMIC_CLEAR_BIT
+#define ATOMIC_CLEAR_BIT(REG, BIT)                               \
+  do {                                                           \
+    uint32_t primask_bit = __get_PRIMASK();                      \
+    __disable_irq();                                             \
+    (REG) &= ~(BIT);                                             \
+    __set_PRIMASK(primask_bit);                                  \
+  } while(0)
+#endif
 /* Private functions ---------------------------------------------------------*/
 /**
   * @}

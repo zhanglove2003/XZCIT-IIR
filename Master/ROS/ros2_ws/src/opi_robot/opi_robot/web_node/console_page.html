@@ -1,0 +1,2921 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231677ff'/%3E%3Crect x='8' y='10' width='16' height='9' rx='2' fill='%23fff'/%3E%3Ccircle cx='11' cy='23' r='2' fill='%23fff'/%3E%3Ccircle cx='21' cy='23' r='2' fill='%23fff'/%3E%3C/svg%3E">
+<title>小车控制台</title>
+<style>
+/* Antigravity / Linear (Dark) & Apple Notes (Light) High-Performance Design System */
+:root {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --card: #ffffff;
+  --card2: #f0f2f6;
+  --line: rgba(15, 23, 42, 0.08);
+  --line-strong: rgba(15, 23, 42, 0.16);
+  --text: #0f1115;
+  --dim: #5e6470;
+  --faint: #8c929e;
+  --acc: #0066cc;
+  --acc-soft: rgba(0, 102, 204, 0.09);
+  --ok: #16a34a;
+  --warn: #d97706;
+  --bad: #e11d48;
+  --idle: #c5c9d2;
+  --side: 196px;
+  --top: 50px;
+  --radius: 12px;
+  --fast: cubic-bezier(0.2, 0, 0, 1);
+  --shadow: 0 1px 2px rgba(9, 13, 20, 0.04);
+  --shadow-hover: 0 4px 12px rgba(9, 13, 20, 0.06);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #08090c;
+  --card: #101217;
+  --card2: #171a22;
+  --line: rgba(255, 255, 255, 0.075);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --text: #f3f4f6;
+  --dim: #8a909e;
+  --faint: #565c68;
+  --acc: #5e6ad2;
+  --acc-soft: rgba(94, 106, 210, 0.16);
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+  --idle: #3b3f4a;
+  --shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  --shadow-hover: inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+}
+[hidden] { display: none !important; }
+.app { display: flex; min-height: 100vh; }
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.nowrap { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- 状态指示点（零常驻动画开销，静态光环） ---- */
+.led {
+  width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--idle); display: inline-block;
+}
+.led.online { background: var(--ok); box-shadow: 0 0 0 2.5px rgba(34, 197, 94, 0.18); }
+.led.warn { background: var(--warn); box-shadow: 0 0 0 2.5px rgba(245, 158, 11, 0.2); }
+.led.bad { background: var(--bad); box-shadow: 0 0 0 2.5px rgba(239, 68, 68, 0.24); }
+.led.offline { background: var(--idle); }
+
+/* ---- 侧边栏 ---- */
+aside {
+  width: var(--side); flex: 0 0 var(--side); background: var(--card);
+  border-right: 1px solid var(--line); display: flex; flex-direction: column;
+  position: sticky; top: 0; height: 100vh;
+}
+.brand {
+  height: var(--top); display: flex; align-items: center; gap: 10px;
+  padding: 0 16px; border-bottom: 1px solid var(--line);
+}
+.brand .logo {
+  width: 20px; height: 20px; border-radius: 6px;
+  background: var(--text); color: var(--card);
+  display: grid; place-items: center; font-size: 11px; font-weight: 700;
+  letter-spacing: 0;
+  transition: transform .12s var(--fast);
+}
+.brand:hover .logo { transform: scale(1.06); }
+.brand b { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+nav { padding: 10px 8px; display: flex; flex-direction: column; gap: 3px; }
+.navitem {
+  display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px;
+  border-radius: 8px; color: var(--dim); cursor: pointer; user-select: none;
+  font-size: 13px; text-decoration: none; position: relative;
+  transition: background-color .1s var(--fast), color .1s var(--fast), transform .08s var(--fast);
+}
+.navitem::before {
+  content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px;
+  border-radius: 0 3px 3px 0; background: var(--acc);
+  transform: scaleY(0); opacity: 0;
+  transition: transform .14s var(--fast), opacity .12s var(--fast);
+}
+.navitem:hover { background: var(--card2); color: var(--text); }
+.navitem:active { transform: scale(0.985); }
+.navitem.active { background: var(--acc-soft); color: var(--text); font-weight: 500; }
+.navitem.active::before { transform: scaleY(1); opacity: 1; }
+.navitem .ico {
+  width: 15px; height: 15px; flex: 0 0 auto; opacity: .75;
+  transition: transform .12s var(--fast), opacity .12s var(--fast);
+}
+.navitem:hover .ico { transform: translateX(1.5px); opacity: 1; }
+.navitem.active .ico { opacity: 1; color: var(--acc); }
+.navitem .lbl { flex: 1 1 auto; }
+.navfoot {
+  margin-top: auto; padding: 12px 16px; border-top: 1px solid var(--line);
+  font-size: 11px; color: var(--faint); line-height: 1.85;
+  font-variant-numeric: tabular-nums;
+}
+.sidebar-collapsed aside { width: 58px; flex-basis: 58px; }
+.sidebar-collapsed .brand b, .sidebar-collapsed .navitem .lbl,
+.sidebar-collapsed .navitem .led, .sidebar-collapsed .navfoot { display: none; }
+.sidebar-collapsed .brand { justify-content: center; padding: 0; }
+.sidebar-collapsed .navitem { justify-content: center; padding: 0; }
+
+/* ---- 顶栏 ---- */
+.top {
+  height: var(--top); flex: 0 0 var(--top); background: var(--card);
+  border-bottom: 1px solid var(--line); display: flex; align-items: center;
+  gap: 10px; padding: 0 20px; position: sticky; top: 0; z-index: 5;
+}
+.top h1 { font-size: 14px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+.conn {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim);
+  padding: 3px 9px; border-radius: 999px; background: var(--card2); border: 1px solid var(--line);
+}
+.tag {
+  font-size: 11px; padding: 2px 8px; border-radius: 6px;
+  background: var(--card2); color: var(--dim); border: 1px solid var(--line);
+  font-weight: 500;
+}
+.tag.fake { color: var(--warn); border-color: rgba(245, 158, 11, 0.32); background: rgba(245, 158, 11, 0.1); }
+.spacer { flex: 1 1 auto; }
+.mnav { display: none; }
+.clock { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.icon-button, .theme-button {
+  height: 30px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card2); color: var(--text); cursor: pointer; font: inherit;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  transition: transform .08s var(--fast), border-color .1s var(--fast), background-color .1s var(--fast);
+}
+.icon-button:hover, .theme-button:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+.icon-button { width: 30px; font-size: 14px; }
+.theme-button { padding: 0 11px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.theme-button::before {
+  content: '◐'; font-size: 13px; color: var(--acc);
+  display: inline-block;
+}
+:root[data-theme="dark"] .theme-button::before { content: '☾'; }
+:root[data-theme="light"] .theme-button::before { content: '☀'; }
+.theme-notice { color: var(--dim); font-size: 11px; }
+.theme-notice:empty { display: none; }
+
+/* ---- 页面与卡片系统（纯 GPU 合成层微交互） ---- */
+.wrap { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+main { padding: 20px; max-width: 1440px; width: 100%; margin: 0 auto; }
+.page { display: none; }
+.page.active { display: block; }
+.grid { display: grid; gap: 12px; }
+.grid + .grid { margin-top: 12px; }
+.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.card {
+  position: relative;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px; min-width: 0;
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow);
+  transition: transform .12s var(--fast), border-color .12s var(--fast);
+}
+.card:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+.card h3 {
+  margin: 0 0 12px; font-size: 12px; font-weight: 500; color: var(--dim);
+  display: flex; align-items: center; gap: 7px; white-space: nowrap;
+}
+.card h3 .st { margin-left: auto; font-weight: 400; font-size: 11px; color: var(--faint); }
+.st.ok, b.ok { color: var(--ok); }
+.st.warn, b.warn { color: var(--warn); }
+.st.bad, b.bad { color: var(--bad); }
+.st.dim { color: var(--faint); }
+.val { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* ---- 按钮与全局交互反馈（80ms 极速响应） ---- */
+button {
+  font: inherit;
+  transition: transform .08s var(--fast), opacity .12s ease,
+              background-color .1s var(--fast), border-color .1s var(--fast);
+}
+button:active:not(:disabled) { transform: scale(.96); filter: brightness(1.06); }
+button.busy { opacity: .55; pointer-events: none; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--acc); outline-offset: 2px;
+}
+button.ghost {
+  background: var(--card2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 7px; height: 30px; padding: 0 11px; cursor: pointer; font-size: 12px;
+  font-weight: 500; display: inline-flex; align-items: center; justify-content: center;
+}
+button.ghost:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+button.ghost:active:not(:disabled) { transform: translateY(0) scale(.96); }
+button.ghost.warn {
+  border-color: var(--warn); color: var(--warn);
+  background: rgba(245, 158, 11, 0.1);
+}
+button.ghost:disabled { opacity: .42; cursor: not-allowed; }
+.estop {
+  background: var(--bad);
+  color: #fff; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 8px;
+  font-size: 13px; font-weight: 600; height: 32px; padding: 0 16px; cursor: pointer;
+}
+.estop:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.estop:disabled { opacity: .42; cursor: not-allowed; }
+
+/* ---- Toast ---- */
+#toast_host {
+  position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 9999; display: flex; flex-direction: column; gap: 8px; align-items: center;
+  pointer-events: none; max-width: min(92vw, 480px);
+}
+.toast {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--card);
+  color: var(--text); border: 1px solid var(--line-strong); border-radius: 10px;
+  padding: 9px 14px; font-size: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  opacity: 0; transform: translateY(-8px);
+  transition: opacity .15s var(--fast), transform .15s var(--fast);
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast button { pointer-events: auto; }
+.toast.bad { border-color: var(--bad); }
+.toast.ok { border-color: var(--ok); }
+
+/* ---- 概览页 ---- */
+.boot {
+  margin-bottom: 12px; padding: 12px 16px; border-radius: var(--radius);
+  border: 1px solid var(--line-strong); background: var(--card);
+  display: flex; align-items: center; gap: 14px;
+}
+.boot .cd { font-size: 24px; font-weight: 600; min-width: 2ch; color: var(--acc); }
+.boot .txt b { display: block; font-size: 13px; font-weight: 600; }
+.boot .txt span { font-size: 11px; color: var(--dim); }
+.boot .track { flex: 1 1 auto; height: 4px; border-radius: 2px; background: var(--card2); overflow: hidden; }
+.boot .track i { display: block; height: 100%; width: 0%; background: var(--acc); }
+
+.hero { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: auto; }
+.speed .big, .bat .pv, .device-value, .usbig b {
+  font-size: 29px; font-weight: 600; line-height: 1.08;
+  letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+}
+.speed .unit { font-size: 12px; color: var(--dim); margin-left: 4px; font-weight: 400; }
+.speed .sub, .sub { font-size: 12px; color: var(--faint); margin-top: 4px; }
+.mini { text-align: right; }
+.mini .k { font-size: 11px; color: var(--faint); }
+.mini .v { font-size: 15px; font-weight: 600; margin-top: 2px; }
+
+.bat { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: auto; }
+.bat .vv { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.batbar { height: 6px; border-radius: 999px; background: var(--card2); overflow: hidden; margin-top: 10px; }
+.batbar i { display: block; height: 100%; width: 0%; border-radius: 999px; background: var(--ok); }
+
+.task-main { margin-top: auto; }
+.task-main .device-value { font-size: 22px; display: block; }
+
+.ringrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: auto; }
+.ring {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 6px 4px; border-radius: 9px;
+  transition: background-color .12s var(--fast), transform .12s var(--fast);
+}
+.ring:hover { background: var(--card2); transform: translateY(-1.5px); }
+.ring svg { width: 56px; height: 56px; display: block; }
+.ring .val { font-size: 13px; font-weight: 600; fill: var(--text); }
+.ring .cap { font-size: 11px; color: var(--dim); font-weight: 500; }
+.ring .track { fill: none; stroke: var(--card2); stroke-width: 6.5; }
+.ring .bar { fill: none; stroke-width: 6.5; stroke-linecap: round; }
+
+.nodegrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin-top: auto; }
+.noderow {
+  display: flex; align-items: center; gap: 8px; font-size: 12px; min-width: 0;
+  padding: 4px 8px; margin: -4px -8px; border-radius: 6px;
+  transition: background-color .1s var(--fast);
+}
+.noderow:hover { background: var(--card2); }
+.noderow .nm { color: var(--text); }
+.noderow .txt { margin-left: auto; font-size: 11px; color: var(--faint); }
+
+.net-main { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+.netline { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.netline .nm { font-weight: 500; font-size: 14px; }
+.netline .dim { color: var(--dim); font-variant-numeric: tabular-nums; }
+.bars { display: inline-flex; align-items: flex-end; gap: 2.5px; height: 12px; }
+.bars i { width: 3px; background: var(--card2); border-radius: 1.5px; display: block; }
+.bars i.on { background: var(--ok); }
+
+/* ---- 登录卡片 ---- */
+.loginwrap { max-width: 340px; margin: 48px auto 0; }
+.login h2 { margin: 0 0 16px; font-size: 15px; font-weight: 600; }
+.field { display: block; margin-bottom: 12px; }
+.field span { display: block; font-size: 12px; color: var(--dim); margin-bottom: 5px; }
+.field input {
+  width: 100%; background: var(--card2); border: 1px solid var(--line);
+  color: var(--text); border-radius: 8px; padding: 9px 11px; font-size: 13px;
+  transition: border-color .12s var(--fast);
+}
+.field input:focus {
+  outline: none; border-color: var(--acc); background: var(--card);
+}
+.login button[type=submit] {
+  width: 100%; border: 1px solid transparent; border-radius: 8px; height: 36px;
+  background: var(--text); color: var(--card);
+  font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 4px;
+}
+.login button[type=submit]:hover { transform: translateY(-1px); }
+.err { color: var(--bad); font-size: 12px; min-height: 18px; margin-top: 8px; }
+.err:empty { display: none; }
+
+/* ---- 手动控制页 ---- */
+.ctl-layout {
+  display: grid; grid-template-columns: minmax(0, 1.55fr) 340px;
+  gap: 12px; align-items: start;
+}
+.ctl-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ctl-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.screen {
+  position: relative; background: #08090c; border-radius: var(--radius);
+  border: 1px solid var(--line); overflow: hidden; display: grid; place-items: center;
+}
+.screen img, .screen canvas { width: 100%; height: 100%; display: block; object-fit: contain; }
+.screen .empty { color: #71717a; font-size: 12px; position: absolute; }
+.screen .badge {
+  position: absolute; right: 10px; top: 44px; z-index: 3; font-size: 11px;
+  padding: 3px 8px; border-radius: 5px; pointer-events: none;
+  background: rgba(225, 29, 72, 0.92); color: #fff; display: none;
+}
+.driving-screen {
+  height: min(calc(100dvh - 180px), 66vw, 640px); min-height: 280px;
+  isolation: isolate;
+}
+.driving-screen > img { position: absolute; inset: 0; }
+.driving-screen > img:not([src]) { display: none; }
+/* GPU 合成画面辅助网格与水平线（免每帧 Canvas JPEG 重编码） */
+.cam-overlay {
+  position: absolute; inset: 0; pointer-events: none; z-index: 1;
+}
+.cam-overlay.grid-on {
+  background-image:
+    linear-gradient(to right, transparent 33.3%, rgba(255,255,255,0.18) 33.3%, rgba(255,255,255,0.18) calc(33.3% + 1px), transparent calc(33.3% + 1px), transparent 66.6%, rgba(255,255,255,0.18) 66.6%, rgba(255,255,255,0.18) calc(66.6% + 1px), transparent calc(66.6% + 1px)),
+    linear-gradient(to bottom, transparent 33.3%, rgba(255,255,255,0.18) 33.3%, rgba(255,255,255,0.18) calc(33.3% + 1px), transparent calc(33.3% + 1px), transparent 66.6%, rgba(255,255,255,0.18) 66.6%, rgba(255,255,255,0.18) calc(66.6% + 1px), transparent calc(66.6% + 1px));
+}
+.cam-hline {
+  position: absolute; left: 0; right: 0; top: 50%; height: 1.5px;
+  background: rgba(59, 130, 246, 0.95); display: block;
+}
+.hud-status {
+  position: absolute; top: 10px; left: 10px; right: 10px; z-index: 2;
+  display: flex; flex-wrap: wrap; gap: 6px 14px; width: fit-content; max-width: calc(100% - 20px);
+  padding: 6px 11px; color: #e4e4e7; font-size: 12px;
+  background: rgba(8, 9, 12, 0.86); border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px; pointer-events: none;
+}
+.hud-status > span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.hud-status b, .hud-status output { color: #fff; font-weight: 500; font-variant-numeric: tabular-nums; }
+.hud-status .ok { color: #4ade80; }
+.hud-status .warn { color: #fbbf24; }
+.hud-status .bad { color: #f87171; }
+
+/* 3D 机械键帽式方向控制键微交互 */
+.drive-turn, .drive-translation { position: absolute; bottom: 12px; z-index: 3; display: flex; gap: 7px; }
+.drive-turn { left: 12px; }
+.drive-translation { right: 12px; flex-direction: column; }
+.drive-turn button, .drive-translation button, .driving-screen .estop {
+  min-width: 50px; min-height: 50px; border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 11px; color: #fff; background: rgba(14, 17, 23, 0.88);
+  cursor: pointer;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  font-size: 18px; line-height: 1; touch-action: none; user-select: none;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  transition: transform .07s var(--fast), background-color .08s var(--fast), border-color .08s var(--fast);
+}
+.drive-turn button:hover:not(:disabled), .drive-translation button:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.42);
+  transform: translateY(-1px);
+}
+.drive-turn button span, .drive-translation button span { font-size: 10px; margin-top: 3px; color: #a1a1aa; }
+.drive-turn button.pressed, .drive-translation button.pressed {
+  background: var(--acc); border-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(2px) scale(0.96);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.drive-turn button.pressed span, .drive-translation button.pressed span { color: #fff; }
+.drive-turn button:disabled, .drive-translation button:disabled, .driving-screen .estop:disabled { opacity: .4; box-shadow: none; }
+.driving-screen .estop {
+  position: absolute; z-index: 3; left: 50%; bottom: 12px;
+  transform: translateX(-50%); min-width: 88px; height: 50px; padding: 0 16px;
+  font-size: 13px; background: rgba(225, 29, 72, 0.92);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.driving-screen .estop:hover:not(:disabled) { transform: translateX(-50%) translateY(-1px); }
+.driving-screen .estop:active:not(:disabled) { transform: translateX(-50%) translateY(2px) scale(0.96); }
+
+.driving-caption {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 8px 16px; padding: 8px 14px; background: var(--card);
+  border: 1px solid var(--line); border-radius: 9px;
+  color: var(--dim); font-size: 12px;
+}
+.cam-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 10px 16px; padding: 10px 14px; background: var(--card);
+  border: 1px solid var(--line); border-radius: var(--radius); font-size: 12px;
+}
+.bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; color: var(--dim); font-size: 12px; }
+.bar label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; cursor: pointer; }
+input[type=range] { width: 88px; accent-color: var(--acc); cursor: pointer; }
+input[type=checkbox] { accent-color: var(--acc); margin: 0; cursor: pointer; }
+.telemetry { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.telemetry b { color: var(--text); font-weight: 500; margin-left: 3px; }
+
+/* ---- 挡位与定时/巡航 ---- */
+.gearbox { display: flex; gap: 12px; align-items: stretch; width: 100%; }
+.gear-slider { position: relative; width: 32px; min-height: 112px; touch-action: none; cursor: grab; flex: 0 0 auto; }
+.gear-slider:active { cursor: grabbing; }
+.gear-track {
+  position: absolute; left: 50%; top: 6px; bottom: 6px; width: 6px;
+  transform: translateX(-50%); border-radius: 3px; background: var(--card2);
+}
+.gear-track i {
+  position: absolute; left: 0; right: 0; top: 0; height: 50%;
+  border-radius: 3px; background: var(--acc); opacity: .6;
+  transition: height .14s var(--fast);
+}
+.gear-thumb {
+  position: absolute; left: 50%; top: 0; width: 26px; height: 22px;
+  transform: translate(-50%, -50%); border-radius: 6px;
+  background: var(--text); color: var(--card);
+  display: grid; place-items: center; font-size: 10px; font-weight: 700;
+  transition: top .14s var(--fast), transform .1s var(--fast);
+}
+.gear-slider:hover .gear-thumb { transform: translate(-50%, -50%) scale(1.06); }
+.gear-side { display: flex; flex-direction: column; justify-content: space-between; flex: 1 1 auto; gap: 4px; }
+.gear-label {
+  display: flex; align-items: center; justify-content: space-between;
+  background: transparent; border: 1px solid var(--line); border-radius: 7px;
+  padding: 6px 10px; color: var(--dim); cursor: pointer; text-align: left;
+  transition: background-color .1s var(--fast), border-color .1s var(--fast), transform .08s var(--fast);
+}
+.gear-label:hover { background: var(--card2); border-color: var(--line-strong); transform: translateX(1px); }
+.gear-label b { font-size: 12px; color: var(--text); font-weight: 500; }
+.gear-label span { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.gear-label.active { border-color: var(--acc); background: var(--acc-soft); }
+.gear-label.active b { color: var(--acc); font-weight: 600; }
+
+.timerow {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  font-size: 12px; color: var(--dim); padding-top: 10px; margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.timerow:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+.timerow input[type=number], .timerow select {
+  height: 30px; background: var(--card2); border: 1px solid var(--line);
+  color: var(--text); border-radius: 6px; padding: 0 8px; font-size: 12px;
+}
+.timerow input[type=number]:hover, .timerow select:hover { border-color: var(--line-strong); }
+.timerow input[type=number] { width: 58px; }
+
+/* ---- 雷达点云 ---- */
+.radar-screen { aspect-ratio: 1; width: 100%; }
+.radar-screen #radar { position: absolute; inset: 0; }
+.radar-screen #minimap {
+  position: absolute; top: 8px; right: 8px; width: 76px; height: 76px;
+  border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.16);
+}
+.screen .legend {
+  position: absolute; right: 8px; bottom: 8px; display: flex; gap: 8px;
+  font-size: 10px; color: #d4d4d8; background: rgba(0, 0, 0, 0.72);
+  padding: 3px 8px; border-radius: 6px; pointer-events: none;
+}
+.legend i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 3px; }
+
+/* ---- 地图页 ---- */
+#map-login-slot .loginwrap { margin: 0 auto 12px; }
+.mapgrid { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 12px; align-items: start; }
+.mapstage {
+  position: relative; background: #0d1117;
+  border: 1px solid var(--line); border-radius: 9px; overflow: hidden;
+}
+#mapcanvas { display: block; width: 100%; height: 66vh; min-height: 400px; cursor: crosshair; }
+.maplegend {
+  position: absolute; left: 10px; bottom: 10px; display: flex; gap: 10px;
+  padding: 5px 10px; background: rgba(13, 17, 23, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 7px;
+  font-size: 11px; color: #e4e4e7;
+}
+.lg { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.lg-occ { background: #e6e9ef; }
+.lg-free { background: rgb(88 104 128); }
+.lg-unk { background: rgb(62 26 26); border: 1px solid rgba(255, 255, 255, 0.2); }
+.lg-pt { background: rgb(103 232 249); }
+.lg-robot { background: rgb(59 130 246); }
+.maptools { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); font-weight: 400; }
+.maptools input[type="range"] { width: 76px; vertical-align: middle; }
+.map-footer {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+  font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums;
+}
+.map-footer span { display: inline-flex; align-items: center; gap: 4px; }
+.map-footer b { color: var(--text); font-weight: 500; }
+
+.mapside { display: flex; flex-direction: column; gap: 12px; }
+.usbig { display: flex; align-items: baseline; gap: 4px; margin: 0 0 8px; }
+.usbig span { color: var(--dim); font-size: 12px; }
+.usbar { position: relative; height: 6px; border-radius: 999px; background: var(--card2); overflow: hidden; }
+.uszone { position: absolute; top: 0; bottom: 0; }
+#us_zone_stop { left: 0; width: 40%; background: rgba(239, 68, 68, 0.35); }
+#us_zone_rel { left: 40%; width: 10%; background: rgba(245, 158, 11, 0.35); }
+#us_barfill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--acc); }
+.uslegend { display: flex; justify-content: space-between; font-size: 10px; color: var(--faint); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.kvs { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+.kvs .row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--dim);
+  padding: 2px 6px; margin: -2px -6px; border-radius: 5px;
+}
+.kvs .row:hover { background: var(--card2); }
+.kvs .row b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; }
+.btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+.statusline { font-size: 11px; color: var(--dim); margin-top: 8px; line-height: 1.4; }
+.statusline:empty { display: none; }
+
+/* ---- 日志页 ---- */
+.logs { display: flex; flex-direction: column; }
+.logrow {
+  display: grid; grid-template-columns: 70px 56px 76px 1fr; gap: 10px;
+  padding: 7px 8px; border-bottom: 1px solid var(--line); border-radius: 6px;
+  font-size: 12px; align-items: baseline;
+}
+.logrow:hover { background: var(--card2); }
+.logrow:last-child { border-bottom: 0; }
+.logrow .ts { color: var(--faint); font-variant-numeric: tabular-nums; }
+.logrow .lv { font-size: 11px; color: var(--dim); font-weight: 500; }
+.logrow .src { color: var(--dim); white-space: nowrap; }
+.logrow .msg { color: var(--text); overflow-wrap: anywhere; }
+.logrow.warn .msg, .logrow.warn .lv { color: var(--warn); }
+.logrow.bad .msg, .logrow.bad .lv { color: var(--bad); }
+.logrow.good .lv { color: var(--ok); }
+.logempty { color: var(--faint); font-size: 12px; padding: 12px 4px; }
+.logtools { display: flex; gap: 10px; align-items: center; margin-left: auto; font-weight: 400; }
+
+/* ---- 响应式 ---- */
+@media (max-width: 1120px) {
+  .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .g3 > .card:first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 960px) {
+  .ctl-layout, .mapgrid { grid-template-columns: 1fr; }
+}
+@media (max-width: 820px) {
+  aside {
+    position: fixed; z-index: 8; top: 0; left: 0; width: 192px;
+    height: 100dvh; transform: translateX(-100%); visibility: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  }
+  .sidebar-open aside { transform: translateX(0); visibility: visible; }
+  .sidebar-open .top .icon-button { position: fixed; left: 200px; top: 10px; z-index: 9; }
+  .g4, .g3, .g2 { grid-template-columns: minmax(0, 1fr); }
+  .g3 > .card:first-child { grid-column: auto; }
+  main { padding: 12px; }
+  .clock { display: none; }
+}
+@media (max-width: 520px) {
+  .top .conn, .top .tag { display: none; }
+  .driving-screen { min-height: 220px; }
+}
+</style>
+</head>
+<body>
+<div id="toast_host" aria-live="polite"></div>
+<div class="app" id="app">
+
+  <aside id="sidebar" aria-label="主导航">
+    <div class="brand"><span class="logo">C</span><b>小车控制台</b></div>
+    <nav>
+      <a class="navitem" href="#/overview" data-page="overview">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+          <rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/>
+          <rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/>
+        </svg>
+        <span class="lbl">概览</span><i class="led" id="navled_overview"></i>
+      </a>
+      <a class="navitem" href="#/control" data-page="control">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M3 8h3l2-4 2 8 2-4h1"/>
+        </svg>
+        <span class="lbl">手动控制</span><i class="led" id="navled_control"></i>
+      </a>
+      <a class="navitem" href="#/map" data-page="map">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M2.5 4l3.5-1.5 4 1.5 3.5-1.5v9.5l-3.5 1.5-4-1.5-3.5 1.5z"/>
+        </svg>
+        <span class="lbl">地图</span><i class="led" id="map_led"></i>
+      </a>
+      <a class="navitem" href="#/logs" data-page="logs">
+        <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M3 3.5h10M3 8h10M3 12.5h6"/>
+        </svg>
+        <span class="lbl">日志</span><i class="led" id="navled_logs"></i>
+      </a>
+    </nav>
+    <div class="navfoot">
+      <div id="side_mode">模式 --</div>
+      <div id="side_proto">固件 --</div>
+      <div id="side_src">参数来源 --</div>
+    </div>
+  </aside>
+
+  <div class="wrap">
+    <div class="top">
+      <button class="icon-button" id="sidebar-toggle" type="button"
+        aria-controls="sidebar" aria-expanded="true" aria-label="收起侧栏">☰</button>
+      <h1 id="pageTitle">概览</h1>
+      <nav class="mnav" id="mnav">
+        <a class="mtab" href="#/overview" data-page="overview">概览</a>
+        <a class="mtab" href="#/control" data-page="control">手动控制</a>
+        <a class="mtab" href="#/map" data-page="map">地图</a>
+        <a class="mtab" href="#/logs" data-page="logs">日志</a>
+      </nav>
+      <span class="tag" id="mode">连接中</span>
+      <span class="spacer"></span>
+      <span class="conn"><i class="led" id="connLed"></i><span id="connText">未连接</span></span>
+      <span class="clock" id="clock">--</span>
+      <button class="theme-button" id="theme-toggle" type="button">主题：跟随系统</button>
+      <span class="theme-notice" id="theme-notice" role="status"></span>
+    </div>
+
+    <main>
+      <!-- ==================== 概览 ==================== -->
+      <section class="page" id="page-overview">
+        <div class="boot" id="boot" hidden>
+          <span class="cd num" id="boot_count">20</span>
+          <span class="txt"><b>开机初始化</b>
+            <span>静止等待 <span id="boot_hold">20</span>s</span></span>
+          <span class="track"><i id="boot_bar"></i></span>
+        </div>
+
+        <div class="grid g4">
+          <div class="card">
+            <h3><i class="led offline" id="ov_ch_led"></i>底盘
+              <span class="st" id="ov_ch_state">--</span></h3>
+            <div class="hero">
+              <div class="speed">
+                <span class="big num" id="ov_ch_vx">--</span><span class="unit">km/h</span>
+                <div class="sub nowrap" id="ov_ch_kmh">-- m/s</div>
+              </div>
+              <div class="mini">
+                <div class="k">里程</div>
+                <div class="v num" id="ov_ch_mile">--</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3><i class="led offline" id="ov_bat_led"></i>电池
+              <span class="st" id="ov_bat_state">--</span></h3>
+            <div class="bat">
+              <div class="pv num" id="ov_bat_pct">--</div>
+              <div class="vv nowrap" id="ov_bat_volt">电压 --</div>
+            </div>
+            <div class="batbar"><i id="ov_bat_bar"></i></div>
+          </div>
+
+          <div class="card">
+            <h3>超声波</h3>
+            <div class="hero">
+              <div class="device-value num" id="ov_ch_us">--</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3><i class="led offline" id="task_led"></i>任务
+              <span class="st" id="task_chip"></span></h3>
+            <div class="task-main">
+              <span class="device-value nowrap" id="task_text">无任务</span>
+              <div class="sub nowrap" id="task_sub"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid g3">
+          <div class="card">
+            <h3><i class="led offline" id="ov_host_led"></i>主机
+              <span class="st" id="ov_host_state">--</span></h3>
+            <div class="ringrow">
+              <div class="ring">
+                <svg viewBox="0 0 80 80">
+                  <circle class="track" cx="40" cy="40" r="32"/>
+                  <circle class="bar" id="ring_cpu" cx="40" cy="40" r="32"
+                    stroke="rgb(59 130 246)" transform="rotate(-90 40 40)"/>
+                  <text class="val num" id="ov_cpu" x="40" y="44" text-anchor="middle">--</text>
+                </svg>
+                <div class="cap">CPU</div>
+              </div>
+              <div class="ring">
+                <svg viewBox="0 0 80 80">
+                  <circle class="track" cx="40" cy="40" r="32"/>
+                  <circle class="bar" id="ring_mem" cx="40" cy="40" r="32"
+                    stroke="rgb(34 197 94)" transform="rotate(-90 40 40)"/>
+                  <text class="val num" id="ov_mem" x="40" y="44" text-anchor="middle">--</text>
+                </svg>
+                <div class="cap">内存</div>
+              </div>
+              <div class="ring">
+                <svg viewBox="0 0 80 80">
+                  <circle class="track" cx="40" cy="40" r="32"/>
+                  <circle class="bar" id="ring_disk" cx="40" cy="40" r="32"
+                    stroke="rgb(167 139 250)" transform="rotate(-90 40 40)"/>
+                  <text class="val num" id="ov_disk" x="40" y="44" text-anchor="middle">--</text>
+                </svg>
+                <div class="cap">磁盘</div>
+              </div>
+              <div class="ring">
+                <svg viewBox="0 0 80 80">
+                  <circle class="track" cx="40" cy="40" r="32"/>
+                  <circle class="bar" id="ring_temp" cx="40" cy="40" r="32"
+                    stroke="rgb(245 158 11)" transform="rotate(-90 40 40)"/>
+                  <text class="val num" id="ov_temp" x="40" y="44" text-anchor="middle">--</text>
+                </svg>
+                <div class="cap">温度</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3><i class="led offline" id="ov_node_led"></i>设备节点</h3>
+            <div class="nodegrid">
+              <div class="noderow"><i class="led offline" id="nd_cam"></i>
+                <span class="nm">摄像头</span><span class="txt" id="nd_cam_t"></span></div>
+              <div class="noderow"><i class="led offline" id="nd_lidar"></i>
+                <span class="nm">雷达</span><span class="txt" id="nd_lidar_t"></span></div>
+              <div class="noderow"><i class="led offline" id="nd_bridge"></i>
+                <span class="nm">底盘桥</span><span class="txt" id="nd_bridge_t"></span></div>
+              <div class="noderow"><i class="led offline" id="nd_chassis"></i>
+                <span class="nm">底盘数据</span><span class="txt" id="nd_chassis_t"></span></div>
+              <div class="noderow"><i class="led offline" id="nd_web"></i>
+                <span class="nm">网页服务</span><span class="txt" id="nd_web_t"></span></div>
+              <div class="noderow"><i class="led offline" id="nd_imu"></i>
+                <span class="nm">IMU</span><span class="txt" id="nd_imu_t"></span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3><i class="led offline" id="net_led"></i>网络
+              <span class="st" id="net_tag"></span></h3>
+            <div class="net-main">
+              <div class="netline">
+                <span class="nm" id="ov_net_ssid">--</span>
+                <span class="bars" id="ov_net_bars">
+                  <i style="height:4px"></i><i style="height:7px"></i>
+                  <i style="height:10px"></i><i style="height:12px"></i>
+                </span>
+              </div>
+              <div class="netline">
+                <span class="dim mono nowrap" id="ov_net_ip">--</span>
+                <span class="dim nowrap"><span id="ov_net_sig"></span> <span id="ov_net_band"></span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== 手动控制 ==================== -->
+      <section class="page" id="page-control">
+        <div id="control-login-slot">
+          <div class="loginwrap" id="manual-login">
+            <div class="card login">
+              <h2>控制台登录</h2>
+              <form id="manual-login-form">
+                <label class="field"><span>账号</span>
+                  <input id="manual-user" autocomplete="username" required></label>
+                <label class="field"><span>密码</span>
+                  <input id="manual-password" type="password" autocomplete="current-password" required></label>
+                <button type="submit">登录</button>
+              </form>
+              <div class="err" id="manual-login-status"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="manual-content" hidden>
+          <div class="ctl-layout">
+            <div class="ctl-main">
+              <div class="screen driving-screen" aria-label="实时摄像头画面及手动控制">
+                <img id="cam" alt="摄像头实时画面">
+                <div class="cam-overlay grid-on" id="cam_overlay"><i class="cam-hline" id="cam_hline"></i></div>
+                <div class="empty" id="cam_empty">等待画面…</div>
+                <div class="badge" id="cam_badge">信号中断，重连中…</div>
+                <div class="hud hud-status" id="hud_tl">
+                  <span><i class="led offline" id="ctl_camled"></i>画面 <b class="st" id="ctl_camstate">未连接</b></span>
+                  <span>雷达 <b class="st" id="scanstate">未连接</b></span>
+                  <span>电池 <b id="hud_bat">--</b></span>
+                  <span>档位 <output id="manual-throttle-out">巡航档</output></span>
+                </div>
+                <div class="drive-turn" aria-label="转向">
+                  <button id="pad-left" type="button" disabled aria-label="左转">←<span>左转</span></button>
+                  <button id="pad-right" type="button" disabled aria-label="右转">→<span>右转</span></button>
+                </div>
+                <button class="estop" id="manual-stop" type="button" disabled
+                  aria-label="紧急停车">紧急停车</button>
+                <div class="drive-translation" aria-label="前进与后退">
+                  <button id="pad-fwd" type="button" disabled aria-label="前进">↑<span>前进</span></button>
+                  <button id="pad-rev" type="button" disabled aria-label="后退">↓<span>后退</span></button>
+                </div>
+              </div>
+
+              <div class="driving-caption">
+                <span id="pad_hint">WASD 行驶 · 空格手刹 · 松键即停</span>
+                <span id="manual-status">就绪</span>
+                <span id="ctl_last"></span>
+              </div>
+
+              <div class="cam-bar">
+                <div class="bar">
+                  <label>水平线 <input type="range" id="hline" min="0" max="100" value="50">
+                    <span class="val" id="hlinev">50%</span></label>
+                  <span id="camover" hidden>水平线 50%</span>
+                  <label><input type="checkbox" id="grid" checked> 网格</label>
+                  <label><input type="checkbox" id="flip" checked> 翻转</label>
+                  <button class="ghost" id="snap" type="button">截图</button>
+                </div>
+                <div class="telemetry">
+                  <span>车速<b id="hud_vx">--</b></span>
+                  <span>里程<b id="hud_mile">--</b></span>
+                  <span>超声<b id="hud_us">--</b></span>
+                  <span>RTT<b id="hud_net">--</b></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="ctl-side">
+              <div class="card">
+                <h3>行驶控制</h3>
+                <div class="timerow">
+                  <div class="gearbox" id="gearbox">
+                    <div class="gear-slider" id="gear-slider">
+                      <div class="gear-track"><i id="gear-fill"></i></div>
+                      <div class="gear-thumb" id="gear-thumb">D</div>
+                    </div>
+                    <div class="gear-side">
+                      <button type="button" class="gear-label" data-v="0.8"><b>运动档</b><span>0.8 m/s</span></button>
+                      <button type="button" class="gear-label" data-v="0.4"><b>巡航档</b><span>0.4 m/s</span></button>
+                      <button type="button" class="gear-label" data-v="0"><b>空档</b><span>0.0 m/s</span></button>
+                    </div>
+                  </div>
+                  <input type="hidden" id="manual-throttle" value="0.4">
+                </div>
+                <div class="timerow">
+                  <label>定时 <input id="manual-duration" type="number" min="0.01" max="10" step="0.01" value="2"> s</label>
+                  <select id="manual-direction" aria-label="定时运行方向">
+                    <option value="forward">前进</option><option value="reverse">后退</option>
+                    <option value="left">左转</option><option value="right">右转</option>
+                  </select>
+                  <button id="manual-timed" class="ghost" type="button" disabled>定时运行</button>
+                </div>
+                <div class="timerow">
+                  <button id="cruise-start" class="ghost" type="button" disabled>自动巡航</button>
+                  <button id="cruise-stop" class="ghost" type="button" disabled>停车</button>
+                  <span class="st" id="cruise-state" style="margin-left:auto">未连接</span>
+                </div>
+              </div>
+
+              <div class="card">
+                <h3><i class="led offline" id="ctl_lidarled"></i>雷达点云</h3>
+                <div class="screen radar-screen">
+                  <canvas id="radar"></canvas>
+                  <canvas id="minimap" width="150" height="150" aria-label="雷达小地图"></canvas>
+                  <div class="legend">
+                    <span><i style="background:rgb(34 197 94)"></i>近</span>
+                    <span><i style="background:rgb(245 158 11)"></i>中</span>
+                    <span><i style="background:rgb(239 68 68)"></i>远</span>
+                    <span><i style="background:rgb(34 211 238)"></i>移动</span>
+                  </div>
+                </div>
+                <div class="bar" style="margin-top:10px;justify-content:space-between">
+                  <label>量程 <input type="range" id="range" min="1" max="12" value="6" step="0.5">
+                    <span class="val" id="rangev">6.0m</span></label>
+                  <label><input type="checkbox" id="auto" checked> 自适应</label>
+                  <button class="ghost" id="reset" type="button">复位</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== 地图 ==================== -->
+      <section class="page" id="page-map">
+        <div id="map-login-slot" hidden></div>
+        <div class="mapgrid">
+          <div class="card">
+            <h3>
+              <span class="st dim" id="map_state" style="margin-left:0">等待 /map</span>
+              <span class="maptools">
+                <label>视野 <input type="range" id="map_zoom" min="4" max="24"
+                  step="1" value="12"> <span class="val" id="map_zoomv">12m</span></label>
+                <button class="ghost" id="nav_mode" type="button">导航选点</button>
+                <button class="ghost" id="route_add" type="button">录入航点</button>
+                <button class="ghost" id="map-auth-toggle" type="button">登录</button>
+              </span>
+            </h3>
+            <div class="mapstage">
+              <canvas id="mapcanvas"></canvas>
+              <div class="maplegend">
+                <span><i class="lg lg-occ"></i>占用</span>
+                <span><i class="lg lg-free"></i>空闲</span>
+                <span><i class="lg lg-unk"></i>未知</span>
+                <span><i class="lg lg-pt"></i>点云</span>
+                <span><i class="lg lg-robot"></i>本车</span>
+              </div>
+            </div>
+            <div class="map-footer">
+              <span>位姿 X <b id="pose_x">--</b></span>
+              <span>Y <b id="pose_y">--</b></span>
+              <span>朝向 <b id="pose_th">--</b></span>
+              <span>定位 <b id="pose_src">等待 TF</b></span>
+              <span>点云 <b id="mp_scan_hz">--</b> · <b id="mp_scan_n">--</b></span>
+              <span>栅格 <b id="mp_map_size">--</b> · <b id="mp_map_age">--</b></span>
+            </div>
+          </div>
+
+          <div class="mapside">
+            <div class="card">
+              <h3>超声波 <span class="st dim" id="us_gate">无数据</span></h3>
+              <div class="usbig"><b id="us_big">--</b><span>m</span></div>
+              <div class="usbar">
+                <i id="us_barfill"></i>
+                <i class="uszone" id="us_zone_stop"></i>
+                <i class="uszone" id="us_zone_rel"></i>
+              </div>
+              <div class="uslegend"><span>0</span><span>0.4m</span><span>0.5m</span><span>1.0m</span></div>
+              <button class="ghost" id="us_rearm" type="button" style="margin-top:10px;width:100%">重新启动超声波</button>
+            </div>
+
+            <div class="card">
+              <h3>导航 <span class="st dim" id="nav_state">待命</span></h3>
+              <div class="kvs">
+                <div class="row"><span>目标</span><b id="nav_goal">--</b></div>
+                <div class="row"><span>剩余距离</span><b id="nav_dist">--</b></div>
+                <div class="row"><span>预计用时</span><b id="nav_eta">--</b></div>
+                <div class="row"><span>结果</span><b id="nav_result">--</b></div>
+              </div>
+              <button class="ghost" id="nav_cancel" type="button" style="margin-top:10px;width:100%">取消导航</button>
+            </div>
+
+            <div class="card">
+              <h3>航点巡航 <span class="st dim" id="patrol_state">未启动</span></h3>
+              <div class="kvs">
+                <div class="row"><span>地图标识</span><b id="patrol_map">--</b></div>
+                <div class="row"><span>航点</span><b id="patrol_points">0</b></div>
+                <div class="row"><span>当前航点</span><b id="patrol_waypoint">--</b></div>
+                <div class="row"><span>停车原因</span><b id="patrol_stop">--</b></div>
+                <div class="row"><span>许可</span><b id="patrol_license">--</b></div>
+                <div class="row"><span>运动门</span><b id="patrol_gate">--</b></div>
+                <div class="row"><span>全局锁停</span><b id="patrol_lock">--</b></div>
+                <div class="row"><span>恢复状态</span><b id="patrol_rearm_state">--</b></div>
+              </div>
+              <div class="btn-grid">
+                <button class="ghost" id="patrol_save" type="button">保存路线</button>
+                <button class="ghost" id="patrol_start" type="button">开始巡航</button>
+                <button class="estop" id="motion_stop" type="button">全局停止</button>
+                <button class="ghost" id="motion_rearm" type="button">恢复</button>
+              </div>
+              <div class="statusline" id="patrol_message"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== 日志 ==================== -->
+      <section class="page" id="page-logs">
+        <div class="card">
+          <h3>日志 <span class="st" id="log_count" style="margin-left:4px">0 条</span>
+            <span class="logtools">
+              <label style="font-size:12px;color:var(--dim);display:inline-flex;gap:5px;align-items:center">
+                <input type="checkbox" id="log_all"> 传感器明细</label>
+              <button class="ghost" id="log_clear" type="button">清空</button>
+            </span>
+          </h3>
+          <div class="logs" id="loglist">
+            <div class="logempty" id="logempty">暂无日志。</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+const _elCache = Object.create(null);
+const $ = (id) => {
+  const c = _elCache[id];
+  if (c && c.isConnected) return c;
+  const el = document.getElementById(id);
+  if (el) _elCache[id] = el;
+  return el;
+};
+const PAGES = ['overview', 'control', 'map', 'logs'];
+const TITLES = { overview: '概览', control: '手动控制', map: '地图', logs: '日志' };
+const TEXT = { ok: ['ok', '正常'], warn: ['warn', '警告'], bad: ['bad', '故障'],
+               dim: ['dim', '--'] };
+let ws, connected = false, everConnected = false;
+let lastRttMs = null, lastPongT = 0;        // RTT 探测（HUD「网络」行）
+let curPage = 'overview';
+let lastStatus = null;
+let srvEpoch = null;            // 服务端进程纪元（见 applyStatus 的重启自愈）
+const logRows = [];
+const MAX_LOGS = 400;
+let logPrev = {};
+
+/* ---- 主题与侧栏 ---- */
+const themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+let themePreference = 'system';
+try {
+  const savedTheme = localStorage.getItem('console_theme');
+  if (savedTheme === null || ['system', 'light', 'dark'].includes(savedTheme)) {
+    themePreference = savedTheme || 'system';
+  } else {
+    $('theme-notice').textContent = '主题设置无效，使用系统主题';
+  }
+} catch (error) {
+  $('theme-notice').textContent = '无法读取主题设置，本次使用系统主题';
+}
+function applyTheme() {
+  const effective = themePreference === 'system'
+    ? (themeMedia.matches ? 'dark' : 'light') : themePreference;
+  document.documentElement.dataset.theme = effective;
+  $('theme-toggle').textContent = '主题：' +
+    (themePreference === 'system' ? '跟随系统' : themePreference === 'dark' ? '深色' : '亮色');
+}
+$('theme-toggle').addEventListener('click', () => {
+  const effective = document.documentElement.dataset.theme || (themeMedia.matches ? 'dark' : 'light');
+  /* 每次点击立即在明/暗之间零延迟切换（亮↔暗） */
+  themePreference = effective === 'dark' ? 'light' : 'dark';
+  try {
+    localStorage.setItem('console_theme', themePreference);
+  } catch (error) {
+    $('theme-notice').textContent = '无法保存主题设置，仅本次有效';
+  }
+  applyTheme();
+});
+themeMedia.addEventListener('change', applyTheme);
+applyTheme();
+const sidebarMedia = window.matchMedia('(max-width: 820px)');
+function updateSidebarButton() {
+  const open = sidebarMedia.matches ? $('app').classList.contains('sidebar-open')
+    : !$('app').classList.contains('sidebar-collapsed');
+  $('sidebar-toggle').setAttribute('aria-expanded', String(open));
+  $('sidebar-toggle').setAttribute('aria-label', open ? '收起侧栏' : '展开侧栏');
+}
+$('sidebar-toggle').addEventListener('click', () => {
+  $('app').classList.toggle(sidebarMedia.matches ? 'sidebar-open' : 'sidebar-collapsed');
+  updateSidebarButton();
+});
+sidebarMedia.addEventListener('change', () => {
+  $('app').classList.remove('sidebar-collapsed', 'sidebar-open');
+  updateSidebarButton();
+});
+$('sidebar').addEventListener('click', (event) => {
+  if (sidebarMedia.matches && event.target.closest('.navitem')) {
+    $('app').classList.remove('sidebar-open');
+    updateSidebarButton();
+  }
+});
+updateSidebarButton();
+
+/* ---- 路由 ---- */
+function routeFromHash() {
+  const raw = (location.hash || '').replace(/^#\/?/, '');
+  return PAGES.indexOf(raw) >= 0 ? raw : 'overview';
+}
+function showPage(name) {
+  curPage = name;
+  for (const p of PAGES) $('page-' + p).classList.toggle('active', p === name);
+  for (const item of document.querySelectorAll('.navitem, .mtab')) {
+    const active = item.dataset.page === name;
+    item.classList.toggle('active', active);
+    if (active) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+  }
+  if (name === 'control') {
+    $('control-login-slot').appendChild($('manual-login'));
+  }
+  $('map-auth-toggle').hidden = manualAuthenticated;
+  $('pageTitle').textContent = TITLES[name] || name;
+  // 实时页需要视频连接；离开即停推（视频连接一并关闭）。
+  // 2026-11-15 起"看/开"分离：地图是只读页，免登录可看；控制页（驾驶）
+  // 仍需登录——摄像头也只推给已登录的控制页会话。
+  if (name === 'map') {
+    renderMap();
+    sendView('map');
+    startViewBeat();
+    openVideo();
+  } else if (name === 'control' && manualAuthenticated) {
+    if (lastCam) drawCam();
+    drawRadar();
+    drawMinimap();
+    startRadarTimer();
+    sendView(name);
+    startViewBeat();
+    openVideo();
+  } else {
+    closeVideo();
+    manualLeave();
+    stopViewBeat();
+    stopRadarTimer();
+    sendView('idle');
+    $('cam').removeAttribute('src');
+    $('cam_empty').style.display = '';
+    $('ctl_camstate').textContent = '已暂停';
+    $('ctl_camstate').className = 'st dim';
+  }
+  if (name === 'logs') renderLogs();
+}
+function onHashChange() {
+  if (!location.hash) { location.replace('#/overview'); return; }
+  showPage(routeFromHash());
+}
+window.addEventListener('hashchange', onHashChange);
+
+/* ---- 订阅心跳：每 1 秒告诉服务端"我还在控制页" ---- */
+const VIEW_BEAT_MS = 1000;
+/* ---- RTT 探测：每 5s 发 ping，回包算往返延迟并刷新 HUD。
+ * >8s 没回包按离线显示。阈值：>150ms 变黄（弱信号预警）、
+ * >400ms 变红（此时 /drive_safety 10Hz 授权流已不可靠，别开车）。 ---- */
+setInterval(() => {
+  const el = $('hud_net');
+  if (!el) return;
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ t: 'ping', ts: performance.now() }));
+  }
+  if (lastRttMs === null || Date.now() - lastPongT > 8000) {
+    el.textContent = connected ? '测量中' : '离线';
+    el.className = connected ? 'warn' : 'bad';
+    return;
+  }
+  el.textContent = lastRttMs + ' ms';
+  el.className = lastRttMs > 400 ? 'bad' : lastRttMs > 150 ? 'warn' : '';
+}, 5000);
+let viewBeatTimer = null;
+function sendView(view) {
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ t: 'view', page: view }));
+  }
+}
+function startViewBeat() {
+  stopViewBeat();
+  /* 实时页 = 控制页与地图页（2026-11-15）：心跳带上当前页名，
+     服务端据此保持手动会话。地图页免登录可看（"看/开"分离）。 */
+  viewBeatTimer = setInterval(
+    () => sendView(curPage === 'map' ? 'map' : 'control'), VIEW_BEAT_MS);
+}
+function stopViewBeat() {
+  if (viewBeatTimer) { clearInterval(viewBeatTimer); viewBeatTimer = null; }
+}
+
+/* ---- WebSocket ---- */
+function setConn(on) {
+  connected = on;
+  $('connLed').className = 'led ' + (on ? 'online' : 'offline');
+  $('connText').textContent = on ? '已连接' : '未连接';
+}
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(proto + '://' + location.host + '/ws');
+  ws.onopen = () => {
+    everConnected = true;
+    setConn(true);
+    sendView('idle');
+    startMotionLicense();                 // [许可] 100ms 心跳
+  };
+  ws.onclose = () => {
+    stopMotionLicense();                  // 断开即停发许可：服务端 350ms 判失效
+    motionSeq += 1;                       // 序号跨重连只进不退（防被当重放）
+    manualLeave();
+    setConn(false);
+    hudScanStatus = null;
+    hudScanCount = null;
+    $('hud_bat').textContent = '--';
+    $('hud_bat').className = '';
+    $('ctl_camstate').textContent = '未连接';
+    $('ctl_camstate').className = 'st dim';
+    setLed('ctl_camled', 'offline');
+    renderHudScan();
+    $('mode').textContent = '离线';
+    setTimeout(connect, 800);
+  };
+  ws.onerror = () => { try { ws.close(); } catch (e) {} };
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.t === 'manual_auth') {
+      $('manual-password').value = '';
+      // 登录成功与当前在不在控制页无关：先记住身份，再按页面刷新
+      if (m.ok) {
+        manualAuthenticated = true;
+        $('manual-login-status').textContent = '';
+        $('manual-login').hidden = true;
+        $('manual-content').hidden = false;
+      }
+      if (m.ok && curPage === 'control') {
+        updatePad();
+        showPage('control');
+      } else if (m.ok && curPage === 'map') {
+        $('map-auth-toggle').hidden = true;
+        $('map-login-slot').hidden = true;
+      } else if (!m.ok) {
+        $('manual-login-status').textContent = '登录失败，账号或密码不正确。';
+      }
+    } else if (m.t === 'manual_error') {
+      manualClear();
+      $('manual-status').textContent = m.message;
+      $('manual-login-status').textContent = m.message;
+      showToast(m.message, 'bad');   /* 全局可见：出错页签可能不在当前页 */
+    } else if (m.t === 'ultrasonic_status') {
+      /* [2026-11-19] rearm 回执：此前前端无此分支，成功时零反馈。 */
+      const rb = $('us_rearm');
+      if (rb) rb.classList.remove('busy');
+      showToast(m.message || (m.ok ? '已请求重新启动超声波' : '请求失败'),
+                m.ok ? 'ok' : 'bad');
+    } else if (m.t === 'pong') {
+      /* RTT 探测回包：渲染到 HUD「网络」行。弱信号（-79dBm 实测）时
+         延迟秒级、丢包高——开车前先看这行，别等安全门把命令拒了才发现。 */
+      lastRttMs = Math.max(0, Math.round(performance.now() - m.ts));
+      lastPongT = Date.now();
+    } else if (m.t === 'manual_started') {
+      /* 回执只说明"网页服务收到了命令"（到达服务层）；车辆是否执行
+         以现场为准，不能把这条回执当作 STM32 已执行。 */
+      if (manualActive && m.id === manualId)
+        $('manual-status').textContent = '命令已发送；车辆是否执行以现场为准。';
+    } else if (m.t === 'status') {
+      applyStatus(m);
+      applyCruise(m.cruise);
+      if (m.nav) applyNav(m.nav);          // [阶段 D] 点图导航状态
+      if (m.patrol) applyPatrol(m.patrol);  // [巡航] 巡航/许可/锁停状态
+    } else if (m.t === 'nav_status') {
+      applyNav(m);                          // 目标回执/取消回执即时反馈
+    } else if (m.t === 'patrol_status') {
+      applyPatrol(m);                       // [巡航] 实时帧与操作回执
+    } else if (m.t === 'motion_clock') {
+      onMotionClock(m);                     // [许可] 时钟校准
+    } else if (m.t === 'motion_license_session') {
+      motionClaimSession(m.session);        // [许可] 服务端告知本页该用哪个会话
+    } else if (m.t === 'motion_license_nak') {
+      /* 许可被拒（重放/旧会话/过期）。旧会话停止送许可后服务端会让新页面
+         接管；这里按批准结果换会话号（序号从 0 重来），而不是一直拿被拒的
+         号码硬发——否则恢复（rearm）永远拿不到有效许可。 */
+      onLicenseNak(m);
+    }
+  };
+}
+
+/* ---- 视频连接：图像与点云走独立 WebSocket（2026-11-14 控制与视频分离）。
+   控制消息与停车不再和 70 KB 的图像帧排队；慢客户端由服务端限帧降级
+   断开，这里自动重连；离开控制页即关闭。 ---- */
+let videoWs = null, videoRetry = null;
+let hudScanStatus = null, hudScanCount = null;
+function renderHudScan() {
+  let label, style = 'dim';
+  if (!connected || hudScanStatus === null) label = '等待状态';
+  else if (!videoWs || videoWs.readyState !== 1) label = '点云连接中断';
+  else if (hudScanStatus === 'stale') { label = '雷达数据过期或诊断异常'; style = 'warn'; }
+  else if (hudScanStatus !== 'fresh') label = '无雷达数据';
+  else if (hudScanCount === null) label = '等待点云';
+  else if (hudScanCount > 0) { label = '最近收到 · ' + hudScanCount + ' 点'; style = 'ok'; }
+  else { label = '最近收到 · 无有效点'; style = 'warn'; }
+  $('scanstate').textContent = label;
+  $('scanstate').className = 'st ' + style;
+}
+function openVideo() {
+  if (videoWs && videoWs.readyState <= 1) return;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  videoWs = new WebSocket(proto + '://' + location.host + '/ws/video');
+  videoWs.onopen = () => renderHudScan();
+  videoWs.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.t === 'img') {
+      onImage(m);
+    } else if (m.t === 'scan') {
+      if (curPage === 'control') {
+        updateScan(m);
+        drawRadar();
+      } else if (curPage === 'map') {
+        updateScan(m);
+        renderMap();
+      }
+      if (connected && hudScanStatus === 'fresh') hudScanCount = m.n;
+      renderHudScan();
+    } else if (m.t === 'map') {
+      /* [C50C 2026-11-15] 占据栅格 + 位姿（1Hz、seq 变化才推） */
+      onMap(m);
+    } else if (m.t === 'pose') {
+      /* 静态地图模式下由服务端 5Hz 单独推实时位姿 */
+      mapPose = m.pose || null;
+      mapPoseAge = m.pose_age;
+      if (mapGrid && typeof m.map_age === 'number') mapGrid.age = m.map_age;
+      if (curPage === 'map') renderMap();
+    }
+  };
+  videoWs.onclose = () => {
+    videoWs = null;
+    hudScanCount = null;
+    renderHudScan();
+    setLed('map_led', 'offline');
+    if (curPage === 'control' || curPage === 'map')
+      videoRetry = setTimeout(openVideo, 1000);
+  };
+}
+function closeVideo() {
+  if (videoRetry) { clearTimeout(videoRetry); videoRetry = null; }
+  if (videoWs) { try { videoWs.close(); } catch (e) {} videoWs = null; }
+  hudScanCount = null;
+  renderHudScan();
+}
+
+/* ---- 地图页（2026-11-15）：SLAM 占据栅格 + 点云 + 位姿 ----
+ * 栅格帧（map）走视频连接，zlib+base64 编码、浏览器 DecompressionStream
+ * 原生解压；位姿与栅格同帧携带。点云复用 scan 帧的冻结数组 cloud[]：
+ * 下标 i 对应方位角 (i/2)°（0=车头，+90=左，REP-103），服务端 on_scan
+ * 已按 LaserScan 数学角填入。世界系画图统一用 W()：画布 y 向下，
+ * y 取反；栅格图行序翻转一次即可按世界坐标直绘。 */
+let mapGrid = null, mapPose = null, mapPoseAge = null;
+/* [2026-11-19 14:35 校准] 车头朝西（13:15 用户确认，车辆静止）显示为
+   地图正左：map→base_link yaw=−3.8084°，MAP_VIEW_ROTATION = π − theta。 */
+const MAP_VIEW_ROTATION = Math.PI + 0.066469361781153;
+/* [C50C 阶段 D 2026-11-16] 点图导航：navMode=选点模式开/关；navPick=当前
+   预选目标（map 系 {x,y}）；navSt=服务端 nav 块（state/goal/feedback）。 */
+let navMode = false, navPick = null, navSt = null;
+/* [巡航] 航点录入与状态。只缓存服务端给的 patrol 状态，不在前端判断安全。 */
+let routeAdd = false, routeDraft = [], patrolSt = null;
+const mapOff = document.createElement('canvas');
+async function onMap(m) {
+  try {
+    const bytes = Uint8Array.from(atob(m.data), (ch) => ch.charCodeAt(0));
+    const ds = new DecompressionStream('deflate');
+    const buf = await new Response(
+      new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
+    mapGrid = { w: m.w, h: m.h, res: m.res, ox: m.ox, oy: m.oy,
+                data: new Uint8Array(buf), seq: m.seq, age: m.age };
+    mapPose = m.pose || null;
+    mapPoseAge = m.pose_age;
+    setLed('map_led', 'online');
+    if (curPage === 'map') renderMap();
+  } catch (e) { /* 解压失败：等下一帧（seq 变化会重推） */ }
+}
+function renderMap() {
+  const cv = $('mapcanvas');
+  if (!cv) return;
+  const dpr = window.devicePixelRatio || 1;
+  const cw = cv.clientWidth, chh = cv.clientHeight;
+  if (!cw || !chh) return;
+  if (cv.width !== Math.round(cw * dpr) || cv.height !== Math.round(chh * dpr)) {
+    cv.width = Math.round(cw * dpr);
+    cv.height = Math.round(chh * dpr);
+  }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = 'rgb(13 17 23)';
+  ctx.fillRect(0, 0, cw, chh);
+  const viewM = parseFloat($('map_zoom').value);
+  const s = cw / viewM;                       // px / m
+  const cx = cw / 2, cy = chh / 2;
+  const havePose = !!(mapPose && mapPoseAge !== null && mapPoseAge < 1.5);
+  let px = 0, py = 0;
+  if (havePose) { px = mapPose.x; py = mapPose.y; }
+  else if (mapGrid) {
+    px = mapGrid.ox + mapGrid.w * mapGrid.res / 2;
+    py = mapGrid.oy + mapGrid.h * mapGrid.res / 2;
+  }
+  /* 校准显示方向。栅格、点云、箭头共用世界坐标到屏幕的变换。 */
+  const R0 = MAP_VIEW_ROTATION, cR = Math.cos(R0), sR = Math.sin(R0);
+  const W = (x, y) => [
+    cx + ((x - px) * cR - (y - py) * sR) * s,
+    cy - ((x - px) * sR + (y - py) * cR) * s];
+
+  /* 世界坐标 1m 网格线 */
+  ctx.strokeStyle = 'rgb(255 255 255 /.05)';
+  ctx.lineWidth = 1;
+  const gx0 = Math.floor(px - viewM / 2), gx1 = Math.ceil(px + viewM / 2);
+  const gy0 = Math.floor(py - chh / s / 2), gy1 = Math.ceil(py + chh / s / 2);
+  ctx.beginPath();
+  for (let gx = gx0; gx <= gx1; gx++) {
+    const [ax, ay] = W(gx, gy0), [bx, by] = W(gx, gy1);
+    ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+  }
+  for (let gy = gy0; gy <= gy1; gy++) {
+    const [ax, ay] = W(gx0, gy), [bx, by] = W(gx1, gy);
+    ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+  }
+  ctx.stroke();
+
+  /* 占据栅格：OccupancyGrid 第 0 行是世界 y 最小行 → 预翻进行序（仅在栅格数据变更时重算 ImageData） */
+  if (mapGrid) {
+    if (mapOff.width !== mapGrid.w || mapOff.height !== mapGrid.h
+        || mapOff._data !== mapGrid.data) {
+      mapOff.width = mapGrid.w;
+      mapOff.height = mapGrid.h;
+      mapOff._data = mapGrid.data;
+      const octx = mapOff.getContext('2d');
+      const img = octx.createImageData(mapGrid.w, mapGrid.h);
+      const d = img.data, g = mapGrid.data;
+      for (let i = 0; i < g.length; i++) {
+        const o = ((mapGrid.h - 1 - Math.floor(i / mapGrid.w)) * mapGrid.w
+                   + i % mapGrid.w) * 4, v = g[i];
+        if (v === 255) {
+          /* 未知：暗红——不可导航，点了会被规划器拒绝 */
+          d[o] = 62; d[o+1] = 26; d[o+2] = 26;
+        } else if (v >= 50) {
+          d[o] = 230; d[o+1] = 233; d[o+2] = 239;   // 占用：白
+        } else {
+          /* 空闲（可走地面）：中灰蓝，明显亮于未知区 */
+          d[o] = 88; d[o+1] = 104; d[o+2] = 128;
+        }
+        d[o+3] = 255;
+      }
+      octx.putImageData(img, 0, 0);
+    }
+    const [mx, my] = W(mapGrid.ox, mapGrid.oy + mapGrid.h * mapGrid.res);
+    ctx.imageSmoothingEnabled = false;
+    /* 栅格贴图与世界坐标使用相同的显示旋转。 */
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.rotate(-R0);
+    ctx.drawImage(mapOff, 0, 0,
+      mapGrid.w * mapGrid.res * s, mapGrid.h * mapGrid.res * s);
+    ctx.restore();
+    ctx.imageSmoothingEnabled = true;
+  }
+
+  /* 点云：base_link 极坐标 → map 系（雷达外参 x=+0.08，与静态 TF 一致） */
+  if (havePose && cloud.length === POLAR) {
+    const pth = mapPose.th, cth = Math.cos(pth), sth = Math.sin(pth);
+    ctx.fillStyle = 'rgb(103 232 249 /.9)';
+    for (let i = 0; i < POLAR; i++) {
+      const r = cloud[i];
+      if (!(r > 0)) continue;
+      const th = (i / 2) * Math.PI / 180;
+      const bx = 0.08 + r * Math.cos(th), by = r * Math.sin(th);
+      const [sx, sy] = W(px + bx * cth - by * sth,
+                         py + bx * sth + by * cth);
+      ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+    }
+  }
+
+  /* 本车：箭头三顶点全部经 W() 变换（显示旋转无关化）：
+     尖 = P+0.45h，两翼 = P−0.18h ± 0.22·perp（h=航向，perp=左向） */
+  if (havePose) {
+    const th = mapPose.th, c = Math.cos(th), sn = Math.sin(th);
+    const [hx, hy] = W(px, py);
+    const [tx, ty] = W(px + 0.45 * c, py + 0.45 * sn);
+    const [lx, ly] = W(px - 0.18 * c - 0.22 * sn,
+                       py - 0.18 * sn + 0.22 * c);
+    const [rx, ry] = W(px - 0.18 * c + 0.22 * sn,
+                       py - 0.18 * sn - 0.22 * c);
+    ctx.fillStyle = 'rgb(59 130 246)';
+    ctx.beginPath();
+    ctx.moveTo(tx, ty); ctx.lineTo(lx, ly); ctx.lineTo(rx, ry);
+    ctx.closePath();
+    ctx.fill();
+    /* 1m 距离环 */
+    ctx.strokeStyle = 'rgb(59 130 246 /.25)';
+    ctx.beginPath();
+    ctx.arc(hx, hy, s, 0, Math.PI * 2);
+    ctx.stroke();
+    /* 罗盘标注：屏幕上方即"北"（建模起始车头方向） */
+    ctx.fillStyle = 'rgb(154 164 178 /.9)';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('北', cx, 16);
+    ctx.textAlign = 'start';
+  } else {
+    ctx.fillStyle = 'rgb(245 158 11)';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('等待定位：SLAM TF（map→base_link）未就绪', 12, 22);
+  }
+
+  /* [C50C 阶段 D 2026-11-16] 导航目标：预选点（虚线圈）与已发目标
+     （旗杆+旗）。世界系坐标走 W()，旗杆高 0.4m。 */
+  if (navPick) {
+    const [qx, qy] = W(navPick.x, navPick.y);
+    ctx.strokeStyle = 'rgb(245 158 11)';
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.arc(qx, qy, Math.max(6, s * 0.15), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  if (navSt && navSt.goal && (navSt.state === 'active' || navSt.state === 'sending')) {
+    const [gx, gy] = W(navSt.goal.x, navSt.goal.y);
+    ctx.strokeStyle = 'rgb(34 197 94)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(gx, gy); ctx.lineTo(gx, gy - s * 0.4);
+    ctx.stroke();
+    ctx.fillStyle = 'rgb(34 197 94)';
+    ctx.beginPath();
+    ctx.moveTo(gx, gy - s * 0.4);
+    ctx.lineTo(gx + s * 0.22, gy - s * 0.32);
+    ctx.lineTo(gx, gy - s * 0.24);
+    ctx.closePath();
+    ctx.fill();
+    ctx.lineWidth = 1;
+  }
+
+  /* [巡航] 航点草稿与已保存巡航闭环路线可视化 */
+  if (routeDraft.length > 0) {
+    const isSaved = !!(patrolSt && patrolSt.route && !routeAdd);
+    const activeIdx = (patrolSt && patrolSt.status === 'running') ? patrolSt.index : -1;
+    if (routeDraft.length >= 2) {
+      ctx.save();
+      ctx.strokeStyle = isSaved ? 'rgba(16, 185, 129, 0.85)' : 'rgba(245, 158, 11, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      for (let i = 0; i < routeDraft.length; i++) {
+        const [wx, wy] = W(routeDraft[i].x, routeDraft[i].y);
+        if (i === 0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
+      }
+      const [fx, fy] = W(routeDraft[0].x, routeDraft[0].y);
+      ctx.lineTo(fx, fy);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < routeDraft.length; i++) {
+      const [wx, wy] = W(routeDraft[i].x, routeDraft[i].y);
+      const isCur = (i === activeIdx);
+      ctx.fillStyle = isCur ? 'rgb(59 130 246)' : (isSaved ? 'rgb(16 185 129)' : 'rgb(245 158 11)');
+      ctx.beginPath();
+      ctx.arc(wx, wy, isCur ? 11 : 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = '#0d1117';
+      ctx.fillText(String(i + 1), wx, wy + 0.5);
+    }
+    ctx.restore();
+  }
+
+  /* 状态行 */
+  const st = $('map_state');
+  if (mapGrid) {
+    st.textContent = '栅格 ' + mapGrid.w + '×' + mapGrid.h + ' · '
+      + mapGrid.res.toFixed(2) + 'm/格 · 更新 '
+      + (typeof mapGrid.age === 'number' ? mapGrid.age.toFixed(1) + 's 前' : '--');
+    st.className = 'st ' + (mapGrid.age < 3 ? 'ok' : 'warn');
+    $('mp_map_size').textContent =
+      (mapGrid.w * mapGrid.res).toFixed(1) + '×'
+      + (mapGrid.h * mapGrid.res).toFixed(1) + ' m';
+    $('mp_map_age').textContent = typeof mapGrid.age === 'number'
+      ? mapGrid.age.toFixed(1) + ' s 前' : '--';
+  } else {
+    st.textContent = '等待 /map（SLAM 未发布）';
+    st.className = 'st dim';
+    $('mp_map_size').textContent = '--';
+    $('mp_map_age').textContent = '--';
+  }
+  $('pose_x').textContent = havePose ? mapPose.x.toFixed(2) + ' m' : '--';
+  $('pose_y').textContent = havePose ? mapPose.y.toFixed(2) + ' m' : '--';
+  $('pose_th').textContent = havePose
+    ? (mapPose.th * 180 / Math.PI).toFixed(0) + '°' : '--';
+  const src = $('pose_src');
+  src.textContent = havePose ? 'TF map→base_link' : '等待 SLAM';
+  src.className = havePose ? 'st ok' : 'st warn';
+}
+$('map_zoom').oninput = () => {
+  $('map_zoomv').textContent = $('map_zoom').value + 'm';
+  if (curPage === 'map') renderMap();
+};
+
+/* ---- [C50C 阶段 D 2026-11-16] 点图导航 ----
+ * 点击屏幕坐标 → 反变换世界坐标（W() 的逆）。
+ * 发送 {t:'nav_goal', x, y}，朝向由服务端保持当前车头（直行过去）。
+ * nav_status 状态帧由服务端 5Hz 推（status 帧 nav 块）。 */
+function screenToMap(sx, sy) {
+  if (!mapPose || mapPoseAge === null || mapPoseAge >= 1.5) return null;
+  const cv = $('mapcanvas');
+  const rect = cv.getBoundingClientRect();
+  const cw = rect.width, chh = rect.height;
+  const viewM = parseFloat($('map_zoom').value);
+  const s = cw / viewM;
+  const cx = cw / 2, cy = chh / 2;
+  const R0 = MAP_VIEW_ROTATION, cR = Math.cos(R0), sR = Math.sin(R0);
+  // W(x,y)=[cx+((x-px)cR-(y-py)sR)s, cy-((x-px)sR+(y-py)cR)s]
+  // 逆变换：u=(sx-cx)/s, v=-(sy-cy)/s → x=px+u·cR+v·sR, y=py-u·sR+v·cR
+  const u = (sx - cx) / s, v = -(sy - cy) / s;
+  return { x: mapPose.x + u * cR + v * sR,
+           y: mapPose.y - u * sR + v * cR };
+}
+
+$('mapcanvas').addEventListener('click', (ev) => {
+  if (routeAdd) {
+    /* [巡航] 航点录入：只累积坐标，不发任何消息；保存由按钮发。 */
+    const rect = $('mapcanvas').getBoundingClientRect();
+    const rp = screenToMap(ev.clientX - rect.left, ev.clientY - rect.top);
+    if (!rp) {
+      $('patrol_message').textContent = '没有定位，无法录入航点';
+      showToast('没有定位，无法录入航点', 'bad');
+      return;
+    }
+    if (routeDraft.length > 0) {
+      const prev = routeDraft[routeDraft.length - 1];
+      if (Math.hypot(rp.x - prev.x, rp.y - prev.y) < 0.30) {
+        $('patrol_message').textContent = '与上一个航点过近（<0.30 m），请点远一点的位置';
+        showToast('与上一个航点过近（<0.30 m）', 'warn');
+        return;
+      }
+    }
+    routeDraft.push(rp);
+    const tip = '已录入 ' + routeDraft.length + ' 个航点（未保存）';
+    $('patrol_message').textContent = tip;
+    showToast(tip, 'ok');
+    renderMap();
+    return;
+  }
+  if (!navMode) return;
+  const rect = $('mapcanvas').getBoundingClientRect();
+  const p = screenToMap(ev.clientX - rect.left, ev.clientY - rect.top);
+  if (!p) {
+    $('nav_result').textContent = '没有定位，无法选点';
+    return;
+  }
+  if (!navPick) {
+    navPick = p;                                  // 第一次点：预选
+    renderMap();
+    return;
+  }
+  // 第二次点同一点附近（<0.3m）：确认发送
+  const dx = p.x - navPick.x, dy = p.y - navPick.y;
+  if (dx * dx + dy * dy < 0.09) {
+    const goal = navPick;
+    navPick = null;
+    navMode = false;
+    $('nav_mode').textContent = '导航选点';
+    $('nav_mode').classList.remove('warn');
+    $('nav_result').textContent = '发送中…';
+    ws.send(JSON.stringify({ t: 'nav_goal', x: goal.x, y: goal.y }));
+  } else {
+    navPick = p;                                  // 改选别处
+    renderMap();
+  }
+});
+
+$('map-auth-toggle').addEventListener('click', () => {
+  $('map-login-slot').appendChild($('manual-login'));
+  $('map-login-slot').hidden = false;
+  $('manual-login').hidden = false;
+  $('manual-user').focus();
+});
+
+$('nav_mode').addEventListener('click', () => {
+  if (!manualAuthenticated) {
+    $('nav_result').textContent = '请先登录手动控制';
+    return;
+  }
+  if (routeAdd) {
+    routeAdd = false;
+    $('route_add').textContent = '录入航点';
+    $('route_add').classList.remove('warn');
+  }
+  navMode = !navMode;
+  if (!navMode) navPick = null;
+  $('nav_mode').textContent = navMode ? '点地图选目标' : '导航选点';
+  $('nav_mode').classList.toggle('warn', navMode);
+  if (curPage === 'map') renderMap();
+});
+
+$('nav_cancel').addEventListener('click', () => {
+  ws.send(JSON.stringify({ t: 'nav_cancel' }));
+});
+
+/* ---- [巡航] 航点巡航：/patrol_status 与四个按钮 ----
+ * 页面只发 {t:'patrol_save'|'patrol_start'|'motion_stop'|'motion_rearm'|'ultrasonic_rearm'}，
+ * 状态帧由服务端推（10Hz 实时推 + 5Hz status 帧里的 patrol 块）。
+ * 许可/锁停/停车原因一律以服务端为准，这里不做任何安全判断。 */
+/* ---- [2026-11-19] 全局 toast 通知：动作反馈必须全局可见——此前错误提示
+ * 写在非当前页签的元素里（如 patrol_message 只在巡航页），点击等于石沉大海。 ---- */
+function showToast(msg, kind, action) {
+  const host = $('toast_host');
+  if (!host) return;
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind ? ' ' + kind : '');
+  el.textContent = msg;
+  if (action && action.label) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ghost';
+    btn.textContent = action.label;
+    btn.addEventListener('click', () => {
+      el.remove();
+      if (action.fn) action.fn();
+    });
+    el.appendChild(btn);
+  }
+  host.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 400);
+  }, 4200);
+}
+function openLoginHere() {
+  /* 未登录时的登录引导：地图页已有内嵌登录面板（map-auth-toggle "登录导航"），
+     控制页表单常驻。这里只展开+聚焦，不自动提交任何凭据。 */
+  if (curPage === 'map') {
+    const toggle = $('map-auth-toggle');
+    if (toggle && !toggle.hidden) toggle.click();
+  }
+  const u = $('manual-user');
+  if (u) u.focus();
+}
+function patrolSend(msg) {
+  if (!manualAuthenticated) {
+    $('patrol_message').textContent = '请先登录手动控制再操作巡航。';
+    showToast('请先登录手动控制再操作。', 'bad',
+              {label: '展开登录', fn: openLoginHere});
+    return false;
+  }
+  if (!ws || ws.readyState !== 1) {
+    $('patrol_message').textContent = '网页连接已断开。';
+    showToast('网页连接已断开，请稍候页面自动重连。', 'bad');
+    return false;
+  }
+  /* 先发一帧 view（按当前页），再发动作：服务端的「在实时页」是按本连接
+     最近一次 view 判的，而 1 s 一次的心跳可能让服务端在空闲后已经把本
+     连接记为 idle——只发动作会被当成"非实时页"拒掉。两帧同一批到达，
+     服务端按批内顺序处理（view 先）。 */
+  ws.send(JSON.stringify({ t: 'view', page: viewPageName() }));
+  ws.send(JSON.stringify(msg));
+  return true;
+}
+function viewPageName() {
+  return curPage === 'map' ? 'map' : 'control';
+}
+function sendAction(msg) {
+  return patrolSend(msg);
+}
+function applyPatrol(p) {
+  if (!p) return;
+  patrolSt = p;
+  const names = { idle: ['待命', 'dim'], running: ['巡航中', 'ok'],
+                  holding_goal: ['等待目标', 'warn'], cancelling: ['取消中', 'warn'],
+                  stopped: ['已停止', 'warn'], failed: ['失败', 'bad'] };
+  const st = p.status || 'idle';
+  const nm = names[st] || [st, 'dim'];
+  const stEl = $('patrol_state');
+  if (stEl) { stEl.textContent = nm[0]; stEl.className = 'st ' + nm[1]; }
+  const mapEl = $('patrol_map');
+  if (mapEl) {
+    const cur = p.current_map_id;
+    if (!p.map_id && cur) mapEl.textContent = cur + '（未保存路线）';
+    else if (p.map_id && cur && p.map_id !== cur) mapEl.textContent = p.map_id + ' 已失效';
+    else mapEl.textContent = p.map_id || cur || '--';
+  }
+  const pts = $('patrol_points');
+  if (pts) pts.textContent = String(p.waypoints || 0);
+  const wp = $('patrol_waypoint');
+  if (wp) wp.textContent = (p.waypoints ? (p.index + 1) + ' / ' + p.waypoints : '--');
+  const stopEl = $('patrol_stop');
+  if (stopEl) stopEl.textContent = p.stop_reason
+    ? (p.stop_text ? p.stop_text + '（' + p.stop_reason + '）' : p.stop_reason) : '--';
+  const licEl = $('patrol_license');
+  if (licEl) {
+    /* 服务端给什么显示什么：licensed 与 license_state 都由服务端判，
+       页面不根据自己发许可的动作去推断本页"在线"。 */
+    const st = p.license_state || (p.licensed ? 'ok' : 'license_lost');
+    const text = p.licensed
+      ? '在线（' + (p.license && p.license.age_s !== null ? p.license.age_s + 's' : '--') + '）'
+      : (st === 'lock_stop' ? '未续期（锁停中）' : '失效');
+    if (licEl.textContent !== text) licEl.textContent = text;
+    licEl.className = p.licensed ? 'ok' : 'bad';
+  }
+  const gateEl = $('patrol_gate');
+  if (gateEl) {
+    const g = p.gate || 'lock_stop';
+    const gtext = { ok: '放行（许可有效、锁停已解除）',
+                    lock_stop: '锁停中',
+                    license_lost: '许可失效',
+                    not_released: '许可有效但锁停未解除' }[g] || g;
+    if (gateEl.textContent !== gtext) gateEl.textContent = gtext;
+    gateEl.className = g === 'ok' ? 'ok' : 'bad';
+  }
+  const lockEl = $('patrol_lock');
+  if (lockEl) {
+    if (p.locked) lockEl.textContent = '锁停中：' + (p.lock_text || p.lock_reason || '');
+    else lockEl.textContent = '已解除';
+    lockEl.className = p.locked ? 'bad' : 'ok';
+  }
+  /* B6：恢复状态口径。服务端 rearm_state（rearm_required / rearm_pending /
+     not_required）转述在锁停卡片上，页面据此知道"要不要人按恢复"，
+     不再只能笼统显示锁停。 */
+  const rearmEl = $('patrol_rearm_state');
+  if (rearmEl) {
+    const rs = p.rearm_state || 'rearm_pending';
+    const rsText = { rearm_required: '需恢复（许可有效，请点"恢复"）',
+                     rearm_pending: '等待恢复（先恢复许可再点"恢复"）',
+                     not_required: '无需恢复' }[rs] || rs;
+    if (rearmEl.textContent !== rsText) rearmEl.textContent = rsText;
+    rearmEl.className = rs === 'not_required' ? 'ok' : 'bad';
+  }
+  if (p.route && !routeAdd) routeDraft = p.route.map((q) => ({ x: q[0], y: q[1] }));
+  const msg = $('patrol_message');
+  if (msg && p.message) msg.textContent = p.message;
+  if (p.ok && routeAdd && p.route && p.route.length >= 2) {
+    routeAdd = false;
+    if ($('route_add')) {
+      $('route_add').textContent = '录入航点';
+      $('route_add').classList.remove('warn');
+    }
+  }
+  /* 服务端判本页会话已失效（许可断开/被顶替）：立即换成新会话号重发，
+     一次有效许可之后服务端才会把本页当活的。不自动恢复锁停。加 600ms 冷却防并发连环复位。 */
+  if (p.license && p.license.fresh === false
+      && (motionLastResetMs === 0 || performance.now() - motionLastResetMs > 600)) {
+    motionResetSession();
+  }
+  if (curPage === 'map') renderMap();
+}
+if ($('route_add')) {
+  $('route_add').onclick = () => {
+    routeAdd = !routeAdd;
+    if (routeAdd) {
+      navMode = false;
+      navPick = null;
+      if ($('nav_mode')) {
+        $('nav_mode').textContent = '导航选点';
+        $('nav_mode').classList.remove('warn');
+      }
+      if (patrolSt && patrolSt.route) routeDraft = [];
+      if ($('patrol_message')) $('patrol_message').textContent = '请在地图上依次点击至少 2 个航点，再点「保存路线」。';
+    }
+    $('route_add').textContent = routeAdd ? '点图录入中…' : '录入航点';
+    $('route_add').classList.toggle('warn', routeAdd);
+    if (curPage === 'map') renderMap();
+  };
+}
+if ($('patrol_save')) {
+  $('patrol_save').onclick = () => {
+    if (routeDraft.length < 2) {
+      $('patrol_message').textContent = '至少需要两个航点。';
+      return;
+    }
+    /* 带上本页面看到的那条路线原本绑定的地图标识（服务端保存过的
+       map_id）。没有（新路线/刚换图）就发空：服务端按当前地图内容绑定，
+       并校验它与该标识一致——页面不替服务端决定"这条路线是哪张图的"。 */
+    const mapId = patrolSt && patrolSt.map_id;
+    patrolSend({ t: 'patrol_save', points: routeDraft.map((q) => [q.x, q.y]),
+                 map_id: mapId || null });
+  };
+}
+if ($('patrol_start')) {
+  $('patrol_start').onclick = () => { patrolSend({ t: 'patrol_start' }); };
+}
+if ($('motion_stop')) {
+  $('motion_stop').onclick = () => { patrolSend({ t: 'motion_stop' }); };
+}
+if ($('motion_rearm')) {
+  $('motion_rearm').onclick = () => { patrolSend({ t: 'motion_rearm' }); };
+}
+/* [2026-11-17] 超声门 fail-closed：无回波/断流后许可一直拒绝，读数自己
+ * 不能解除，必须人按此键（服务端发布 /ultrasonic_rearm 给 fusion_node）。 */
+if ($('us_rearm')) {
+  $('us_rearm').onclick = () => {
+    const btn = $('us_rearm');
+    if (btn.classList.contains('busy')) return false;
+    if (patrolSend({ t: 'ultrasonic_rearm' })) {
+      btn.classList.add('busy');
+      showToast('已发送"重新启动超声波"请求，等待回执…', 'dim');
+      /* 兜底：回执丢失（断线等）也能恢复按钮，4s 后可再次点击。 */
+      setTimeout(() => btn.classList.remove('busy'), 4000);
+    }
+    return false;
+  };
+}
+
+/* ---- [运动许可] 每 100ms 发一条 /motion_license ----
+ * 消息：{t:'motion_license', session, seq, expires_mono} 或 {t:'motion_license',
+ *       session:0, seq, claim}（见下）。
+ * session：本页的会话号，页面加载时随机生成。服务端首次收到哪个就锁定哪个；
+ *   本页发的会话号若被服务端判为"新的、可接管"，换成本页号码（序号从 0 重来）。
+ * seq：同一会话号内严格递增；重连（ws.onclose）时 += 1，重连首帧不会被
+ *   当成重放。
+ * expires_mono：服务端单调时钟上的期限 = 当前服务端单调时刻 + 0.5s；页面
+ *   用 motion_clock 回包校准（本帧到达时刻 ≈ age=0）。
+ * 网页进程退出后不再发许可，服务端 350ms 判失效；下游底盘桥按自己的许可
+ * 超时（0.5s）独立零速，不依赖网页进程。 */
+const MOTION_LICENSE_MS = 100;
+let motionSeq = 0, motionClockSkew = null, motionLicTimer = null, motionLicWorker = null;
+let motionLicNak = 0, motionLastResetMs = 0;
+let motionSession = Math.floor(Math.random() * 1073741824) + 1;
+let motionClaim = Math.floor(Math.random() * 1073741824) + 1;
+if (motionClaim === motionSession) motionClaim += 1;
+/* 服务端确认"本页号码有效"（motion_license_session）。
+   注意：若刚通过 session=0, claim=sid, seq=k 拿到服务端认可，服务端已记录
+   lic.seq=k，因此切用该 sid 时**不能把 motionSeq 归零**（否则下一帧 seq=1 <= k
+   会被服务端判为 seq_replay 拒绝），直接延续递增 seq 即可。 */
+function motionClaimSession(sid) {
+  if (typeof sid !== 'number' || sid <= 0) return;
+  if (sid === motionSession) return;
+  motionSession = sid;
+  motionLicNak = 0;
+  sendMotionLicense();
+}
+/* 本页许可被服务端判失效（断开/被顶替）：生成新的一对号码——会话号
+   motionSession 与"接管用"号码 motionClaim——重来。 */
+function motionResetSession() {
+  motionLastResetMs = performance.now();
+  motionSession = Math.floor(Math.random() * 1073741824) + 1;
+  motionClaim = Math.floor(Math.random() * 1073741824) + 1;
+  if (motionClaim === motionSession) motionClaim += 1;
+  motionSeq = 0;
+  motionLicNak = 0;
+  sendMotionLicense();
+}
+function onLicenseNak(m) {
+  const reason = m && m.reason;
+  motionLicNak += 1;
+  if (reason === 'session_mismatch') {
+    if (!m || (m.session !== motionSession && m.session !== motionClaim)) return;
+    if (m.owner === motionSession) return;           /* 服务器认的就是本页号 */
+    /* 号码被别处占用（别的页面还活着）：换新的一对号码。旧会话停止送
+       许可后服务端才会接收新号；期间许可失效即锁停，等用户点恢复。 */
+    motionSession = motionClaim;
+    motionSeq = 0;
+    motionLicNak = 0;
+    return;
+  }
+  const el = $('patrol_license');
+  if (el && motionLicNak >= 5) el.textContent = '本页许可被拒（' + reason + '）';
+}
+/* 服务端单调时钟(ms) 与 performance.now() 的换算：
+ *   服务端 monotonic 从**开机**起算，performance.now 从**本页加载**起算，
+ *   两者相差整段开机时长，绝对不能相加（旧写法 perf + 偏移 − mono 会把
+ *   期限算到 −开机秒，每一帧都被服务端判过期，许可永远不新鲜）。
+ *   正确做法：校准帧到达时记下 (perf0, mono0)，之后
+ *   服务端 monotonic ≈ mono0 + (performance.now() − perf0)。
+ *   路由延迟只让 mono0 略偏（单程量级，远小于 0.5 s 期限）。 */
+let motionMonoAnchorPerf = null;   // 校准帧到达时的 performance.now()
+let motionMonoAnchor = null;       // 校准帧到达时的服务端 monotonic(ms)
+function motionNowMs() {
+  if (motionMonoAnchor === null || motionMonoAnchorPerf === null) return null;
+  return motionMonoAnchor + (performance.now() - motionMonoAnchorPerf);
+}
+function sendMotionLicense(seqOverride) {
+  if (!ws || ws.readyState !== 1) return;
+  const nowMs = motionNowMs();
+  const seq = seqOverride !== undefined ? seqOverride : ++motionSeq;
+  const msg = { t: 'motion_license', seq: seq };
+  if (nowMs === null) {
+    /* 时钟还没校准：session=0 取时钟基准，同时报"接管用"号码：服务端在
+       旧会话已停止送许可（或被别处占用）时接受它，并回 motion_license_session。 */
+    msg.session = 0;
+    msg.claim = motionClaim;
+    msg.expires_mono = null;
+  } else {
+    msg.session = motionSession;
+    msg.expires_mono = (nowMs + 500) / 1000;
+  }
+  ws.send(JSON.stringify(msg));
+}
+function startMotionLicense() {
+  stopMotionLicense();
+  /* 用独立 Web Worker 驱动 100ms 许可节拍：浏览器把页面切到后台时不会像主线程
+     setInterval 那样降频到 >=1000ms（避免误触发 350ms license_lost 与接管连跳）；
+     关闭/刷新标签页或断网时 Worker 随页面一同销毁，服务端仍在 350ms 内锁停。 */
+  try {
+    if (typeof Worker !== 'undefined' && typeof Blob !== 'undefined') {
+      const code = 'setInterval(function(){postMessage(1);},' + MOTION_LICENSE_MS + ');';
+      const url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+      motionLicWorker = new Worker(url);
+      URL.revokeObjectURL(url);
+      motionLicWorker.onmessage = () => sendMotionLicense();
+      sendMotionLicense();
+      return;
+    }
+  } catch (e) { /* 回退到主线程定时器 */ }
+  motionLicTimer = setInterval(sendMotionLicense, MOTION_LICENSE_MS);
+  sendMotionLicense();
+}
+function stopMotionLicense() {
+  if (motionLicWorker) { try { motionLicWorker.terminate(); } catch (e) {} motionLicWorker = null; }
+  if (motionLicTimer) { clearInterval(motionLicTimer); motionLicTimer = null; }
+}
+/* motion_clock 回包：mono=服务端 monotonic(s)，addr=该帧到服务端时刻。 */
+function onMotionClock(m) {
+  if (!m || typeof m.mono !== 'number' || typeof m.addr !== 'number') return;
+  const now = Date.now() / 1000;
+  if (Math.abs(now - m.addr) > 2.0) return;   /* 太旧的校准回包丢弃 */
+  motionMonoAnchorPerf = performance.now();
+  motionMonoAnchor = m.mono * 1000;
+  motionClockSkew = motionMonoAnchor - motionMonoAnchorPerf;   /* 仅供显示/诊断 */
+  sendMotionLicense();
+}
+
+function applyNav(view) {
+  navSt = view;
+  const stEl = $('nav_state');
+  const map = { idle: ['待命', 'dim'], sending: ['发送中', 'warn'],
+                active: ['导航中', 'ok'], done: ['已到达', 'ok'],
+                canceled: ['已取消', 'dim'], failed: ['失败', 'bad'] };
+  const m = map[view.state] || ['待命', 'dim'];
+  stEl.textContent = m[0];
+  stEl.className = 'st ' + m[1];
+  $('nav_goal').textContent = view.goal
+    ? '(' + view.goal.x.toFixed(2) + ', ' + view.goal.y.toFixed(2) + ')' : '--';
+  const fb = view.feedback;
+  $('nav_dist').textContent = (view.state === 'active' && fb && fb.dist !== null)
+    ? fb.dist.toFixed(2) + ' m' : '--';
+  $('nav_eta').textContent = (view.state === 'active' && fb && fb.eta !== null)
+    ? fb.eta.toFixed(0) + ' s' : '--';
+  $('nav_result').textContent = view.result || view.error || '--';
+  if (curPage === 'map') renderMap();
+}
+
+/* ---- 通用小工具（带脏检查，避免高频状态帧无意义重建 DOM 节点） ---- */
+function setLed(id, cls) {
+  const el = $(id);
+  const next = 'led ' + cls;
+  if (el && el.className !== next) el.className = next;
+}
+function fmt(v, digits) {
+  if (v === null || v === undefined || !isFinite(v)) return '--';
+  return v.toFixed(digits);
+}
+function ring(id, pct, color) {
+  const el = $(id);
+  if (!el) return;
+  const r = 32, c = 2 * Math.PI * r;
+  const da = c.toFixed(1);
+  if (el.getAttribute('stroke-dasharray') !== da) el.setAttribute('stroke-dasharray', da);
+  const p = (pct === null || pct === undefined || !isFinite(pct))
+    ? 0 : Math.max(0, Math.min(100, pct));
+  const off = (c * (1 - p / 100)).toFixed(1);
+  if (el.getAttribute('stroke-dashoffset') !== off) el.setAttribute('stroke-dashoffset', off);
+  if (color && el.getAttribute('stroke') !== color) el.setAttribute('stroke', color);
+}
+
+/* ---- 状态应用 ---- */
+function applyStatus(m) {
+  /* [C50C 2026-11-15] 服务端重启自愈：载荷 srv_epoch 与本页记录的不一致
+     ＝ web_debug 换进程了，本页是旧进程时代加载的——控制 WS 可能已自愈
+     重连（所以还显示"已连接"），但视频重连链可能死在后台标签页的定时器
+     节流里（onclose 只在控制页排重试），表现就是"等待画面…"永不出图。
+     整页自刷新一次拿全新会话；刷新后纪元一致，不会循环。 */
+  if (m.srv_epoch) {
+    if (srvEpoch === null) {
+      srvEpoch = m.srv_epoch;
+    } else if (m.srv_epoch !== srvEpoch && !window.__srvReloading) {
+      window.__srvReloading = true;
+      document.title = '↻ 控制台服务已重启，正在刷新…';
+      setTimeout(() => location.reload(), 800);
+      return;
+    }
+  }
+  lastStatus = m;
+  hudScanStatus = m.scan || 'unknown';
+  if (hudScanStatus !== 'fresh') hudScanCount = null;
+  renderHudScan();
+  const fake = m.mode === 'fake';
+  $('mode').textContent = fake ? '假数据模式' : '实车模式';
+  $('mode').className = 'tag' + (fake ? ' fake' : '');
+  $('clock').textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  $('side_mode').textContent = '模式 ' + (fake ? '假数据' : '实车');
+
+  /* --- 开机倒计时 --- */
+  const boot = m.boot || {};
+  if (boot.initializing) {
+    $('boot').hidden = false;
+    $('boot_count').textContent = String(Math.max(0, Math.ceil(boot.remain_s || 0)));
+    $('boot_hold').textContent = String(Math.round(boot.hold_s || 20));
+    $('boot_bar').style.width = (100 * (1 - (boot.remain_s || 0)
+      / Math.max(1, boot.hold_s || 20))).toFixed(0) + '%';
+  } else {
+    $('boot').hidden = true;
+  }
+
+  /* --- 底盘 --- */
+  const c = m.chassis || {};
+  const chFresh = c.state === 'fresh';
+  setLed('ov_ch_led', chFresh ? 'online' : (c.state === 'stale' ? 'bad' : 'offline'));
+  $('ov_ch_state').textContent = chFresh ? '在线' : (c.state === 'stale' ? '数据过期' : '无数据');
+  $('ov_ch_state').className = 'st ' + (chFresh ? 'ok' : (c.state === 'stale' ? 'bad' : 'dim'));
+  const vx = chFresh ? c.vx_m_s : null;
+  const kmh = vx === null || vx === undefined ? null : Math.abs(vx) * 3.6;
+  $('ov_ch_vx').textContent = fmt(kmh, 2);
+  const dir = vx === null || vx === undefined ? '--'
+    : (vx < -0.01 ? '倒车 ' : (vx > 0.01 ? '前进 ' : '静止 '));
+  $('ov_ch_kmh').textContent = vx === null || vx === undefined
+    ? '无车速数据' : dir + fmt(vx, 2) + ' m/s';
+  $('ov_ch_mile').textContent = (chFresh && c.mileage_m !== null
+    && c.mileage_m !== undefined) ? c.mileage_m.toFixed(1) + ' m' : '--';
+  $('ov_ch_mile').title = '软件积分里程';
+  /* [C50C 2026-11-15] 前置 HC-SR04 超声波：无回波/陈旧时后端已置 null */
+  $('ov_ch_us').textContent = (chFresh && c.ultrasonic_m !== null
+    && c.ultrasonic_m !== undefined) ? c.ultrasonic_m.toFixed(2) + ' m' : '--';
+  $('ov_ch_us').title = '前置超声波距离（探测低矮障碍）';
+
+  /* --- 电池 --- */
+  const b = m.battery || {};
+  const batCls = b.state === 'ok' ? 'online' : b.state === 'warn' ? 'warn'
+    : b.state === 'bad' ? 'bad' : 'offline';
+  setLed('ov_bat_led', batCls);
+  $('ov_bat_state').textContent = b.text || '无数据';
+  $('ov_bat_state').className = 'st ' + (b.state === 'ok' ? 'ok'
+    : b.state === 'warn' ? 'warn' : b.state === 'bad' ? 'bad' : 'dim');
+  $('ov_bat_pct').textContent = b.percent === null || b.percent === undefined
+    ? '--' : b.percent.toFixed(0) + '%';
+  $('ov_bat_volt').textContent = b.voltage_v === null || b.voltage_v === undefined
+    ? '电压 --' : '电压 ' + b.voltage_v.toFixed(2) + ' V';
+  const bar = $('ov_bat_bar');
+  bar.style.width = (b.percent || 0) + '%';
+  bar.style.background = b.state === 'bad' ? 'var(--bad)'
+    : b.state === 'warn' ? 'var(--warn)' : 'var(--ok)';
+
+  /* --- 驾驶 HUD（控制页左上角）：速度 / 里程 / 电池 --- */
+  $('hud_vx').textContent = chFresh && vx !== null && vx !== undefined
+    ? fmt(vx, 2) + ' m/s' : '--';
+  $('hud_mile').textContent = (chFresh && c.mileage_m !== null
+    && c.mileage_m !== undefined) ? c.mileage_m.toFixed(1) + ' m' : '--';
+  $('hud_us').textContent = (chFresh && c.ultrasonic_m !== null
+    && c.ultrasonic_m !== undefined) ? c.ultrasonic_m.toFixed(2) + ' m' : '--';
+  /* --- 地图页侧卡（元素常驻，所有状态帧都顺手刷） --- */
+  {
+    /* [2026-11-19] 安全状态来自 /drive_safety（融合节点）。后端在
+       state=stale 时仍携带最后一次的 ultrasonic 对象（drive_safety_view），
+       所以只在 state==='fresh' 时解释；未知/过期/字段不完整一律中性显示，
+       色条不用正常色或强调色暗示安全。 */
+    const ds = m.drive_safety;
+    const us = ds && ds.state === 'fresh' ? ds.ultrasonic : null;
+    const usM = (chFresh && c.ultrasonic_m !== null
+      && c.ultrasonic_m !== undefined) ? c.ultrasonic_m : null;
+    $('us_big').textContent = usM !== null ? usM.toFixed(2) : '--';
+    // 量程固定 0-1m：停车/释放区按服务端实际阈值画
+    const sd = (us && us.stop_distance) || 0.40;
+    const rd = (us && us.release_distance) || 0.50;
+    $('us_zone_stop').style.width = (sd * 100).toFixed(1) + '%';
+    $('us_zone_rel').style.left = (sd * 100).toFixed(1) + '%';
+    $('us_zone_rel').style.width = ((rd - sd) * 100).toFixed(1) + '%';
+    const fill = $('us_barfill');
+    fill.style.width = (Math.min(1, Math.max(0, usM || 0)) * 100) + '%';
+    let usText = '状态无数据';
+    let usClass = 'st dim';
+    let usStop = false;
+    if (ds && ds.state === 'stale') {
+      usText = '状态已过期';
+    } else if (us && (us.fault === true || us.valid === false)) {
+      usText = us.fault_reason
+        ? '超声故障（' + us.fault_reason + '）' : '超声故障';
+      usClass = 'st bad';
+      usStop = true;
+    } else if (us && (us.stop === true || us.deny === true)) {
+      usText = '超声停车';
+      usClass = 'st bad';
+      usStop = true;
+    } else if (us && us.valid === true && us.fault === false &&
+               us.stop === false && us.deny === false) {
+      usText = '超声未触发停车';
+      usClass = 'st ok';
+    }
+    fill.style.background = usStop ? 'var(--bad)'
+      : (usClass === 'st ok' ? 'var(--acc)' : 'var(--dim)');
+    $('us_gate').textContent = usText;
+    $('us_gate').className = usClass;
+    $('mp_scan_hz').textContent = m.scan_hz ? m.scan_hz.toFixed(0) + ' Hz' : '--';
+    $('mp_scan_n').textContent = m.scan_valid || '--';
+  }
+  const hudBat = $('hud_bat');
+  if (b.charging && b.voltage_v !== null && b.voltage_v !== undefined) {
+    hudBat.textContent = '充电中（' + b.voltage_v.toFixed(1) + 'V）';
+  } else if (b.percent !== null && b.percent !== undefined) {
+    hudBat.textContent = '估算 ' + b.percent.toFixed(0) + '%（'
+      + (b.voltage_v !== null && b.voltage_v !== undefined
+        ? b.voltage_v.toFixed(1) + 'V' : '--') + '）';
+  } else if (b.voltage_v !== null && b.voltage_v !== undefined) {
+    hudBat.textContent = b.voltage_v.toFixed(1) + 'V';
+  } else {
+    hudBat.textContent = '--';
+  }
+  hudBat.className = b.state === 'bad' ? 'bad'
+    : b.state === 'warn' ? 'warn' : '';
+
+  /* --- 主机 --- */
+  const host = m.host || {};
+  const cpu = host.cpu_pct, memPct = host.mem_used_pct;
+  const diskPct = host.disk_used_pct, temp = host.temp_c;
+  $('ov_cpu').textContent = cpu === null || cpu === undefined ? '--' : cpu.toFixed(0) + '%';
+  ring('ring_cpu', cpu, cpu > 85 ? 'var(--bad)' : cpu > 65 ? 'var(--warn)' : 'rgb(59 130 246)');
+  $('ov_mem').textContent = memPct === null || memPct === undefined ? '--' : memPct.toFixed(0) + '%';
+  ring('ring_mem', memPct, memPct > 90 ? 'var(--bad)' : 'rgb(34 197 94)');
+  $('ov_mem').title = host.mem_used_mb + ' / ' + host.mem_total_mb + ' MB';
+  $('ov_disk').textContent = diskPct === null || diskPct === undefined ? '--' : diskPct.toFixed(0) + '%';
+  ring('ring_disk', diskPct, diskPct > 90 ? 'var(--bad)' : 'rgb(167 139 250)');
+  $('ov_disk').title = (host.disk_free_gb || 0).toFixed(1) + ' GB 可用';
+  $('ov_temp').textContent = temp === null || temp === undefined ? '--' : temp.toFixed(0) + '°';
+  ring('ring_temp', temp === null || temp === undefined ? 0
+    : Math.min(100, temp / 90 * 100), temp >= 80 ? 'var(--bad)' : temp >= 65 ? 'var(--warn)' : 'rgb(245 158 11)');
+  const hostBad = [cpu, memPct, diskPct].some((v) => v !== null && v !== undefined && v > 90)
+    || (temp !== null && temp !== undefined && temp >= 80);
+  const hostWarn = [cpu, memPct, diskPct].some((v) => v !== null && v !== undefined && v > 70)
+    || (temp !== null && temp !== undefined && temp >= 65);
+  setLed('ov_host_led', hostBad ? 'bad' : hostWarn ? 'warn' : 'online');
+  $('ov_host_state').textContent = hostBad ? '过载' : hostWarn ? '注意' : '正常';
+  $('ov_host_state').className = 'st ' + (hostBad ? 'bad' : hostWarn ? 'warn' : 'ok');
+
+  /* --- 节点呼吸灯 --- */
+  const nd = m.nodes || {};
+  const imu = m.imu || {};
+  // 节点状态只靠呼吸灯表达：绿=在线、灰=离线、黄=异常、红=错误。
+  // 右侧文字只是给读屏和色盲用户的备注，不承担信息量。
+  const nodeMap = [
+    ['nd_cam', nd.camera_node, (m.image === 'fresh') ? '在线' : '离线'],
+    ['nd_lidar', nd.lidar_node, (m.scan === 'fresh') ? '在线' : '离线'],
+    ['nd_bridge', nd.c50c_uart3_node, (m.safety && m.safety.online) ? '在线' : '离线'],
+    ['nd_chassis', (chFresh || nd.chassis_status_node === 'online') ? 'online' : 'offline',
+      chFresh ? '在线' : '无数据'],
+    ['nd_web', nd.web_bridge, '在线'],
+    ['nd_imu', imu.state === 'fresh' ? 'online' : 'offline',
+      imu.state === 'fresh' ? '在线' : '离线'],
+  ];
+  for (const [id, on, txt] of nodeMap) {
+    setLed(id, on === 'online' ? 'online' : 'offline');
+    const t = $(id + '_t');
+    t.textContent = (on === 'online' || txt === '无数据') ? '' : txt;
+    t.className = 'txt';
+  }
+  const onlineCount = nodeMap.filter((n) => n[1] === 'online').length;
+  setLed('ov_node_led', onlineCount === nodeMap.length ? 'online'
+    : onlineCount === 0 ? 'offline' : 'warn');
+
+  /* --- 任务状态 --- */
+  const task = m.task || {};
+  const taskCls = task.state === 'nav' ? 'online' : task.state === 'patrol'
+    ? 'online' : task.state === 'return' ? 'warn'
+    : task.state === 'manual' ? 'online' : 'offline';
+  setLed('task_led', taskCls);
+  $('task_text').textContent = task.text || '无任务';
+  $('task_chip').textContent = task.channel ? '' : '命令通道离线';
+  $('task_chip').className = 'st ' + (task.channel ? 'dim' : 'bad');
+  if (task.state === 'idle') {
+    $('task_sub').textContent = '';
+  } else if (task.state === 'manual') {
+    $('task_sub').textContent = '手动 / 直接控制';
+  } else if (task.state === 'nav') {
+    $('task_sub').textContent = '速度 ' + fmt(task.cmd_vx, 2) + ' m/s';
+  } else {
+    $('task_sub').textContent = '';
+  }
+
+  /* --- 网络 --- */
+  const net = m.network || {};
+  const netUp = net.state === 'up';
+  setLed('net_led', netUp ? 'online' : 'offline');
+  $('net_tag').textContent = netUp ? '在线' : '离线';
+  $('net_tag').className = 'st ' + (netUp ? 'ok' : 'dim');
+  $('ov_net_ssid').textContent = net.ssid || (netUp ? '已连接' : '未连接');
+  const ips = net.ips && net.ips.length ? net.ips : (net.ip ? [net.ip] : []);
+  const here = location.hostname;
+  const ipPick = ips.indexOf(here) >= 0 ? here : (ips[0] || '--');
+  $('ov_net_ip').textContent = ipPick;
+  $('ov_net_ip').title = ips.join('\n');
+  const q = net.quality;
+  $('ov_net_sig').textContent = q === null || q === undefined
+    ? '' : (net.signal_dbm || '') + ' dBm · ' + q + '%';
+  $('ov_net_band').textContent = net.band || '';
+  const bars = $('ov_net_bars').children;
+  const onBars = q === null || q === undefined ? 0 : Math.ceil(q / 25);
+  for (let i = 0; i < bars.length; i++) bars[i].classList.toggle('on', i < onBars);
+
+  /* --- 侧栏 --- */
+  const sf = m.safety || {};
+  $('side_proto').textContent = '固件 ' + (sf.drive_firmware_protocol || '--');
+  $('side_src').textContent = '参数来源 ' + (sf.source || '--');
+  $('side_src').title = sf.online ? '底盘桥在线，参数已核对' : '底盘桥未在线，显示的是本地启动参数';
+
+  const allOk = onlineCount === nodeMap.length && !hostBad;
+  setLed('navled_overview', allOk ? 'online' : (hostBad ? 'bad'
+    : (onlineCount ? 'warn' : 'offline')));
+  setLed('navled_control', (nd.camera_node === 'online' && nd.c50c_uart3_node === 'online')
+    ? 'online' : (nd.c50c_uart3_node === 'online' ? 'warn' : 'offline'));
+  setLed('navled_logs', m.lidar_diag === 'error' ? 'bad'
+    : m.lidar_diag === 'ok' ? 'online' : 'offline');
+
+  /* --- 控制页 --- */
+  $('ctl_camstate').textContent = m.image === 'fresh' ? '实时'
+    : m.image === 'stale' ? '已中断' : '无数据';
+  $('ctl_camstate').className = 'st ' + (m.image === 'fresh' ? 'ok'
+    : m.image === 'stale' ? 'warn' : 'dim');
+  setLed('ctl_camled', m.image === 'fresh' ? 'online' : 'offline');
+  $('cam_badge').style.display = (m.image === 'fresh') ? 'none' : 'block';
+  if (m.image !== 'fresh' && !lastCam) {
+    $('cam_empty').style.display = '';
+    $('cam_empty').textContent = m.image === 'stale' ? '画面中断，等待重连…' : '无画面数据';
+  }
+  // 断流时保留最后一帧并压暗，而不是清成空白
+  $('cam').style.opacity = m.image === 'fresh' ? '1' : '0.35';
+  setLed('ctl_lidarled', nd.lidar_node === 'online' ? 'online' : 'offline');
+  updatePad();
+  pushLog(m);
+}
+
+/* ---- 摄像头：直接送 GPU <img> 渲染，网格与水平线走 CSS 合成层，仅在截图时绘制 Canvas ---- */
+const camCanvas = document.createElement('canvas');
+let lastCam = null;
+function onImage(m) {
+  lastCam = m;
+  const cam = $('cam');
+  cam.src = 'data:' + (m.mime || 'image/jpeg') + ';base64,' + m.d;
+  $('cam_badge').style.display = 'none';
+  $('cam_empty').style.display = 'none';
+  drawCam();
+}
+function drawCam() {
+  const cam = $('cam');
+  const flip = $('flip').checked;
+  const nextTf = flip ? 'rotate(180deg)' : 'none';
+  if (cam.style.transform !== nextTf) cam.style.transform = nextTf;
+  const hv = Number($('hline').value);
+  const hline = $('cam_hline');
+  if (hline) hline.style.top = hv + '%';
+  const ov = $('cam_overlay');
+  if (ov) ov.classList.toggle('grid-on', $('grid').checked);
+  $('camover').textContent = '水平线 ' + hv.toFixed(0) + '%';
+}
+$('hline').oninput = () => {
+  $('hlinev').textContent = $('hline').value + '%';
+  drawCam();
+};
+$('grid').onchange = () => { drawCam(); };
+/* 翻转画面：摄像头物理倒装补偿（2026-11-15），记住用户选择 */
+try { $('flip').checked = localStorage.getItem('cam_flip') !== '0'; } catch (e) {}
+$('flip').onchange = () => {
+  try { localStorage.setItem('cam_flip', $('flip').checked ? '1' : '0'); } catch (e) {}
+  drawCam();
+};
+drawCam();
+$('snap').onclick = () => {
+  if (!lastCam) return;
+  const cam = $('cam');
+  const w = camCanvas.width = cam.naturalWidth || 640;
+  const h = camCanvas.height = cam.naturalHeight || 480;
+  const ctx = camCanvas.getContext('2d');
+  ctx.save();
+  if ($('flip').checked) { ctx.translate(w, h); ctx.rotate(Math.PI); }
+  ctx.drawImage(cam, 0, 0, w, h);
+  ctx.restore();
+  const hy = Math.round(h * ($('hline').value / 100));
+  ctx.strokeStyle = 'rgb(59 130 246 /.95)';
+  ctx.lineWidth = Math.max(1, h / 300);
+  ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(w, hy); ctx.stroke();
+  if ($('grid').checked) {
+    ctx.strokeStyle = 'rgb(255 255 255 /.18)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 3; i++) {
+      const x = Math.round(w * i / 3);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      const y = Math.round(h * i / 3);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+  }
+  const a = document.createElement('a');
+  a.download = 'cam-' + Date.now() + '.jpg';
+  a.href = camCanvas.toDataURL('image/jpeg', 0.92);
+  a.click();
+};
+
+/* ---- 雷达点云 ----
+ * 冻结策略：每个角度格只在"首次出现 / 探测值明显变化"时更新，连续
+ * 圈都在同一距离的点不再重绘，静止的墙与柱子不会抖动。移动目标由后端
+ * 按"新出现"标出来（m.moving），前端只负责高亮与视觉刷新。
+ */
+const POLAR = 720;              // 0.5 度一格
+const HOLD_M = 0.3;             // 冻结点：连续圈保持在 ±30 cm 内就不动
+let cloud = new Float32Array(0);   // 冻结后的距离（0 = 无点）
+let rawPrev = new Float32Array(0); // 上一圈原始距离，用于判断是否为旧点
+let movingSet = new Set();
+let viewRange = 6.0, autoRange = true;
+let lastScanT = 0;
+function polarIndex(deg) {
+  return Math.round((((deg % 360) + 360) % 360) * 2) % POLAR;
+}
+function updateScan(m) {
+  if (cloud.length !== POLAR) {
+    cloud = new Float32Array(POLAR);
+    rawPrev = new Float32Array(POLAR);
+  }
+  const fresh = new Float32Array(POLAR);
+  for (const [deg, r] of m.p) {
+    if (r > 0) fresh[polarIndex(deg)] = r;
+  }
+  for (let i = 0; i < POLAR; i++) {
+    const r = fresh[i];
+    if (r <= 0) {
+      // 这一格本圈没有回波：保留两圈内刚出现过的点，其余清掉
+      if (rawPrev[i] <= 0) cloud[i] = 0;
+      continue;
+    }
+    const old = cloud[i];
+    // 首次出现、旧值丢失、或距离变化超过阈值才更新
+    if (old <= 0 || rawPrev[i] <= 0 || Math.abs(r - old) > HOLD_M) {
+      cloud[i] = r;
+    }
+  }
+  rawPrev = fresh;
+  lastScanT = Date.now();
+  drawMinimap();
+  // 移动标记：后端给的是 120 格索引，每格 3 度
+  const mv = new Set();
+  for (const b of (lastStatus && lastStatus.moving) || []) mv.add(b);
+  movingSet = mv;
+  if (autoRange) {
+    const vals = [];
+    for (let i = 0; i < POLAR; i++) if (cloud[i] > 0) vals.push(cloud[i]);
+    if (vals.length > 8) {
+      vals.sort((a, b) => a - b);
+      const p = vals[Math.floor(vals.length * 0.95)];
+      const target = Math.min(12, Math.max(1.0, p * 1.15));
+      viewRange += (target - viewRange) * 0.15;
+      $('range').value = Math.min(12, Math.max(1, Math.round(viewRange * 2) / 2));
+    }
+  }
+  $('rangev').textContent = (autoRange ? viewRange
+    : parseFloat($('range').value)).toFixed(1) + 'm';
+}
+function drawRadar() {
+  const cv = $('radar');
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return;
+  const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+  if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = 'rgb(5 8 13)';
+  ctx.fillRect(0, 0, w, h);
+  const cx = w / 2, cy = h / 2;
+  const R = Math.min(w, h) / 2 - 24;
+  const maxR = autoRange ? viewRange : parseFloat($('range').value);
+
+  ctx.strokeStyle = 'rgb(255 255 255 /.10)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= 4; i++) {
+    const rr = R * i / 4;
+    ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke();
+  }
+  for (let a = 0; a < 360; a += 30) {
+    const rad = (a - 90) * Math.PI / 180;
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(rad) * R, cy + Math.sin(rad) * R); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgb(200 208 220 /.7)';
+  ctx.font = '10px ui-monospace, monospace';
+  for (let i = 1; i <= 4; i++) {
+    ctx.fillText((maxR * i / 4).toFixed(1) + 'm', cx + 3, cy - R * i / 4 - 3);
+  }
+  ctx.fillStyle = 'rgb(200 208 220 /.9)';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const [deg, name] of [[0, '前'], [90, '左'], [180, '后'], [270, '右']]) {
+    const a = (-90 - deg) * Math.PI / 180;   // 2026-11-14 镜像修正：车左(+90°)画在画面左侧
+    ctx.fillText(name, cx + Math.cos(a) * (R + 14), cy + Math.sin(a) * (R + 14));
+  }
+
+  // 点云：小圆点，按距离上色；移动目标用青色并略大
+  const alive = Date.now() - lastScanT < 1000;
+  for (let i = 0; i < POLAR; i++) {
+    const r = cloud[i];
+    if (r <= 0 || r > maxR) continue;
+    const deg = i / 2;
+    const a = (-90 - deg) * Math.PI / 180;   // 2026-11-14 镜像修正：车左(+90°)画在画面左侧
+    const rr = R * r / maxR;
+    const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
+    const bin = Math.floor(deg / 3) % 120;
+    const moving = movingSet.has(bin);
+    if (!alive) ctx.globalAlpha = 0.35;
+    if (moving) {
+      ctx.fillStyle = 'rgb(34 211 238)';
+      ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill();
+    } else {
+      const t = Math.min(1, r / maxR);
+      const hue = 140 - 140 * t;
+      ctx.fillStyle = 'hsla(' + hue.toFixed(0) + ',85%,60%,.92)';
+      ctx.fillRect(x - 1.2, y - 1.2, 2.4, 2.4);
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = 'rgb(59 130 246 /.95)';
+  ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgb(59 130 246 /.5)';
+  ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
+}
+
+/* ---- 控制页右上角小地图：drawRadar 的精简版（同一份 cloud 数据、
+ * 同一套镜像修正公式 a=(-90-deg)，量程固定 8 m）---- */
+function drawMinimap() {
+  const cv = $('minimap');
+  if (!cv) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return;
+  const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+  if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = 'rgb(5 8 13 /.55)';
+  ctx.fillRect(0, 0, w, h);
+  const cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2 - 6;
+  const maxR = 8;
+  ctx.strokeStyle = 'rgb(255 255 255 /.12)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= 3; i++) {
+    ctx.beginPath(); ctx.arc(cx, cy, R * i / 3, 0, Math.PI * 2); ctx.stroke();
+  }
+  const alive = Date.now() - lastScanT < 1000;
+  for (let i = 0; i < POLAR; i++) {
+    const r = cloud[i];
+    if (r <= 0 || r > maxR) continue;
+    const a = (-90 - i / 2) * Math.PI / 180;   // 与大雷达同一镜像修正
+    const rr = R * r / maxR;
+    ctx.fillStyle = alive ? 'rgb(34 211 238 /.95)' : 'rgb(120 128 140 /.4)';
+    ctx.fillRect(cx + Math.cos(a) * rr - 1, cy + Math.sin(a) * rr - 1, 2, 2);
+  }
+  ctx.fillStyle = 'rgb(59 130 246 /.95)';
+  ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgb(59 130 246 /.6)';
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy - 9); ctx.stroke();
+  ctx.fillStyle = alive ? 'rgb(200 208 220 /.7)' : 'rgb(239 68 68 /.95)';
+  ctx.font = '10px ui-monospace, monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(alive ? '8m' : '雷达过期', 5, h - 5);
+}
+$('range').oninput = () => {
+  autoRange = false; $('auto').checked = false;
+  $('rangev').textContent = parseFloat($('range').value).toFixed(1) + 'm';
+  drawRadar();
+};
+$('auto').onchange = () => { autoRange = $('auto').checked; drawRadar(); };
+$('reset').onclick = () => {
+  cloud = new Float32Array(POLAR); rawPrev = new Float32Array(POLAR);
+  drawRadar();
+};
+
+/* ---- 手动控制：服务器负责截止时间与心跳超时 ---- */
+let manualAuthenticated = false, manualActive = false, manualId = 0;
+let manualBeat = null, manualDeadline = null;
+const PAD = [['pad-fwd', 'forward'], ['pad-rev', 'reverse'],
+             ['pad-left', 'left'], ['pad-right', 'right']];
+function manualSend(message) {
+  if (!ws || ws.readyState !== 1) return false;
+  ws.send(JSON.stringify(message));
+  return true;
+}
+function updatePad() {
+  const ch = lastStatus && lastStatus.task && lastStatus.task.channel;
+  const on = manualAuthenticated && ch !== false;
+  for (const [id] of PAD) $(id).disabled = !on;
+  $('manual-timed').disabled = !on;
+  $('manual-stop').disabled = !manualAuthenticated;
+  const cruise = lastStatus && lastStatus.cruise;
+  const canCruise = manualAuthenticated && ch !== false
+    && !(cruise && cruise.available === false);
+  $('cruise-start').disabled = !canCruise;
+  $('cruise-stop').disabled = !canCruise;
+  $('pad_hint').textContent = !manualAuthenticated ? '请先登录'
+    : (lastStatus && lastStatus.task && lastStatus.task.channel === false)
+      ? '底盘命令通道离线' : 'WASD 行驶 · 空格手刹 · 松键即停';
+}
+function manualClear() {
+  manualActive = false;
+  clearInterval(manualBeat); clearTimeout(manualDeadline);
+  manualBeat = manualDeadline = null;
+  keyDirection = null;                       // 键盘驾驶会话一并失效
+  for (const [id] of PAD) $(id).classList.remove('pressed');
+}
+function manualStop(reason) {
+  manualClear();
+  if (manualAuthenticated) manualSend({ t: 'manual_stop' });
+  $('manual-status').textContent = '已发送零速；请观察车辆是否停下。';
+  $('ctl_last').textContent = (reason || '已停车') + ' · '
+    + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+}
+function manualLeave() {
+  if (manualActive) manualStop();
+  manualClear();
+  manualAuthenticated = false;
+  $('manual-content').hidden = true;
+  $('manual-login').hidden = false;
+  $('map-auth-toggle').hidden = false;
+  $('manual-password').value = '';
+}
+function manualStart(mode, direction, button = null) {
+  if (!manualAuthenticated || manualActive || curPage !== 'control') return false;
+  const throttle = $('manual-throttle');
+  const speed = Number(throttle ? throttle.value : 0.4);
+  if (!(speed > 0)) {
+    $('manual-status').textContent = '空档不驱动电机，请选择巡航档或运动档。';
+    return false;
+  }
+  const duration = Number($('manual-duration').value);
+  if (mode === 'timed' && (!Number.isFinite(duration) || duration <= 0 || duration > 10)) {
+    $('manual-status').textContent = '运行时间须大于 0 且不超过 10 秒。';
+    return false;
+  }
+  const id = ++manualId;
+  const msg = { t: 'manual_start', id, speed, mode, direction };
+  if (mode === 'timed') msg.duration = duration;
+  if (!manualSend(msg)) {
+    $('manual-status').textContent = '网页连接已断开。';
+    return false;
+  }
+  manualActive = true;
+  $('manual-status').textContent = '正在请求发送命令…';
+  if (button) button.classList.add('pressed');
+  manualBeat = setInterval(() => manualSend({ t: 'manual_heartbeat' }), 100);
+  if (mode === 'timed') manualDeadline = setTimeout(() => manualStop('定时结束'), duration * 1000);
+  return true;
+}
+$('manual-login-form').onsubmit = (event) => {
+  event.preventDefault();
+  $('manual-login-status').textContent = '';
+  if (!manualSend({ t: 'manual_login', username: $('manual-user').value,
+                    password: $('manual-password').value }))
+    $('manual-login-status').textContent = '网页连接已断开。';
+};
+for (const [id, direction] of PAD) {
+  const button = $(id);
+  button.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || button.disabled) return;
+    event.preventDefault();
+    cruiseReleaseForManual();
+    if (manualStart('hold', direction, button)) button.setPointerCapture(event.pointerId);
+  });
+  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'])
+    button.addEventListener(name, () => {
+      if (manualActive && button.classList.contains('pressed')) manualStop('松开');
+    });
+}
+/* ---- 自动巡航：网页只发开关，速度由 fusion_node 自己算。
+   雷达判障在 fusion_node，网页不重复判断；雷达超时它自己停车。
+   状态三种：巡航中 / 已停止 / 雷达不可信。 */
+let cruiseOn = false;
+function applyCruise(st) {
+  cruiseOn = !!(st && st.on);
+  const box = $('cruise-state');
+  if (!box) return;
+  if (st && st.available === false) box.textContent = '雷达不可信';
+  else if (cruiseOn) box.textContent = '巡航中';
+  else box.textContent = '已停止';
+}
+function cruiseSet(on) {
+  if (!manualAuthenticated) return false;
+  // 两个分支各发一个字面量开关，帧里永远是 true 或 false。
+  const sent = on
+    ? manualSend({ t: 'cruise_set', on: true })
+    : manualSend({ t: 'cruise_set', on: false });
+  if (!sent) {
+    $('manual-status').textContent = '网页连接已断开。';
+    return false;
+  }
+  cruiseOn = on === true;
+  applyCruise({ on, available: true });
+  return true;
+}
+/* 方向键与巡航抢同一个速度话题，按下方向键前必须先关掉巡航。 */
+function cruiseReleaseForManual() {
+  if (!cruiseOn) return;
+  manualSend({ t: 'cruise_set', on: false });
+  cruiseOn = false;
+  applyCruise({ on: false, available: true });
+}
+$('cruise-start').onclick = () => {
+  if (cruiseSet(true)) $('manual-status').textContent = '已请求自动巡航。';
+};
+$('cruise-stop').onclick = () => {
+  cruiseSet(false);
+  $('manual-status').textContent = '已请求停车。';
+};
+/* 档位只给两个速度：0.4 m/s 对应 4800 占空，0.8 m/s 对应 9600 占空。
+   固件按 1 m/s = 12000 占空换算（2026-11-13 改系数前的旧固件是 1000，
+   两挡撞同一 3360 起跳值、跑同一速度），Set_Pwm 保证任何非零占空
+   不低于 3360。开环占空：实际车速以状态帧编码器回读为准。 */
+function gearLabel(value) {
+  const v = Number(value);
+  return v > 0 ? gearName(v) : '空档';
+}
+function gearName(v) { return v >= 0.8 ? '运动档' : '巡航档'; }
+/* ---- 竖式挡位滑块：上=运动 0.8 / 中=巡航 0.4 / 下=空档 0。
+ * 拖动吸附三挡，点挡位标签直达；值写入隐藏 input#manual-throttle，
+ * manualStart 等既有逻辑不感知变化。 ---- */
+const GEAR_STEPS = [0.8, 0.4, 0];          // 自上而下
+function applyGear(v) {
+  const i = GEAR_STEPS.indexOf(Number(v));
+  if (i < 0) return;
+  const f = i / (GEAR_STEPS.length - 1);   // 0=顶 1=底
+  $('gear-thumb').style.top = (f * 100) + '%';
+  $('gear-fill').style.height = (f * 100) + '%';
+  $('gear-thumb').textContent = GEAR_STEPS[i] > 0 ? 'D' : 'N';
+  for (const el of document.querySelectorAll('.gear-label'))
+    el.classList.toggle('active', Number(el.dataset.v) === GEAR_STEPS[i]);
+  const input = $('manual-throttle');
+  input.value = String(GEAR_STEPS[i]);
+  $('manual-throttle-out').textContent = gearLabel(input.value);
+}
+(() => {
+  const slider = $('gear-slider');
+  let dragging = false;
+  let rectCache = null;   // 拖动期间缓存 getBoundingClientRect：每次 pointermove
+                          // 都读布局会与样式写入交错（layout thrashing）
+  const pick = (ev) => {
+    const rect = rectCache || (rectCache = slider.getBoundingClientRect());
+    const f = Math.min(1, Math.max(0, (ev.clientY - rect.top) / rect.height));
+    applyGear(GEAR_STEPS[Math.round(f * (GEAR_STEPS.length - 1))]);
+  };
+  slider.addEventListener('pointerdown', (ev) => {
+    dragging = true;
+    rectCache = slider.getBoundingClientRect();
+    try { slider.setPointerCapture(ev.pointerId); } catch (_) {}
+    pick(ev);
+  });
+  slider.addEventListener('pointermove', (ev) => { if (dragging) pick(ev); });
+  for (const name of ['pointerup', 'pointercancel']) {
+    slider.addEventListener(name, () => { dragging = false; rectCache = null; });
+  }
+  for (const el of document.querySelectorAll('.gear-label')) {
+    el.addEventListener('click', () => applyGear(el.dataset.v));
+  }
+  applyGear($('manual-throttle').value || 0.4);
+})();
+
+/* ---- 键盘驾驶：W/S 前后、A/D 转向、空格手刹；松开即停车。
+ * 复用 manualStart/manualStop 会话语义（心跳、0.35s 超时、失焦停车
+ * 全部继承）；换方向 = 停旧开新，方向按键按下时高亮对应方向按钮。 ---- */
+const KEY_DIR = { KeyW: 'forward', ArrowUp: 'forward',
+                  KeyS: 'reverse', ArrowDown: 'reverse',
+                  KeyA: 'left', ArrowLeft: 'left',
+                  KeyD: 'right', ArrowRight: 'right' };
+let keyDirection = null;
+document.addEventListener('keydown', (ev) => {
+  const dir = KEY_DIR[ev.code];
+  if (!dir || ev.repeat) return;
+  const el = document.activeElement;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT'
+             || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+  if (curPage !== 'control' || !manualAuthenticated) return;
+  ev.preventDefault();                      // 方向键不许滚动页面
+  if (manualActive && keyDirection === dir) return;
+  if (manualActive) manualStop('切换方向');  // 旧会话先停
+  const entry = PAD.find(([, d]) => d === dir);
+  if (manualStart('hold', dir, entry ? $(entry[0]) : null)) keyDirection = dir;
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.code !== 'Space' || ev.repeat) return;
+  const el = document.activeElement;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT'
+             || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+  if (curPage !== 'control' || !manualAuthenticated) return;
+  ev.preventDefault();
+  if (manualActive) manualStop('手刹');
+});
+document.addEventListener('keyup', (ev) => {
+  const dir = KEY_DIR[ev.code];
+  if (!dir) return;
+  if (manualActive && keyDirection === dir) {
+    keyDirection = null;
+    manualStop('松开');
+  }
+});
+$('manual-timed').onclick = () => manualStart('timed', $('manual-direction').value);
+$('manual-stop').onclick = () => manualStop('紧急停车');
+window.addEventListener('blur', () => { if (manualActive) manualStop('窗口失焦'); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && manualActive) manualStop('页面切到后台');
+  /* 页签切后台时浏览器不渲染画布：雷达重绘与视频流一并暂停，
+     回前台按控制页原条件恢复（efficient-background-processing：
+     不被渲染的 canvas 动画/高频数据流应停则停，省手机电量与流量）。 */
+  if (document.hidden) {
+    stopRadarTimer();
+    closeVideo();
+  } else if (curPage === 'control' && manualAuthenticated) {
+    startRadarTimer();
+    drawRadar();
+    drawMinimap();
+    openVideo();
+  } else if (curPage === 'map') {
+    /* 地图页免登录实时页：回前台同样恢复视频连接（点云/栅格） */
+    renderMap();
+    openVideo();
+  }
+});
+window.addEventListener('pagehide', () => {
+  if (manualActive) manualStop();
+  stopMotionLicense();
+});
+
+window.addEventListener('resize', () => {
+  if (lastCam && curPage === 'control') drawCam();
+  if (curPage === 'control') drawRadar();
+});
+
+/* ---- 日志 ----
+ * 记录所有"状态发生变化"的事实：节点上下线、传感器断流、底盘与电池
+ * 状态、任务变化、参数来源变化。传感器明细在勾选后展开成独立行。
+ */
+function pushLog(m) {
+  const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  const add = (src, msg, level) => {
+    logRows.unshift({ ts, src, msg, level });
+    if (logRows.length > MAX_LOGS) logRows.length = MAX_LOGS;
+  };
+  const changed = (key, val, text, level) => {
+    if (logPrev[key] === val) return;
+    const first = logPrev[key] === undefined;
+    logPrev[key] = val;
+    if (!first || val !== 'online') add('节点', text, level);
+  };
+  const nd = m.nodes || {};
+  const imu = m.imu || {};
+  const camOn = m.image === 'fresh' ? 'online' : 'offline';
+  changed('cam', camOn, camOn === 'online' ? '摄像头在线，画面实时' : '摄像头画面中断', camOn === 'online' ? 'good' : 'warn');
+  changed('lidar', nd.lidar_node, nd.lidar_node === 'online' ? '雷达节点在线（' + (m.scan_hz || 0).toFixed(0) + ' Hz 扫描）' : '雷达节点离线', nd.lidar_node === 'online' ? 'good' : 'warn');
+  changed('bridge', nd.c50c_uart3_node, nd.c50c_uart3_node === 'online' ? '底盘桥在线，参数已核对' : '底盘桥离线，参数显示为本地启动值', nd.c50c_uart3_node === 'online' ? 'good' : 'bad');
+  changed('chassis', (m.chassis || {}).state, '底盘状态：' + ((m.chassis || {}).state === 'fresh' ? '在线' : (m.chassis || {}).state === 'stale' ? '数据过期' : '无数据'), (m.chassis || {}).state === 'fresh' ? 'good' : 'warn');
+  changed('imu', imu.state, imu.state === 'fresh' ? 'IMU 数据流正常' : 'IMU 无数据', imu.state === 'fresh' ? 'good' : 'warn');
+  changed('task', (m.task || {}).state, '任务状态：' + ((m.task || {}).text || '无任务'), (m.task || {}).state === 'idle' ? '' : 'good');
+  changed('src', (m.safety || {}).source, '安全参数来源：' + ((m.safety || {}).source || '--'), (m.safety || {}).online ? 'good' : 'warn');
+  changed('diag', m.lidar_diag, '雷达诊断：' + (m.lidar_diag || '--') + (m.lidar_reason ? '，' + m.lidar_reason : ''), m.lidar_diag === 'error' ? 'bad' : m.lidar_diag === 'ok' ? 'good' : 'warn');
+  changed('boot', m.boot && m.boot.initializing ? 'init' : 'done',
+    m.boot && m.boot.initializing ? '开机初始化：底盘静止等待中' : '开机初始化已结束', '');
+  if ($('log_all').checked) {
+    const net = m.network || {};
+    const host = m.host || {};
+    const c = m.chassis || {};
+    add('传感器', '摄像头 ' + fmt(m.image_fps, 1) + ' fps，雷达有效点 '
+      + (m.scan_valid || 0) + '，IMU ' + fmt(imu.hz, 1) + ' Hz', '');
+    add('底盘', '车速 ' + fmt(c.vx_m_s, 2) + ' m/s，偏航 '
+      + fmt(c.wz_rad_s, 2) + ' rad/s，电压 ' + fmt(c.voltage_v, 2)
+      + ' V，里程 ' + fmt(c.mileage_m, 1) + ' m', '');
+    add('主机', 'CPU ' + fmt(host.cpu_pct, 0) + '%，温度 '
+      + fmt(host.temp_c, 1) + ' °C，WiFi ' + (net.ssid || '--') + ' '
+      + (net.signal_dbm || '--') + ' dBm', '');
+  }
+  if (curPage === 'logs') renderLogs();
+}
+function renderLogs() {
+  const box = $('loglist');
+  $('log_count').textContent = logRows.length + ' 条';
+  if (!logRows.length) {
+    box.innerHTML = '<div class="logempty">暂无日志。</div>';
+    return;
+  }
+  const lvText = { good: '正常', warn: '注意', bad: '故障', '': '信息' };
+  box.innerHTML = logRows.map((r) =>
+    '<div class="logrow ' + (r.level || '') + '">'
+    + '<span class="ts">' + r.ts + '</span>'
+    + '<span class="lv">' + (lvText[r.level] || '信息') + '</span>'
+    + '<span class="src">' + r.src + '</span>'
+    + '<span class="msg">' + r.msg + '</span></div>').join('');
+}
+$('log_clear').onclick = () => {
+  logRows.length = 0; logPrev = {}; renderLogs();
+};
+$('log_all').onchange = () => { if (curPage === 'logs') renderLogs(); };
+
+/* 点云坐标在窗口尺寸变化后重画；静止点不依赖定时器重绘。
+ * 定时器只在控制页运行：离开后停掉，避免后台空转。 */
+let radarTimer = null;
+function startRadarTimer() {
+  if (radarTimer) return;
+  radarTimer = setInterval(() => {
+    if (curPage === 'control' && cloud.length) { drawRadar(); drawMinimap(); }
+  }, 500);
+}
+function stopRadarTimer() {
+  if (radarTimer) { clearInterval(radarTimer); radarTimer = null; }
+}
+
+/* ---- 启动 ---- */
+onHashChange();
+connect();
+</script>
+</body>
+</html>

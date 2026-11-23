@@ -1,0 +1,214 @@
+/* =====================================================================
+ * C50C tokens.css — light-dark() 色板 + linear() 弹簧曲线 + 排版变量
+ * 蓝图 §5.1/§5.2；dark-mode-toggle 规范：
+ *   <meta name="color-scheme"> 只是 presentational hint，作者 CSS 里的
+ *   color-scheme 声明会覆盖它 —— 必须把 meta 映射回 :root 才能生效。
+ * ===================================================================== */
+
+/* 主字体：HarmonyOS Sans SC（华为，官方声明免费商用）。
+ * 全量 woff2（Regular/Medium/Bold，约 13MB）构建期 include_bytes! 编进
+ * 二进制，运行时经 /fonts/*.woff2 长缓存下发——离线局域网可用，观感
+ * 全设备统一，不依赖系统装没装苹方。
+ * 字重区间映射：CSS 里的 500/550/600/650 一律落在 Medium（600/650 渲染
+ * 为 Medium，比系统 Semibold 柔），700/750 落 Bold；400 为 Regular。 */
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/HarmonyOSSansSC-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  font-style: normal;
+  font-weight: 500 650;
+  font-display: swap;
+  src: url("/fonts/HarmonyOSSansSC-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  font-style: normal;
+  font-weight: 700 900;
+  font-display: swap;
+  src: url("/fonts/HarmonyOSSansSC-Bold.woff2") format("woff2");
+}
+
+:root {
+  color-scheme: light dark; /* 基础声明必须保持 light dark，禁止硬编码单色 */
+
+  &:has(> head > meta[name="color-scheme"][content="dark"])  { color-scheme: dark; }
+  &:has(> head > meta[name="color-scheme"][content="light"]) { color-scheme: light; }
+}
+
+:root {
+  /* ---- 原始色值（light / dark 成对保存，便于组合与降级） ---- */
+  --bg-l:        #f5f6f8;
+  --bg2-l:       #eceef2;
+  --card-l:      #ffffff;
+  --line-l:      #e2e5eb;
+  --line2-l:     #d3d7e0;
+  --text-l:      #1b1e26;
+  --dim-l:       #697080;
+  --accent-l:    #4c66f5;
+  --accent2-l:   #7c93ff;
+  --ok-l:        #0f8a63;
+  --warn-l:      #b06f08;
+  --bad-l:       #cc3344;
+  --oksoft-l:    #0f8a6318;
+  --badsoft-l:   #cc334416;
+  --ghosthover-l:#1b1e260d;
+  --mapfree-l:   #e7ebf1;
+  --mapocc-l:    #262b36;
+
+  --bg-d:        #0d0e12;
+  --bg2-d:       #121319;
+  --card-d:      #17191f;
+  --line-d:      #262a33;
+  --line2-d:     #333947;
+  --text-d:      #e7e9ef;
+  --dim-d:       #8b92a5;
+  --accent-d:    #8ba2ff;
+  --accent2-d:   #6b83ff;
+  --ok-d:        #3ecf8e;
+  --warn-d:      #f0b04a;
+  --bad-d:       #ff5d6e;
+  --oksoft-d:    #3ecf8e1d;
+  --badsoft-d:   #ff5d6e1f;
+  --ghosthover-d:#e7e9ef12;
+  --mapfree-d:   #181c24;
+  --mapocc-d:    #dde2ec;
+
+  /* ---- 语义变量：优先 light-dark()，旧浏览器回退 media query ---- */
+  --bg:      var(--bg-l);
+  --bg2:     var(--bg2-l);
+  --card:    var(--card-l);
+  --line:    var(--line-l);
+  --line2:   var(--line2-l);
+  --text:    var(--text-l);
+  --dim:     var(--dim-l);
+  --accent:  var(--accent-l);
+  --accent2: var(--accent2-l);
+  --ok:      var(--ok-l);
+  --warn:    var(--warn-l);
+  --bad:     var(--bad-l);
+  --oksoft:  var(--oksoft-l);
+  --badsoft: var(--badsoft-l);
+  --ghosthover: var(--ghosthover-l);
+  --mapfree: var(--mapfree-l);
+  --mapocc:  var(--mapocc-l);
+
+  @media (prefers-color-scheme: dark) {
+    --bg:      var(--bg-d);
+    --bg2:     var(--bg2-d);
+    --card:    var(--card-d);
+    --line:    var(--line-d);
+    --line2:   var(--line2-d);
+    --text:    var(--text-d);
+    --dim:     var(--dim-d);
+    --accent:  var(--accent-d);
+    --accent2: var(--accent2-d);
+    --ok:      var(--ok-d);
+    --warn:    var(--warn-d);
+    --bad:     var(--bad-d);
+    --oksoft:  var(--oksoft-d);
+    --badsoft: var(--badsoft-d);
+    --ghosthover: var(--ghosthover-d);
+    --mapfree: var(--mapfree-d);
+    --mapocc:  var(--mapocc-d);
+  }
+
+  /* light-dark()（Baseline 2024-05）：跟随上面的 meta↔color-scheme 映射 */
+  @supports (color: light-dark(#000, #fff)) {
+    --bg:      light-dark(var(--bg-l), var(--bg-d));
+    --bg2:     light-dark(var(--bg2-l), var(--bg2-d));
+    --card:    light-dark(var(--card-l), var(--card-d));
+    --line:    light-dark(var(--line-l), var(--line-d));
+    --line2:   light-dark(var(--line2-l), var(--line2-d));
+    --text:    light-dark(var(--text-l), var(--text-d));
+    --dim:     light-dark(var(--dim-l), var(--dim-d));
+    --accent:  light-dark(var(--accent-l), var(--accent-d));
+    --accent2: light-dark(var(--accent2-l), var(--accent2-d));
+    --ok:      light-dark(var(--ok-l), var(--ok-d));
+    --warn:    light-dark(var(--warn-l), var(--warn-d));
+    --bad:     light-dark(var(--bad-l), var(--bad-d));
+    --oksoft:  light-dark(var(--oksoft-l), var(--oksoft-d));
+    --badsoft: light-dark(var(--badsoft-l), var(--badsoft-d));
+    --ghosthover: light-dark(var(--ghosthover-l), var(--ghosthover-d));
+    --mapfree: light-dark(var(--mapfree-l), var(--mapfree-d));
+    --mapocc:  light-dark(var(--mapocc-l), var(--mapocc-d));
+  }
+
+  /* ---- linear() 物理弹簧曲线（蓝图 §5.2.2） ---- */
+  --spring-snappy: linear(
+    0, 0.0086 9.62%, 0.0442 19.25%, 0.1172 28.87%, 0.2188 38.5%,
+    0.3401 48.13%, 0.4589 57.75%, 0.5531 65.38%, 0.6609 74.63%,
+    0.7952 88.13%, 0.8784 96.88%, 0.9437 106.25%, 1.0013 118.13%,
+    1.0213 128.75%, 1.0263 137.5%, 1.0241 147.5%, 1.0196 155.63%,
+    1.0119 168.13%, 1.0077 177.5%, 1.0062 188.75%, 1.0073 202.5%,
+    1.008 215%, 1.0054 242.5%, 1.0045 262.5%, 1
+  );
+  --spring-gentle: linear(
+    0, 0.0022 12.5%, 0.0091 23.13%, 0.0212 33.13%, 0.0392 42.5%,
+    0.0643 51.88%, 0.1002 61.25%, 0.1466 70%, 0.2131 79.38%,
+    0.2939 88.13%, 0.3801 96.25%, 0.5024 106.88%, 0.5895 115.63%,
+    0.6673 124.38%, 0.7603 135%, 0.8626 148.13%, 0.9188 157.5%,
+    0.9655 168.13%, 0.9951 179.38%, 1.0103 190.63%, 1.0143 201.25%,
+    1.0098 213.13%, 1.0039 226.88%, 1.0002 240%, 0.999 252.5%,
+    1.0002 270%, 1
+  );
+
+  /* ---- 排版与形状 ---- */
+  /* 主字体 HarmonyOS Sans SC（华为，官方声明免费商用）：woff2 构建期嵌进
+   * 二进制（/fonts/*.woff2，长缓存），全设备统一观感，不再依赖系统装没装苹方。
+   * 字重映射（@font-face 区间声明）：400→Regular；500/550/600/650→Medium
+   * （600/650 渲染为 Medium，比系统 Semibold 更柔——用户定版"字太粗太锋利"）；
+   * 700/750→Bold。 */
+  --font: "HarmonyOS Sans SC", -apple-system, "PingFang SC", "MiSans", "Microsoft YaHei", sans-serif;
+  /* 等宽位与主字体同族：HarmonyOS Sans 自带 tnum 特性，body 已开
+   * font-variant-numeric: tabular-nums，数字等宽成立；系统等宽字体兜底 */
+  --mono: "HarmonyOS Sans SC", ui-monospace, "SF Mono", Consolas, monospace;
+  /* 字号三级刻度（用户定版：小 14 / 中 24 / 大 48，约 2x 步进——
+   * 全站 font-size 只准取这三档，别再引入 12/13/16 这类杂值）：
+   * s=正文/标签/辅助行，m=键值读数/结论行/页标题，l=大数字（电池） */
+  --fs-s: 14px;
+  --fs-m: 24px;
+  --fs-l: 48px;
+  /* 入场专用快启动缓出：spring 系曲线前半程进度近零，进场会"僵半拍再弹" */
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --radius:    20px;
+  /* 同心圆角：卡内一层控件的半径 = 卡半径 − 卡 padding(14px)，与外角共用圆心 */
+  --radius-s:  calc(var(--radius) - 14px);
+  --sidebar-w: 188px;
+  --spot: color-mix(in oklab, var(--accent) 16%, transparent);
+  --spot-surface: color-mix(in oklab, var(--accent) 7%, transparent);
+
+  /* 多层阴影边框（视觉规范：1px 环线 + 接触影 + 环境影 + 顶部内高光，替代单线 border）。
+     环线层严禁塞进 token：custom property 的 var() 在 :root 计算该 token 时就按
+     :root 的值解析固化后继承，元素级 --ring-c 覆盖（primary 透明 / active accent /
+     卡内抑制）传不进去（实测 2026-11-21）。token 只存不含 var() 的"余量层"，
+     环线层在消费处直接写 0 0 0 1px var(--ring-c, var(--line))。 */
+  --elev-card-rest:
+    0 1px 2px color-mix(in oklab, #000 9%, transparent),
+    0 12px 32px -10px color-mix(in oklab, #000 18%, transparent),
+    inset 0 1px 0 color-mix(in oklab, #fff 5%, transparent);
+  --elev-ctl-rest:
+    0 1px 2px color-mix(in oklab, #000 7%, transparent);
+}
+
+/* 主题图标：双状态按钮（系统当前态 + 覆盖态），由 meta 驱动显隐 ——
+   无 JS 也能跟随系统保持正确（dark-mode-toggle 规范）。
+   meta 有三个合法值：显式 "light"/"dark"，以及「跟随系统」时的 "light dark"
+   ——第三态用媒体查询补齐显隐（此前漏了它，跟随系统时日/月同时显示）。 */
+:root:has(> head > meta[name="color-scheme"][content="dark"])  .ico-sun  { display: none; }
+:root:has(> head > meta[name="color-scheme"][content="dark"])  .ico-moon { display: block; }
+:root:has(> head > meta[name="color-scheme"][content="light"]) .ico-sun  { display: block; }
+:root:has(> head > meta[name="color-scheme"][content="light"]) .ico-moon { display: none; }
+
+@media (prefers-color-scheme: light) {
+  :root:has(> head > meta[name="color-scheme"][content="light dark"]) .ico-sun  { display: block; }
+  :root:has(> head > meta[name="color-scheme"][content="light dark"]) .ico-moon { display: none; }
+}
+@media (prefers-color-scheme: dark) {
+  :root:has(> head > meta[name="color-scheme"][content="light dark"]) .ico-sun  { display: none; }
+  :root:has(> head > meta[name="color-scheme"][content="light dark"]) .ico-moon { display: block; }
+}

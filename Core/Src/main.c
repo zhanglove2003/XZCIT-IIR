@@ -1,230 +1,84 @@
-/* USER CODE BEGIN Header */
-/**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
-/* USER CODE END Header */
-/* Includes ------------------------------------------------------------------*/
-#include "main.h"
-#include "cmsis_os.h"
-#include "adc.h"
-#include "i2c.h"
-#include "tim.h"
-#include "usart.h"
-#include "usb_host.h"
-#include "gpio.h"
+/***********************************************
+公司：轮趣科技（东莞）有限公司
+品牌：WHEELTEC
+官网：wheeltec.net
+淘宝店铺：shop114407458.taobao.com 
+速卖通: https://minibalance.aliexpress.com/store/4455017
+版本：V1.01
+修改时间：2024-06-25
 
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
+Company: WHEELTEC Co.Ltd
+Brand: WHEELTEC
+Website: wheeltec.net
+Taobao shop: shop114407458.taobao.com 
+Aliexpress: https://minibalance.aliexpress.com/store/4455017
+Version: V1.01
+Update：2024-06-25
 
-/* USER CODE END Includes */
+All rights reserved
+***********************************************/
+#include "system.h"
+#include "hc_sr04.h"
 
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
+//Task priority    //任务优先级
+#define START_TASK_PRIO	1
 
-/* USER CODE END PTD */
+//Task stack size //任务堆栈大小	
+#define START_STK_SIZE 	512  
 
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
+//Task handle     //任务句柄
+TaskHandle_t StartTask_Handler;
 
-/* USER CODE END PD */
+TaskHandle_t g_reportErrTaskHandle = NULL;
 
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
+//Task function   //任务函数
+void start_task(void *pvParameters);
+void ReportErrTask(void* param);
 
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
-
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
-void SystemClock_Config(void);
-void MX_FREERTOS_Init(void);
-/* USER CODE BEGIN PFP */
-
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
+//Main function //主函数
 int main(void)
+{ 
+	systemInit(); //Hardware initialization //硬件初始化
+
+	//Create the start task //创建开始任务
+	xTaskCreate((TaskFunction_t )start_task,            //Task function   //任务函数
+							(const char*    )"start_task",          //Task name       //任务名称
+							(uint16_t       )START_STK_SIZE,        //Task stack size //任务堆栈大小
+							(void*          )NULL,                  //Arguments passed to the task function //传递给任务函数的参数
+							(UBaseType_t    )START_TASK_PRIO,       //Task priority   //任务优先级
+							(TaskHandle_t*  )&StartTask_Handler);   //Task handle     //任务句柄    					
+	vTaskStartScheduler();  //Enables task scheduling //开启任务调度	
+}
+ 
+//Start task task function //开始任务任务函数
+void start_task(void *pvParameters)
 {
+    taskENTER_CRITICAL(); //Enter the critical area //进入临界区
+	
+    //Create the task //创建任务
+	xTaskCreate(Balance_task,  "Balance_task",  BALANCE_STK_SIZE,  NULL, BALANCE_TASK_PRIO,  NULL);	//Vehicle motion control task //小车运动控制任务
+	xTaskCreate(show_task,     "show_task",     SHOW_STK_SIZE,     NULL, SHOW_TASK_PRIO,     NULL);  //User interaction tasks related to data display //与数据显示相关的用户交互任务
+	xTaskCreate(led_task,      "led_task",      LED_STK_SIZE,      NULL, LED_TASK_PRIO,      NULL);	 //LED light flashing task //LED灯闪烁任务
+	xTaskCreate(data_task,     "DATA_task",     DATA_STK_SIZE,     NULL, DATA_TASK_PRIO,     &data_TaskHandle); //Send data to each interface task
+	if(SysVal.HardWare_Ver==V1_0) 	//IMU data read task //IMU数据读取任务,根据不同的硬件版本启动不同的任务.
+	{
+		xTaskCreate(MPU6050_task,  "IMU_task",  IMU_STK_SIZE,  NULL, IMU_TASK_PRIO,  NULL);
+		xTaskCreate(pstwo_task,    "PSTWO_task",    PS2_STK_SIZE,      NULL, PS2_TASK_PRIO,      &show_TaskHandle);	 //Read the PS2 controller task //读取PS2手柄任务
+	}
 
-  /* USER CODE BEGIN 1 */
+	  //小车自检上报调试任务
+	  xTaskCreate(ReportErrTask,"ReportErrTask",128*4,NULL,osPriorityNormal,&g_reportErrTaskHandle);
+	/* [C50C 2026-11-15] Front HC-SR04 ultrasonic ranger task (PD8 trig,
+	 * PD9 echo). Non-critical: priority below BALANCE/DATA (4). */
+	xTaskCreate(HC_SR04_task,  "HC_SR04",  HC_SR04_STK_SIZE,  NULL,  HC_SR04_TASK_PRIO,  NULL);
+	
+    vTaskDelete(StartTask_Handler); //Delete the start task //删除开始任务
 
-  /* USER CODE END 1 */
-
-  /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
-  SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_ADC1_Init();
-  MX_I2C1_Init();
-  MX_TIM8_Init();
-  MX_UART4_Init();
-  MX_USART1_UART_Init();
-  MX_USART3_UART_Init();
-  MX_TIM2_Init();
-  MX_TIM3_Init();
-  MX_TIM4_Init();
-  MX_TIM5_Init();
-  /* USER CODE BEGIN 2 */
-
-  /* USER CODE END 2 */
-
-  /* Init scheduler */
-  osKernelInitialize();  /* Call init function for freertos objects (in cmsis_os2.c) */
-  MX_FREERTOS_Init();
-
-  /* Start scheduler */
-  osKernelStart();
-
-  /* We should never get here as control is now taken by the scheduler */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-  }
-  /* USER CODE END 3 */
+    taskEXIT_CRITICAL();            //Exit the critical section//退出临界区
 }
 
-/**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  /** Configure the main internal regulator output voltage
-  */
-  __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-  /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLM = 8;
-  RCC_OscInitStruct.PLL.PLLN = 336;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-  RCC_OscInitStruct.PLL.PLLQ = 7;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
 
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
-  {
-    Error_Handler();
-  }
-}
 
-/* USER CODE BEGIN 4 */
-
-/* USER CODE END 4 */
-
-/**
-  * @brief  Period elapsed callback in non blocking mode
-  * @note   This function is called  when TIM6 interrupt took place, inside
-  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
-  * a global variable "uwTick" used as application time base.
-  * @param  htim : TIM handle
-  * @retval None
-  */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-  /* USER CODE BEGIN Callback 0 */
-
-  /* USER CODE END Callback 0 */
-  if (htim->Instance == TIM6)
-  {
-    HAL_IncTick();
-  }
-  /* USER CODE BEGIN Callback 1 */
-
-  /* USER CODE END Callback 1 */
-}
-
-/**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
-void Error_Handler(void)
-{
-  /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
-  /* USER CODE END Error_Handler_Debug */
-}
-#ifdef USE_FULL_ASSERT
-/**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
-void assert_failed(uint8_t *file, uint32_t line)
-{
-  /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-  /* USER CODE END 6 */
-}
-#endif /* USE_FULL_ASSERT */
