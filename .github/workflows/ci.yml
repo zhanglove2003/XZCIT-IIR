@@ -147,6 +147,60 @@ jobs:
           find Master -name "*.py" -type f -print0 | xargs -0 -n1 python3 -m py_compile
           echo "py_compile 通过。"
 
+      # ruff 是 Rust 编译出来的静态二进制，不依赖 Python 环境，也不依赖 ROS。
+      # 原先把它塞进 ros:humble-ros-base 容器里，apt 装 pip 再 pip 装 ruff，
+      # 实测单这一步耗时 119 秒，占 ros2-python 整个 Job 的 68%，而真正的
+      # colcon build 只要 2 秒、colcon test 只要 29 秒——纯属本末倒置。
+      # 挪到宿主机 + 官方预编译包，下载解压约 3 秒。
+      - name: 安装 ruff（官方静态二进制，不依赖 pip / apt）
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL "https://github.com/astral-sh/ruff/releases/latest/download/ruff-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin" --strip-components=1 ruff
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/ruff" --version
+
+      - name: ruff 静态检查（棘轮模式：只查本次变更的 .py）
+        # 存量代码上已有 84 个 F401/F811/F841（多为测试文件的未用导入），
+        # 全量检查会让门禁永远红。棘轮模式：新增/修改过的文件必须干净，
+        # 存量债务不拦截。想改全量时去掉 diff 逻辑直接传目录即可。
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="$PR_BASE_SHA"
+          elif [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            BASE="$BEFORE_SHA"
+          else
+            BASE="$(git hash-object -w -t tree /dev/null)"
+            echo "::warning::新分支首次推送，ruff 将扫描该分支引入的全部 .py。"
+          fi
+          if ! git cat-file -e "$BASE" 2>/dev/null; then
+            # 基准提交不在本地历史（浅克隆/强推等），退而求其次用上一个提交；
+            # 再不行就写入空树对象做全量 diff（-w 必须带上，否则对象不在库里）。
+            if BASE="$(git rev-parse -q --verify HEAD~1 2>/dev/null)"; then
+              echo "::warning::基准提交不可达，改用 HEAD~1 作 ruff 棘轮基准。"
+            else
+              BASE="$(git hash-object -w -t tree /dev/null)"
+              echo "::warning::首次提交，ruff 将扫描全部 .py。"
+            fi
+          fi
+          CHANGED="$(git diff --name-only --diff-filter=AM "$BASE" "$HEAD_SHA" \
+            | grep -E '\.py$' | grep -E '^(Master/ROS|Master/Web-Next/deploy)' || true)"
+          if [ -z "$CHANGED" ]; then
+            echo "本次变更不含目标 Python 文件，ruff 跳过。"
+            exit 0
+          fi
+          echo "棘轮检查以下文件："
+          echo "$CHANGED"
+          # shellcheck disable=SC2086
+          ruff check --select F401,F811,F841 $(echo "$CHANGED" | tr '\n' ' ')
+
   # ── Rust Web-Next（独立 Axum 后端，非 rclrs）────────────────────
   rust-web-next:
     name: rust-web-next
@@ -277,62 +331,13 @@ jobs:
       GIT_CONFIG_KEY_0: "safe.directory"
       GIT_CONFIG_VALUE_0: "*"
     steps:
+      # ruff 静态检查已整体挪到 hygiene Job（宿主机 + 官方静态二进制，约 3 秒）。
+      # 容器里那套 apt 装 pip、pip 装 ruff 的链路实测耗时 119 秒，占本 Job 的 68%，
+      # 而 colcon build 只要 2 秒、colcon test 只要 29 秒，完全不成比例。
+      # 本 Job 从此只负责 ROS 容器的构建与测试。
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # ruff 棘轮模式需要 diff 本次变更的文件
-
-      - name: 安装 ruff（colcon 缺失时兜底安装）
-        run: |
-          set -euo pipefail
-          # ros:humble-ros-base 不自带 pip（ros-base 不含 python3-pip），
-          # 容器内为 root，无需 sudo；Ubuntu 22.04 无 PEP 668 限制，pip3 可直装。
-          apt-get update -qq
-          apt-get install -y -qq python3-pip >/dev/null
-          pip3 install --quiet ruff
-          command -v colcon >/dev/null 2>&1 || {
-            apt-get install -y -qq --no-install-recommends \
-              python3-colcon-common-extensions >/dev/null
-          }
-
-      - name: ruff 静态检查（棘轮模式：只查本次变更的 .py）
-        # 存量代码上已有 84 个 F401/F811/F841（多为测试文件的未用导入），
-        # 全量检查会让门禁永远红。棘轮模式：新增/修改过的文件必须干净，
-        # 存量债务不拦截。想改全量时去掉 --diff 逻辑直接传目录即可。
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            BASE="$PR_BASE_SHA"
-          elif [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
-            BASE="$BEFORE_SHA"
-          else
-            BASE="$(git hash-object -w -t tree /dev/null)"
-            echo "::warning::新分支首次推送，ruff 将扫描该分支引入的全部 .py。"
-          fi
-          if ! git cat-file -e "$BASE" 2>/dev/null; then
-            # 基准提交不在本地历史（浅克隆/强推等），退而求其次用上一个提交；
-            # 再不行就写入空树对象做全量 diff（-w 必须带上，否则对象不在库里）。
-            if BASE="$(git rev-parse -q --verify HEAD~1 2>/dev/null)"; then
-              echo "::warning::基准提交不可达，改用 HEAD~1 作 ruff 棘轮基准。"
-            else
-              BASE="$(git hash-object -w -t tree /dev/null)"
-              echo "::warning::首次提交，ruff 将扫描全部 .py。"
-            fi
-          fi
-          CHANGED="$(git diff --name-only --diff-filter=AM "$BASE" "$HEAD_SHA" \
-            | grep -E '\.py$' | grep -E '^(Master/ROS|Master/Web-Next/deploy)' || true)"
-          if [ -z "$CHANGED" ]; then
-            echo "本次变更不含目标 Python 文件，ruff 跳过。"
-            exit 0
-          fi
-          echo "棘轮检查以下文件："
-          echo "$CHANGED"
-          # shellcheck disable=SC2086
-          ruff check --select F401,F811,F841 $(echo "$CHANGED" | tr '\n' ' ')
+          fetch-depth: 1   # 基线比对只读工作区文件，不依赖 git 历史
 
       # 注意：不能用 set -u，ROS 的 setup.bash 引用了未定义变量
       # （AMENT_TRACE_SETUP_FILES 等），-u 会直接炸。GitHub 默认 shell
