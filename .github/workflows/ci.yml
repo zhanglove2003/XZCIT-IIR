@@ -257,6 +257,14 @@ jobs:
     defaults:
       run:
         shell: bash   # 镜像默认 shell 是 sh，不认识 set -o pipefail
+    env:
+      # 容器以 root 运行，而 checkout 出来的工作区属主是 runner 用户（uid 1001），
+      # git 会报 "detected dubious ownership" 并以 exit 128 中断。
+      # 用 GIT_CONFIG_* 环境变量注入 safe.directory（Git 2.31+），
+      # 避免写 /github/home/.gitconfig 时撞上该目录不可写的权限问题。
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: "safe.directory"
+      GIT_CONFIG_VALUE_0: "*"
     steps:
       - uses: actions/checkout@v4
         with:
