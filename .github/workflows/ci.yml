@@ -291,11 +291,18 @@ jobs:
           elif [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
             BASE="$BEFORE_SHA"
           else
-            BASE="$(git hash-object -t tree /dev/null)"
+            BASE="$(git hash-object -w -t tree /dev/null)"
             echo "::warning::新分支首次推送，ruff 将扫描该分支引入的全部 .py。"
           fi
           if ! git cat-file -e "$BASE" 2>/dev/null; then
-            BASE="$(git hash-object -t tree /dev/null)"
+            # 基准提交不在本地历史（浅克隆/强推等），退而求其次用上一个提交；
+            # 再不行就写入空树对象做全量 diff（-w 必须带上，否则对象不在库里）。
+            if BASE="$(git rev-parse -q --verify HEAD~1 2>/dev/null)"; then
+              echo "::warning::基准提交不可达，改用 HEAD~1 作 ruff 棘轮基准。"
+            else
+              BASE="$(git hash-object -w -t tree /dev/null)"
+              echo "::warning::首次提交，ruff 将扫描全部 .py。"
+            fi
           fi
           CHANGED="$(git diff --name-only --diff-filter=AM "$BASE" "$HEAD_SHA" \
             | grep -E '\.py$' | grep -E '^(Master/ROS|Master/Web-Next/deploy)' || true)"
@@ -308,23 +315,23 @@ jobs:
           # shellcheck disable=SC2086
           ruff check --select F401,F811,F841 $(echo "$CHANGED" | tr '\n' ' ')
 
+      # 注意：不能用 set -u，ROS 的 setup.bash 引用了未定义变量
+      # （AMENT_TRACE_SETUP_FILES 等），-u 会直接炸。GitHub 默认 shell
+      # 已带 -e -o pipefail，这里不重复 set。
       - name: colcon build
         run: |
-          set -euo pipefail
           source /opt/ros/humble/setup.bash
           cd Master/ROS/ros2_ws
           colcon build --symlink-install
 
       - name: colcon test
         run: |
-          set -euo pipefail
           source /opt/ros/humble/setup.bash
           source install/setup.bash
           colcon test --event-handlers console_direct-
 
       - name: colcon test-result（skip 不算失败，failure 才失败）
         run: |
-          set -euo pipefail
           cd Master/ROS/ros2_ws
           colcon test-result --verbose
 
