@@ -118,8 +118,12 @@
         break;
       case 'ultrasonic_status':
       case 'relocalize_status':
-      case 'sensor_status':
         Store.emit('toast', { kind: m.ok ? 'ok' : 'bad', message: m.message || '' });
+        break;
+      case 'sensor_status':
+        // 通用 toast 之外再广播整帧（音量回执带板端回读值，app.js 用它定值）
+        Store.emit('toast', { kind: m.ok ? 'ok' : 'bad', message: m.message || '' });
+        Store.emit('sensor_reply', m);
         break;
       case 'patrol_status':
         Store.emit('patrol_reply', m);

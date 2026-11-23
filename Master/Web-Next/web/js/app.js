@@ -31,6 +31,12 @@
     if (box) box.style.setProperty('--spk-ratio', s);
   }
 
+  /** 喇叭音量的本地待定值：状态帧里的 audio.volume 来自板端 5 s 一轮的
+   *  设备快照，刚调完音量时还是旧值，不能让它把界面打回去。
+   *  { v: 想要的值, t: 时间, sent: 是否已发命令 }——音量回执定值后
+   *  sent 清掉；状态帧追上 v 或 8 s 超时即整个清除，恢复常规回写。 */
+  var spkPend = null;
+
   /** 写文本：与上次相同则跳过 DOM 写入（蓝图 §5.2.4） */
   function T(el, text) {
     if (!el) return;
@@ -605,13 +611,33 @@
     });
     var vol = $('spk-vol');
     vol.addEventListener('input', function () {
+      spkPend = { v: Number(vol.value), t: Date.now() };
       T($('spk-vol-v'), vol.value + '%');
       vol.setAttribute('aria-valuetext', vol.value + '%');
       syncSpkFill(vol);
     });
     vol.addEventListener('change', function () {
       if (!requireAuth('调节音量')) return;
+      spkPend = { v: Number(vol.value), t: Date.now(), sent: true };
       C.WS.send({ t: 'speaker_volume', volume: Number(vol.value) });
+    });
+    Store.on('sensor_reply', function (m) {
+      // 音量命令的回执带板端回读真值（amixer 会取整到原始刻度），
+      // 到手立刻定值，不等 5 s 快照；只认最近一次已发送的调整，
+      // 拖动中途（sent 已被 input 刷掉）的旧回执不抢。
+      // 失败回执 volume 为 null，也要清 pending 让状态帧恢复板端真值
+      if (!m) return;
+      if (!m.ok) {
+        if (spkPend && spkPend.sent) spkPend = null;
+        return;
+      }
+      if (typeof m.volume !== 'number') return;
+      if (!spkPend || !spkPend.sent) return;
+      spkPend = { v: m.volume, t: Date.now() };
+      vol.value = m.volume;
+      vol.setAttribute('aria-valuetext', m.volume + '%');
+      T($('spk-vol-v'), m.volume + '%');
+      syncSpkFill(vol);
     });
     $('btn-nav-cancel').addEventListener('click', function () {
       if (!requireAuth('取消导航')) return;
@@ -1217,7 +1243,10 @@
       setB($('sn-mic-st'), '无数据', null);
     }
     // 喇叭音量：没检测到喇叭就置灰，避免对着空设备调音量自我安慰；
-    // 用户正在拖动的这半秒不回写，防止状态帧把滑块弹回去
+    // 用户正在拖动的这半秒不回写，防止状态帧把滑块弹回去。
+    // audio.volume 是板端 5 s 一轮的快照，刚调完音量时还是旧值——
+    // spkPend 未清（回执定值 / 状态帧追上 / 8 s 超时）前整块不回写，
+    // 否则数字会被旧值压住「等一会儿才变」。
     var spkVol = $('spk-vol');
     var spkBtn = $('btn-spk-test');
     if (spkVol) {
@@ -1225,11 +1254,15 @@
       if (spkBtn) spkBtn.disabled = !spkOn;
       var volVal = audio && typeof audio === 'object' ? audio.volume : null;
       if (typeof volVal === 'number') {
-        if (document.activeElement !== spkVol) spkVol.value = volVal;
-        spkVol.setAttribute('aria-valuetext', volVal + '%');
-        syncSpkFill(spkVol);
-        T($('spk-vol-v'), volVal + '%');
+        if (spkPend && (volVal === spkPend.v || Date.now() - spkPend.t > 8000)) spkPend = null;
+        if (!spkPend) {
+          if (document.activeElement !== spkVol) spkVol.value = volVal;
+          spkVol.setAttribute('aria-valuetext', volVal + '%');
+          syncSpkFill(spkVol);
+          T($('spk-vol-v'), volVal + '%');
+        }
       } else {
+        spkPend = null;
         spkVol.setAttribute('aria-valuetext', '不可用');
         T($('spk-vol-v'), '—');
       }
