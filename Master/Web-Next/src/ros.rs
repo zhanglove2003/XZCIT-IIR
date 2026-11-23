@@ -2254,6 +2254,7 @@ mod tests {
 
         let _guard = guard();
         init_all();
+        queue_slot().st.lock().unwrap().ring.clear();
         let hub = safety::global();
         {
             // 登记一个已登录连接并接管手动（直接操作 Control，等价
@@ -2348,6 +2349,7 @@ mod tests {
         // guard_authorize(false) + nav_cancel 并锁停。
         let _guard = guard();
         init_all();
+        queue_slot().st.lock().unwrap().ring.clear();
         let hub = safety::global();
         let now = safety::now_ms();
         {
@@ -2505,6 +2507,7 @@ mod tests {
 
         let _guard = guard();
         init_all();
+        queue_slot().st.lock().unwrap().ring.clear();
         let hub = safety::global();
         {
             let mut ctl = hub.control.lock().unwrap();
@@ -2668,6 +2671,7 @@ mod tests {
     fn test_cancel_nav_goal_clears_failed_and_active_goal() {
         let _guard = guard();
         init_all();
+        queue_slot().st.lock().unwrap().ring.clear();
         let hub = safety::global();
         // 1) 残留 failed 状态 + goal → cancel_nav_goal 必须清零并回到 idle
         {
@@ -2720,6 +2724,7 @@ mod tests {
     fn test_cancel_nav_goal_stops_patrol_and_prevents_redispatch() {
         let _guard = guard();
         init_all();
+        queue_slot().st.lock().unwrap().ring.clear();
         let hub = safety::global();
         {
             let mut ctl = hub.control.lock().unwrap();

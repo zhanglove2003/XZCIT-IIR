@@ -206,12 +206,12 @@ pub fn capture_device() -> Option<CaptureTarget> {
     select_capture_device(&cards, &capture_pcms, es8388_card())
 }
 
-/// 探测一次：喇叭挂 es8388 编解码器，外置矩阵麦克风通过 `is_usb_mic_card`
-/// 识别（排除板载 es8388 空悬输入与 USB 摄像头无效音频端点）。
+/// 探测一次：喇叭挂 es8388 编解码器（`pcmC*D*p`），外置矩阵麦克风通过
+/// `is_usb_mic_card` 识别（排除板载 es8388 空悬输入与 USB 摄像头无效音频端点）。
 fn collect() -> Value {
     let es = card_of("es8388");
     let cards = cards_in("/proc/asound/cards");
-    let (mut speaker, mut mic_board, mut mic_usb) = (false, false, false);
+    let (mut speaker, mut mic_usb) = (false, false);
     let entries = match std::fs::read_dir("/dev/snd") {
         Ok(e) => e,
         Err(_) => return Value::Null,
@@ -226,8 +226,6 @@ fn collect() -> Value {
             if is_es {
                 speaker = true;
             }
-        } else if is_es {
-            mic_board = true;
         } else if is_usb_mic_card(card, es, &cards) {
             mic_usb = true;
         }
@@ -236,7 +234,7 @@ fn collect() -> Value {
     // 缓存，探测不再 fork 进程）；读不到（本机无 amixer，如开发机 fake
     // 模式）就回 null，前端显示「—」并把滑块置灰，绝不瞎猜百分比。
     let volume = crate::speaker::cached_volume().map_or(Value::Null, |v| json!(v));
-    json!({ "speaker": speaker, "mic_board": mic_board, "mic_usb": mic_usb, "volume": volume })
+    json!({ "speaker": speaker, "mic_usb": mic_usb, "volume": volume })
 }
 
 #[cfg(test)]

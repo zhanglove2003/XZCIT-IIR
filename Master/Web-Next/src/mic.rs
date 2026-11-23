@@ -266,44 +266,6 @@ pub fn analyze_and_normalize_pcm16(raw_pcm: &[u8]) -> (Vec<u8>, u16) {
     (out, peak)
 }
 
-/// 录音前自动设定板载 ES8388 采集路由与增益：
-/// 必须同时将 `Left PGA Mux` 与 `Right PGA Mux` 设为差分（`ADCCONTROL2 = 0xF8`）
-/// 才能激活 `Line 2` 差分麦放，避免单端悬空只录进底噪。
-fn configure_es8388_capture(card: u32) {
-    let card_s = card.to_string();
-    let steps: &[&[&str]] = &[
-        &["sset", "Capture Mute", "off"],
-        &["sset", "Capture Digital", "192"],
-        &["sset", "Main Mic", "on"],
-        &["sset", "Headset Mic", "off"],
-        &["sset", "ALC Capture NG", "off"],
-        &["sset", "ALC Capture Function", "Off"],
-        &["sset", "ADC Data Select", "Left Left"],
-        &["sset", "Differential Mux", "Line 2"],
-        &["sset", "Left PGA Mux", "DifferentialL"],
-        &["sset", "Right PGA Mux", "DifferentialR"],
-        &["sset", "Left Channel", "8"],
-        &["sset", "Right Channel", "8"],
-    ];
-    for args in steps {
-        match Command::new("amixer")
-            .args(["-q", "-c", &card_s])
-            .args(*args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .output()
-        {
-            Ok(out) if !out.status.success() => {
-                let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                eprintln!("mic: amixer -c {card_s} {} 失败：{err}", args.join(" "));
-            }
-            Err(e) => eprintln!("mic: 无法执行 amixer：{e}"),
-            Ok(_) => {}
-        }
-    }
-}
-
 /// 录音前开启外置 USB 矩阵麦克风（如 Timesintelli `cafe:4110` 的 `'Mic',0` 与 `'Mic',1`）采集增益并解除静音。
 fn configure_usb_mic_capture(card: u32) {
     let card_s = card.to_string();
@@ -374,11 +336,7 @@ pub fn start_recording() -> Result<StartInfo, String> {
 
     let target = crate::audio::capture_device()
         .ok_or_else(|| "未检测到可用麦克风设备".to_string())?;
-    if target.label == "板载麦" {
-        configure_es8388_capture(target.card);
-    } else {
-        configure_usb_mic_capture(target.card);
-    }
+    configure_usb_mic_capture(target.card);
     let raw_path =
         std::env::temp_dir().join(format!("wbnext-mic-raw-{}.pcm", std::process::id()));
     let _ = std::fs::remove_file(&raw_path);
