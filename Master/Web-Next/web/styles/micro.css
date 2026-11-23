@@ -1,0 +1,397 @@
+/* =====================================================================
+ * C50C micro.css — 零重排聚光灯 / 3D 机械按压 / GPU 呼吸灯 / View Transitions
+ * 蓝图 §5.2：
+ *  - 卡片聚光灯坐标 (--mx/--my) 由 spotlight.js 以 ResizeObserver 预缓存
+ *    矩形计算，pointermove 只写两个 JS 变量，本文件只消费 CSS 变量；
+ *  - 一律使用独立 translate/scale/rotate 属性（非复合 transform），
+ *    动画全部走合成线程；曲线为 tokens.css 的 linear() 弹簧。
+ * ===================================================================== */
+
+/* ---------------- 卡片聚光灯（径向渐变表面光 + 边缘光） ---------------- */
+
+.card {
+  position: relative;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: 0 0 0 1px var(--ring-c, var(--line)), var(--elev-card-rest);
+  isolation: isolate;
+
+  > * { position: relative; z-index: 1; }
+
+  /* 表面聚光灯 */
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    background: radial-gradient(
+      260px circle at var(--mx, -600px) var(--my, -600px),
+      var(--spot-surface),
+      transparent 72%
+    );
+    opacity: 0;
+    transition: opacity 0.45s ease;
+    pointer-events: none;
+  }
+
+  /* 边缘聚光灯：mask 挖出 1px 环 */
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    padding: 1px;
+    background: radial-gradient(
+      220px circle at var(--mx, -600px) var(--my, -600px),
+      var(--spot),
+      transparent 72%
+    );
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 0.45s ease;
+    pointer-events: none;
+  }
+
+  &.spot-on::before,
+  &.spot-on::after { opacity: 1; }
+}
+
+/* ---------------- 按钮：悬浮微抬升 + 3D 按压（独立变换属性） ---------------- */
+
+.btn {
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--card);
+  border-radius: var(--radius-s);
+  padding: 8px 14px;
+  cursor: pointer;
+  translate: 0 0;
+  scale: 1;
+  box-shadow: 0 0 0 1px var(--ring-c, var(--line)), var(--elev-ctl-rest);
+  transition:
+    translate var(--spring-snappy) 0.35s,
+    scale var(--spring-snappy) 0.35s,
+    background 0.15s ease,
+    box-shadow 0.2s ease;
+
+  &:hover:not(:disabled) {
+    translate: 0 -1.5px;
+    box-shadow: 0 0 0 1px var(--ring-c, var(--line)), 0 3px 9px color-mix(in oklab, #000 16%, transparent);
+    background: var(--ghosthover);
+  }
+
+  &:active:not(:disabled) {
+    translate: 0 2px;
+    scale: 0.96;
+    box-shadow: 0 0 0 1px var(--ring-c, var(--line));
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &.wide { width: 100%; }
+
+  &.primary {
+    background: var(--accent);
+    --ring-c: transparent;
+    color: #fff;
+  }
+
+  &.ghost {
+    background: var(--bg2);
+    box-shadow: 0 0 0 1px var(--ring-c, var(--line));
+    font-weight: 550;
+    color: var(--dim);
+
+    &:hover:not(:disabled) {
+      background: var(--ghosthover);
+      color: var(--text);
+    }
+  }
+
+  /* 紧急停止：常驻警示，不做抬升花活 */
+  &.estop {
+    background: var(--bad);
+    --ring-c: transparent;
+    color: #fff;
+    font-weight: 750;
+    letter-spacing: 0.2em;
+
+    &:hover:not(:disabled) { background: var(--bad); box-shadow: 0 3px 12px var(--badsoft), 0 3px 9px color-mix(in oklab, var(--bad) 35%, transparent); }
+  }
+
+  /* 录音进行中：红底白字高亮，与 ghost 基态同权重靠后序覆盖 */
+  &.rec-on {
+    background: var(--bad);
+    --ring-c: transparent;
+    color: #fff;
+    font-weight: 600;
+
+    &:hover:not(:disabled) {
+      background: var(--bad);
+      color: #fff;
+      box-shadow: 0 3px 12px var(--badsoft), 0 3px 9px color-mix(in oklab, var(--bad) 35%, transparent);
+    }
+  }
+}
+
+/* ---------------- 机械方向键：3D 按压反馈 ---------------- */
+
+.pad-key {
+  font-size: var(--fs-m);
+  font-weight: 700;
+  color: var(--text);
+  background: var(--card);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  translate: 0 0;
+  scale: 1;
+  rotate: 0deg;
+  box-shadow:
+    0 0 0 1px var(--ring-c, var(--line2)),
+    0 3px 0 var(--line2),
+    0 5px 10px color-mix(in oklab, #000 18%, transparent);
+  transition:
+    translate var(--spring-snappy) 0.28s,
+    scale var(--spring-snappy) 0.28s,
+    box-shadow 0.28s ease,
+    background 0.15s ease;
+
+  grid-column: 2;
+
+  &:hover:not(:disabled) {
+    translate: 0 -1px;
+    box-shadow:
+      0 0 0 1px var(--ring-c, var(--accent2)),
+      0 3px 0 var(--line2),
+      0 5px 10px color-mix(in oklab, #000 18%, transparent);
+  }
+
+  &:active:not(:disabled),
+  &.pressed {
+    translate: 0 3px;
+    scale: 0.94;
+    box-shadow: 0 0 0 1px var(--ring-c, var(--accent));
+    background: color-mix(in oklab, var(--accent) 14%, var(--card));
+  }
+
+  &:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* 键位布局 */
+  &#pad-fwd    { grid-column: 2; grid-row: 1; }
+  &#pad-left   { grid-column: 1; grid-row: 2; }
+  &#pad-right  { grid-column: 3; grid-row: 2; }
+  &#pad-rev    { grid-column: 2; grid-row: 2; }
+}
+
+/* ---------------- LED 呼吸灯（GPU opacity；尊重减弱动效） ---------------- */
+
+.led {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+  background: var(--dim);
+  opacity: 0.5;
+
+  &.on {
+    background: var(--ok);
+    opacity: 1;
+    box-shadow: 0 0 6px color-mix(in oklab, var(--ok) 60%, transparent);
+
+    @media (prefers-reduced-motion: no-preference) {
+      animation: breathe 2.6s ease-in-out infinite;
+    }
+  }
+
+  &.warn {
+    background: var(--warn);
+    opacity: 1;
+    box-shadow: 0 0 6px color-mix(in oklab, var(--warn) 60%, transparent);
+  }
+
+  &.bad {
+    background: var(--bad);
+    opacity: 1;
+  }
+}
+
+@keyframes breathe {
+  50% { opacity: 0.55; box-shadow: 0 0 2px color-mix(in oklab, var(--ok) 30%, transparent); }
+}
+
+.topbar .led { width: 11px; height: 11px; }
+
+/* ---------------- 开关（自动巡航） ---------------- */
+
+.switch-ui {
+  width: 40px;
+  height: 23px;
+  border-radius: 999px;
+  background: var(--bg2);
+  box-shadow: 0 0 0 1px var(--ring-c, var(--line2));
+  position: relative;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+  flex: none;
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: var(--dim);
+    translate: 0 0;
+    transition: translate var(--spring-snappy) 0.35s, background 0.2s ease;
+  }
+}
+
+.switch-row input:checked + .switch-ui {
+  background: color-mix(in oklab, var(--ok) 26%, var(--bg2));
+  --ring-c: var(--ok);
+
+  &::after { translate: 17px 0; background: var(--ok); }
+}
+
+.switch-row input:focus-visible + .switch-ui {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------------- Toast ---------------- */
+
+.toasts {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--card);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: var(--fs-s);
+  font-weight: 550;
+  box-shadow:
+    0 0 0 1px var(--ring-c, var(--line2)),
+    0 6px 22px color-mix(in oklab, #000 22%, transparent);
+  max-width: min(440px, 86vw);
+  overflow-wrap: anywhere;
+  translate: 0 8px;
+  scale: 0.97;
+  opacity: 0;
+  transition:
+    translate var(--spring-snappy) 0.4s,
+    scale var(--spring-snappy) 0.4s,
+    opacity 0.25s ease;
+
+  &.show { translate: 0 0; scale: 1; opacity: 1; }
+  &.bad { --ring-c: color-mix(in oklab, var(--bad) 55%, var(--line2)); }
+  &.ok  { --ring-c: color-mix(in oklab, var(--ok) 55%, var(--line2)); }
+}
+
+/* ---------------- 状态着色与模式态 ---------------- */
+
+.ok-t { color: var(--ok); }
+.bad-t { color: var(--bad); }
+.warn-t { color: var(--warn); }
+
+.btn.active {
+  --ring-c: var(--accent);
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg2));
+}
+
+/* 二次确认态（app.js ui_confirm）：按钮自己变色喊「再点一次」，
+ * 3 秒后自动还原。用 warn 色而不是 bad——还没执行，只是待确认。 */
+.btn.cfm {
+  --ring-c: var(--warn);
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 14%, var(--card));
+
+  &:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--warn) 20%, var(--card));
+  }
+}
+/* 全局停止是实心红钮，确认态要压过它自己的底色 */
+.btn.estop.cfm {
+  color: #fff;
+  background: color-mix(in oklab, var(--warn) 72%, #000);
+}
+
+/* ---------------- 错落进场：卡片按页内序号（--i，app.js boot 时写入）依次浮入
+ * 曲线用快启动缓出（--ease-out-soft）：卡片一出现立即移动，缓速落位；
+ * 位移/缩放收敛到 12px/0.985，动得更少才显得顺。 ---------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .page.active .card {
+    animation: card-in 0.5s var(--ease-out-soft) backwards;
+    animation-delay: calc(var(--i, 0) * 45ms + 40ms);
+  }
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+    scale: 0.985;
+  }
+}
+
+/* ---------------- View Transitions（路由/主题切换） ----------------
+ * 蓝图 §5.1：document.startViewTransition() 包裹主题切换与路由切换，
+ * 彻底避免全量 * { transition } 的数千节点样式重算。 */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.24s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+
+  .btn,
+  .pad-key,
+  .toast,
+  .switch-ui::after,
+  .theme-toggle .ico-sun,
+  .theme-toggle .ico-moon,
+  .bat-bar span {
+    transition-duration: 0s;
+  }
+}
+
+/* ---------------- 单层框规则 ----------------
+ * 卡片是视线穿过的唯一一层框；卡内控件一律不再叠加环线，
+ * 层次用底色（--bg2）与软阴影区分。焦点态 outline（可达性）除外。 */
+.card :is(.btn, .gear, .seg, input, select, .switch-ui, .pad-key) {
+  --ring-c: transparent;
+}

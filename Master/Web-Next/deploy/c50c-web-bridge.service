@@ -1,0 +1,48 @@
+# C50C Web-Next 桥接垫片（ros_bridge_shim.py，rclpy ↔ /bridge）——
+# systemd --user 单元草稿。
+#
+# 安装（板端 orangepi 用户执行，占位符 __SHIM__ / __TOKEN__ 部署时替换；
+# __TOKEN__ 必须与 c50c-web-next.service 的 OPI_BRIDGE_TOKEN 同一值）：
+#   sed -e "s|__SHIM__|/home/orangepi/web-next/ros_bridge_shim.py|" \
+#       -e "s/__TOKEN__/ab12.../" \
+#       c50c-web-bridge.service > ~/.config/systemd/user/c50c-web-bridge.service
+#   systemctl --user daemon-reload && systemctl --user enable --now c50c-web-bridge
+#
+# 铁律（契约 shimOutline⑩）：
+# - ExecStart 必须复刻 c50c-web.service 的环境来源模式：systemctl --user
+#   无登录 shell、不继承 AMENT_PREFIX_PATH/PYTHONPATH，裸 ExecStart=
+#   python3 bridge_shim.py 会在 import rclpy 处直接死、ros 模式整体起不来。
+# - 本进程为 orangepi 的 systemctl --user 用户单元：unit 内不得写 User=
+#   （User= 在用户 unit 中不被 systemd 支持，会导致 unit 加载失败——
+#   dds-watchdog.service:10-12 注释；进程归属安装用户）。
+# - 禁设任何 DDS domain 变量（板上默认 domain 0，设了必炸——
+#   dds-watchdog.service:16 注释 C1）。
+# - linger 由部署命令 loginctl enable-linger orangepi 提供
+#   （dds-watchdog.service:13-15，非 unit 文件能力）。
+# - OPI_BRIDGE_TOKEN 也可以改用文件形态（属主 orangepi、权限 0600，垫片
+#   读 ~/.config/opi-robot/bridge-token），环境变量优先。
+
+[Unit]
+Description=C50C web bridge shim (rclpy <-> Web-Next /bridge)
+# 上行目标是本机 Web-Next；DDS 依赖 ros2_ws 安装环境。
+After=network-online.target c50c-web-next.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 环境来源模式与 c50c-web.service ExecStart 同款（source 两级 setup.bash
+# 后 exec，bash 收到 SIGTERM 时 exec 链保证信号直达 python3 进程）。
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source /home/orangepi/ros2_ws/install/setup.bash && exec python3 __SHIM__ --server http://127.0.0.1:8088'
+Environment=OPI_BRIDGE_TOKEN=__TOKEN__
+Environment=HOME=/home/orangepi
+Restart=always
+RestartSec=3
+# rclpy 反序列化 100Hz 雷达帧常态吃 ~1 核：钉到 4 个 1.8GHz 小核（RK3588
+# cpu0-3=A55，cpu4-7=A76 实测 2026-11-21），把大核完整留给 nav2 运动栈
+CPUAffinity=0 1 2 3
+TimeoutStopSec=5
+StandardOutput=append:/tmp/wbbridge.log
+StandardError=append:/tmp/wbbridge.log
+
+[Install]
+WantedBy=default.target
