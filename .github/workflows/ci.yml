@@ -334,7 +334,10 @@ jobs:
 
       - name: colcon test
         run: |
+          # 每个 run 步骤都是独立 shell，工作目录回到 $GITHUB_WORKSPACE，
+          # 必须先 cd 进工作空间再 source install/setup.bash。
           source /opt/ros/humble/setup.bash
+          cd Master/ROS/ros2_ws
           source install/setup.bash
           colcon test --event-handlers console_direct-
 
