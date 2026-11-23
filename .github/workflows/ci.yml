@@ -24,6 +24,12 @@ on:
     branches:
       - feat
       - 'feat/**'
+  # 手动触发：仅用于在受保护分支（feat）上制造一次真实的 ci-gate 运行记录。
+  # 原因：GitHub 分支保护的 required status checks 候选列表只收录
+  # "在受保护分支上真实跑过的 check"；feat 平时不接受 push、也没有以它自身
+  # 为 head 的 PR，配门禁时搜不到 ci-gate。手动跑一次即可补齐这条记录。
+  # 手动触发不改变任何自动触发语义，不影响分支治理规则。
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -49,6 +55,11 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
+          # 手动触发时没有 github.event.before，dorny/paths-filter 会因缺少基线报错，
+          # 导致全部 Job 被 skip（ci-gate 照样绿，但等于没验证）。
+          # 用 <sha>~1 兜底，让 diff 覆盖整条待验证的变更，真实跑全套。
+          # push / pull_request 场景不受影响（仍走各自的原生基线）。
+          base: ${{ github.event_name == 'workflow_dispatch' && format('{0}~1', github.sha) || '' }}
           filters: |
             rust:
               - 'Master/Web-Next/**'
