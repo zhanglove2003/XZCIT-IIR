@@ -223,8 +223,11 @@ try {
                   <div class="kv"><span>播放设备</span><b id="sn-spk-st">—</b></div>
                   <div class="kv"><span>音量</span><b id="spk-vol-v" aria-hidden="true">—</b></div>
                   <label class="visually-hidden" for="spk-vol">喇叭音量</label>
-                  <input id="spk-vol" type="range" min="0" max="100" step="1" value="70"
-                    aria-valuetext="—" disabled>
+                  <div class="spk-vol-box" id="spk-vol-box">
+                    <input id="spk-vol" type="range" min="0" max="100" step="1" value="70"
+                      aria-valuetext="—" disabled>
+                    <span id="spk-vol-fill" aria-hidden="true"></span>
+                  </div>
                   <button id="btn-spk-test" class="btn ghost wide" type="button" disabled>测试声音</button>
                 </article>
                 <article class="card" data-card>

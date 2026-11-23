@@ -705,18 +705,54 @@ input[type="range"] { flex: 1; accent-color: var(--accent); }
 }
 
 /* ---------------- 喇叭音量条 ----------------
- * 只给原生 range 加 accent-color 时，轨道/填充/滑块全交给 UA：暗色主题
- * 下轨道几乎看不见，各浏览器长相也不一致。这里接管轨道与滑块，WebKit 与
- * Firefox 伪元素必须分块声明（合并成逗号列表整条规则会被丢弃）。
- * 填充量优先用 progress()+attr() 直接读 value；不支持时退到 app.js 同步
- * 的 --spk-pct。 */
+ * 按组件库的既有做法落地（MDC slider 默认：活动轨道 6px、非活动 4px、
+ * 圆形滑块 20px、轨道全圆角），不再自己发明一套：
+ *  - 不画整体描边（那是“轨道外面又套一个框”，视觉上像输入框），滑块靠
+ *    白底 + 一圈主色描边浮在轨道上；
+ *  - 活动段 6px 主色压在 4px 浅灰轨道上（粗细对比即 MDC 的做法）；
+ *  - 两条轨道都由 box 自己画（::before 灰轨道 + #spk-vol-fill 活动段），
+ *    原生轨道全部透明。原因：WebKit 并不把原生轨道在 input 里垂直居中
+ *    （实测 28px input 里轨道中心偏上 3px），自绘才能保证对齐，且两个
+ *    引擎共用同一套几何；input 高度=滑块高度，滑块自然居中。
+ *  - 原生滑块圆心的行程是 [半径, 宽-半径]，所以活动段也从滑块半径处起、
+ *    长度按（宽-一个滑块）折算，两端正好落在滑块圆心下。
+ *  - WebKit 与 Firefox 伪元素必须分块声明（合并成逗号列表整条会被丢弃）。
+ * 填充比例一律由 app.js syncSpkFill 同步（--spk-ratio，0..1，双写 input
+ * 与外层 box）。不用 progress(attr(value…))：attr() 只读到 HTML 里写死的
+ * 初始 value，拖动后不会跟着变。 */
+#spk-vol-box {
+  --spk-track-active: 6px;
+  --spk-track-idle: 4px;
+  --spk-thumb: 20px;
+  --spk-ratio: 0;
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  block-size: 28px;          /* 命中区：滑块 20 + 上下各 4 */
+  margin-block-end: 6px;
+}
+
+/* 非活动轨道（4px 灰，全宽） */
+#spk-vol-box::before {
+  content: "";
+  position: absolute;
+  inset-block-start: calc(50% - var(--spk-track-idle) / 2);
+  inline-size: 100%;
+  block-size: var(--spk-track-idle);
+  border-radius: 999px;
+  background: var(--line2);
+  pointer-events: none;
+}
+
 #spk-vol {
-  --spk-track: 6px;
-  --spk-thumb: 18px;
+  /* 压在自绘轨道层之上：活动段伸到滑块圆心为止，要被滑块的白脸盖住，
+   * 否则蓝条会画进滑块圈里 */
+  position: relative;
+  z-index: 1;
 
   inline-size: 100%;
-  block-size: 32px;          /* 命中区够点 */
-  margin: 2px 0 6px;
+  block-size: var(--spk-thumb);
   padding: 0;
   border: 0;
   background: transparent;
@@ -725,21 +761,34 @@ input[type="range"] { flex: 1; accent-color: var(--accent); }
   -webkit-appearance: none;
 }
 
-#spk-vol:disabled { cursor: not-allowed; opacity: 0.5; }
+#spk-vol:disabled { cursor: not-allowed; opacity: 0.45; }
+
+/* 自绘轨道层跟着禁用态一起淡出（input 自身的 opacity 只罩得到原生部分） */
+#spk-vol-box:has(#spk-vol:disabled)::before,
+#spk-vol-box:has(#spk-vol:disabled) #spk-vol-fill { opacity: 0.45; }
 
 @media (pointer: coarse) {
-  #spk-vol { block-size: 44px; --spk-thumb: 22px; }
+  #spk-vol-box { block-size: 40px; --spk-thumb: 24px; }
 }
 
+/* 焦点环画在滑块上而不是整条轨道上 */
+#spk-vol:focus-visible {
+  outline: none;
+}
+
+#spk-vol:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px color-mix(in oklab, var(--accent) 28%, transparent);
+}
+
+#spk-vol:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px color-mix(in oklab, var(--accent) 28%, transparent);
+}
+
+/* WebKit/Blink：原生轨道透明（几何只做滑块锚点），视觉全在 box 层 */
 #spk-vol::-webkit-slider-runnable-track {
-  block-size: var(--spk-track);
+  block-size: var(--spk-track-idle);
   border: 0;
-  border-radius: 999px;
-  background: linear-gradient(
-    to right,
-    var(--accent) var(--spk-pct, 0%),
-    var(--line2) var(--spk-pct, 0%)
-  );
+  background: transparent;
 }
 
 #spk-vol::-webkit-slider-thumb {
@@ -747,24 +796,25 @@ input[type="range"] { flex: 1; accent-color: var(--accent); }
   appearance: none;
   inline-size: var(--spk-thumb);
   block-size: var(--spk-thumb);
-  margin-block-start: calc((var(--spk-track) - var(--spk-thumb)) / 2);
+  margin-block-start: calc((var(--spk-track-idle) - var(--spk-thumb)) / 2);
   border: 0;
   border-radius: 50%;
   background: var(--card);
-  box-shadow: 0 0 0 2px var(--accent);
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 1px 3px color-mix(in oklab, #000 22%, transparent);
 }
 
+/* Firefox：同理，轨道透明，填充由自绘层负责 */
 #spk-vol::-moz-range-track {
-  block-size: var(--spk-track);
+  block-size: var(--spk-track-idle);
   border: 0;
-  border-radius: 999px;
-  background: var(--line2);
+  background: transparent;
 }
 
 #spk-vol::-moz-range-progress {
-  block-size: var(--spk-track);
-  border-radius: 999px;
-  background: var(--accent);
+  block-size: var(--spk-track-idle);
+  background: transparent;
 }
 
 #spk-vol::-moz-range-thumb {
@@ -773,40 +823,33 @@ input[type="range"] { flex: 1; accent-color: var(--accent); }
   border: 0;
   border-radius: 50%;
   background: var(--card);
-  box-shadow: 0 0 0 2px var(--accent);
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 1px 3px color-mix(in oklab, #000 22%, transparent);
 }
 
-#spk-vol:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 6px;
+/* 活动段：从滑块半径处起，长度按（宽-一个滑块）× ratio */
+#spk-vol-fill {
+  position: absolute;
+  inset-inline-start: calc(var(--spk-thumb) / 2);
+  inset-block-start: calc(50% - var(--spk-track-active) / 2);
+  inline-size: calc((100% - var(--spk-thumb)) * var(--spk-ratio));
+  block-size: var(--spk-track-active);
+  border-radius: 999px;
+  background: var(--accent);
+  pointer-events: none;
 }
 
-/* 强制配色模式会清掉渐变与阴影：轨道退回系统色 + 实线边框，滑块加描边，
+/* 强制配色模式会清掉渐变与阴影：轨道退回系统色 + 实线边框，活动段用高亮色，
  * 否则音量条会变成一条看不见的空白 */
 @media (forced-colors: active) {
-  #spk-vol::-webkit-slider-runnable-track,
-  #spk-vol::-moz-range-track {
-    background: Canvas;
-    border: 1px solid CanvasText;
-  }
-  #spk-vol::-moz-range-progress { background: Highlight; }
+  #spk-vol-box::before { background: Canvas; outline: 1px solid CanvasText; }
+  #spk-vol-fill { background: Highlight; }
   #spk-vol::-webkit-slider-thumb,
   #spk-vol::-moz-range-thumb {
-    background: ButtonText;
+    background: Canvas;
     box-shadow: none;
-    outline: 1px solid Canvas;
-  }
-}
-
-/* 支持 progress() 时直接由 value 属性算填充，不依赖 JS */
-@supports (opacity: progress(1, 0, 100)) {
-  #spk-vol::-webkit-slider-runnable-track {
-    background: linear-gradient(
-      to right,
-      var(--accent) calc(progress(attr(value type(<number>), 70), 0, 100) * 100%),
-      var(--line2) calc(progress(attr(value type(<number>), 70), 0, 100) * 100%)
-    );
+    outline: 2px solid CanvasText;
   }
 }
 

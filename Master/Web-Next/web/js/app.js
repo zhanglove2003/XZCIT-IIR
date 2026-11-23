@@ -19,6 +19,18 @@
 
   /* ================= 通用工具 ================= */
 
+  /** 音量条填充层同步：--spk-ratio（0..1）驱动 #spk-vol-fill 的加粗活动段。
+   *  变量同时写到 input 与外层 box——填充层是 box 的子元素，只认 box 上的值。 */
+  function syncSpkFill(el) {
+    var min = Number(el.min) || 0;
+    var max = Number(el.max) || 100;
+    var ratio = max > min ? (Number(el.value) - min) / (max - min) : 0;
+    var s = String(ratio);
+    el.style.setProperty('--spk-ratio', s);
+    var box = el.parentElement;
+    if (box) box.style.setProperty('--spk-ratio', s);
+  }
+
   /** 写文本：与上次相同则跳过 DOM 写入（蓝图 §5.2.4） */
   function T(el, text) {
     if (!el) return;
@@ -595,7 +607,7 @@
     vol.addEventListener('input', function () {
       T($('spk-vol-v'), vol.value + '%');
       vol.setAttribute('aria-valuetext', vol.value + '%');
-      vol.style.setProperty('--spk-pct', vol.value + '%');
+      syncSpkFill(vol);
     });
     vol.addEventListener('change', function () {
       if (!requireAuth('调节音量')) return;
@@ -1215,7 +1227,7 @@
       if (typeof volVal === 'number') {
         if (document.activeElement !== spkVol) spkVol.value = volVal;
         spkVol.setAttribute('aria-valuetext', volVal + '%');
-        spkVol.style.setProperty('--spk-pct', spkVol.value + '%');
+        syncSpkFill(spkVol);
         T($('spk-vol-v'), volVal + '%');
       } else {
         spkVol.setAttribute('aria-valuetext', '不可用');
